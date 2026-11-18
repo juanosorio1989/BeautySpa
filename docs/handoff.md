@@ -20,4 +20,4 @@ Write plan 02 (auth) in `docs/superpowers/plans/2026-11-17-mvp/`, then execute i
 
 ## Open questions
 
-- Local Node is still 20 (CI uses 22). Install Node 22 with nvm when convenient.
+- None. Local Node is 22.23.5 via nvm (matches `.nvmrc` and CI); full checks verified green on it.
