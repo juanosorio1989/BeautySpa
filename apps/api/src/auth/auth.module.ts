@@ -5,6 +5,7 @@ import { AuditModule } from "../audit/audit.module.js";
 import { ENV, type Env } from "../config/env.js";
 import { REDIS } from "../redis/redis.module.js";
 import { AccessGuard } from "./access.guard.js";
+import { Encryptor } from "./crypto/encryption.js";
 import { ConsoleOtpProvider } from "./otp/console-otp.provider.js";
 import { FakeOtpProvider } from "./otp/fake-otp.provider.js";
 import { OTP_PROVIDER, type OtpProvider } from "./otp/otp-provider.js";
@@ -14,6 +15,9 @@ import { TwilioVerifyProvider } from "./otp/twilio-verify.provider.js";
 import { RefreshTokenService } from "./refresh-token.service.js";
 import { SessionController } from "./session.controller.js";
 import { SessionService } from "./session.service.js";
+import { MfaService } from "./staff/mfa.service.js";
+import { StaffAuthController } from "./staff/staff-auth.controller.js";
+import { StaffAuthService } from "./staff/staff-auth.service.js";
 import { TokenService } from "./token.service.js";
 
 /** `loadEnv` already refuses `console`/`fake` in production and `fake` outside tests. */
@@ -30,15 +34,22 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
 
 @Module({
   imports: [AuditModule],
-  controllers: [SessionController, OtpController],
+  controllers: [SessionController, OtpController, StaffAuthController],
   providers: [
     TokenService,
     RefreshTokenService,
     SessionService,
     OtpService,
+    StaffAuthService,
+    MfaService,
+    {
+      provide: Encryptor,
+      inject: [ENV],
+      useFactory: (env: Env) => new Encryptor({ keyId: env.DATA_ENCRYPTION_KEY_ID, keyB64: env.DATA_ENCRYPTION_KEY }),
+    },
     { provide: OTP_PROVIDER, inject: [ENV, REDIS], useFactory: otpProviderFactory },
     { provide: APP_GUARD, useClass: AccessGuard },
   ],
-  exports: [TokenService, RefreshTokenService, SessionService],
+  exports: [TokenService, RefreshTokenService, SessionService, Encryptor],
 })
 export class AuthModule {}

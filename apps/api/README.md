@@ -103,9 +103,25 @@ Providers (`OTP_PROVIDER` token, picked in `AuthModule` by `env.OTP_PROVIDER`):
 Dev usage: with the default `console` provider, call `start`, read the 6-digit code from the API log line
 `OTP for +1...: 123456`, and send it to `verify`.
 
-Tests: `src/auth/token.service.test.ts`, `src/auth/otp/*.test.ts` (unit), `test/integration/auth/{session,guard,otp}.int.test.ts` (test-only
+Tests: `src/auth/token.service.test.ts`, `src/auth/otp/*.test.ts` (unit), `test/integration/auth/{session,guard,otp,staff-login,mfa}.int.test.ts` (test-only
 controllers passed through `createIntegrationApp({ imports })`). `TenancyService` caches the org id per app, so an
 integration test that re-seeds the org per case needs a fresh app per case.
+
+### Staff login (password + mandatory TOTP)
+
+`src/auth/staff/`, all `@Public()`, all 200. Sequence: `POST /v1/auth/staff/login` `{ email, password }` →
+`MFA_REQUIRED` + verify `mfaToken` (enrolled) or `ENROLL_REQUIRED` + enroll `mfaToken`; then either
+`mfa/verify` `{ mfaToken, code }` → tokens, or `mfa/enroll` (secret + otpauth URL) → `mfa/enroll/confirm` → tokens
++ 10 recovery codes (shown once). `mfa/recover` `{ mfaToken, recoveryCode }` clears TOTP, revokes all sessions and
+returns `ENROLL_REQUIRED` (no session).
+
+- Unknown email, inactive, `can_login=false`, no password or wrong password: the same 401 `Invalid email or password`
+  (a dummy argon2 verify equalizes timing). Wrong password on a real account writes `auth.staff.login_failed`.
+- Limits (429 `RATE_LIMITED`): 5 failures / 15 min per email (`login:fail:<hashKeyPart(email)>`, checked before the
+  password, reset on success), 30 attempts / 15 min per IP, 5 confirm/verify/recover attempts / 5 min per staff id.
+- TOTP: secret AES-256-GCM encrypted (`Encryptor`, provided and exported by `AuthModule`); a wrong or replayed code
+  is 400 `MFA_INVALID`; each matched step is spent once (`totp:used:<staffId>:<step>`, 120 s; cleared when a new
+  secret is issued). Audit: `auth.staff.mfa_enrolled`, `auth.staff.login`, `auth.staff.recovery_used`.
 
 ## Auth crypto
 

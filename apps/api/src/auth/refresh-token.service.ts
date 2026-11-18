@@ -131,9 +131,9 @@ export class RefreshTokenService {
     if (row) await this.revokeFamily(this.prisma, row.familyId, new Date());
   }
 
-  /** Revokes every live refresh token of `subject` (all devices). */
-  async revokeAllFor(subject: Subject): Promise<void> {
-    await this.prisma.refreshToken.updateMany({
+  /** Revokes every live refresh token of `subject` (all devices). Pass `tx` to run inside the caller's transaction. */
+  async revokeAllFor(subject: Subject, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? this.prisma).refreshToken.updateMany({
       where: { subjectType: subject.type, subjectId: subject.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
