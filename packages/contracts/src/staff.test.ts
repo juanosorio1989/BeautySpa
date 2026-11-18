@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EmployeeCreateSchema, TimeOffInputSchema, TimeOffQuerySchema } from "./staff";
+import { EmployeeCreateSchema, EmployeeUpdateSchema, TimeOffInputSchema, TimeOffQuerySchema } from "./staff";
 
 const id = "11111111-1111-4111-8111-111111111111";
 const base = { role: "EMPLOYEE", locale: "en" };
@@ -55,5 +55,16 @@ describe("TimeOff", () => {
   });
   it("query rejects from > to", () => {
     expect(TimeOffQuerySchema.safeParse({ from: "2026-02-01T00:00:00Z", to: "2026-01-01T00:00:00Z" }).success).toBe(false);
+  });
+});
+
+describe("EmployeeUpdateSchema", () => {
+  it("rejects duplicate serviceIds and locationIds", () => {
+    const a = EmployeeUpdateSchema.safeParse({ serviceIds: [id, id] });
+    expect(a.success).toBe(false);
+    expect(firstPath(a)).toEqual(["serviceIds"]);
+    const b = EmployeeUpdateSchema.safeParse({ locationIds: [id, id] });
+    expect(b.success).toBe(false);
+    expect(firstPath(b)).toEqual(["locationIds"]);
   });
 });

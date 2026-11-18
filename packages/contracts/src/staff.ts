@@ -59,6 +59,10 @@ export const EmployeeUpdateSchema = EmployeeCreateFieldsSchema.pick({
 })
   .extend({ active: z.boolean() })
   .partial()
+  .superRefine((o, ctx) => {
+    uniqueIds(o.locationIds, "locationIds", ctx);
+    uniqueIds(o.serviceIds, "serviceIds", ctx);
+  })
   .refine(nonEmpty, EMPTY);
 export type EmployeeUpdate = z.infer<typeof EmployeeUpdateSchema>;
 
