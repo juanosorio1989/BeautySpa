@@ -66,7 +66,10 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
 Staff lifecycle **(call)**:
 - Technicians who never log in: `can_login = false`, no credentials; they still
   have schedules and appointments.
-- First OWNER: CLI `pnpm --filter api create-owner` prints a one-time invite link.
+- First OWNER: CLI `pnpm --filter @beautyspa/api create-owner --email <e> [--locale en|es]`
+  creates the OWNER, or for an existing OWNER with that email clears password,
+  TOTP, recovery codes and sessions; either way it prints a fresh 72 h invite
+  link. It refuses an email that belongs to a non-owner.
 - OWNER invites staff by email (Resend): single-use link, 72 h, to set a password
   and enroll TOTP. Password reset: same mechanism, 1 h link.
 - Lost TOTP device: one of 10 recovery codes issued at enrollment, or the OWNER
@@ -74,16 +77,36 @@ Staff lifecycle **(call)**:
   recovered with the CLI.
 
 Tokens (identical for web and native):
-- **Access token**: JWT (EdDSA or RS256), 15 min, claims `sub`, `typ`
-  (`customer`/`staff`), `org`, `role`.
-- **Refresh token**: opaque random 256-bit, stored hashed, 30 days (clients) /
-  12 h (staff). **Rotates on every use**; each belongs to a `family`. Reuse of a
-  rotated token revokes the whole family.
-- Web: access token in memory; refresh token in an `HttpOnly; Secure;
-  SameSite=Lax` cookie set by the API. Requires web and API under the same
-  registrable domain (`app.example.com`, `api.example.com`).
-- Native (future): refresh token returned in the body, stored in SecureStore.
-  The API takes the refresh token from the cookie or the body.
+- **Access token**: JWT, EdDSA (Ed25519), 15 min, `iss: beautyspa-api`,
+  `aud: beautyspa`, header `kid`; claims `sub`, `typ` (`customer`/`staff`),
+  `org`, `role` (`typ: customer` always has role `CUSTOMER`).
+- **Refresh token**: opaque random 256-bit, stored as SHA-256 only, 30 days
+  (clients) / 12 h (staff). **Rotates on every use**; each belongs to a
+  `family`. Reuse of a rotated token (including two concurrent refreshes with
+  the same token) revokes the whole family and is audited as
+  `auth.refresh_reuse`. A token revoked by logout is simply refused (401).
+- **Refresh lifetime is absolute per login** **(call)**: a rotated token
+  inherits `expires_at` from the token it replaces, so refreshing never extends
+  a session. Clients re-verify by OTP after 30 days; staff log in again after
+  12 h (one shift). A refresh for a soft-deleted customer or a staff user with
+  `active = false` or `can_login = false` is refused and revokes all of that
+  subject's sessions.
+- **Transport** **(call)**:
+  - Web: access token in memory; refresh token only in cookie `bs_refresh`
+    (`HttpOnly; SameSite=Lax; Path=/v1/auth`, `Secure` per `COOKIE_SECURE`,
+    `Domain` per `COOKIE_DOMAIN`), never in the JSON body. Requires web and
+    API under the same registrable domain (`app.example.com`,
+    `api.example.com`). A refresh whose token came from the cookie always
+    answers with a cookie, even if `x-token-transport: body` is sent, and
+    CORS does not allow that header, so page script can never read a refresh
+    token.
+  - Native (future): a request with header `x-token-transport: body` gets the
+    refresh token in the JSON body (`refreshToken`) and no cookie; it is
+    stored in SecureStore and sent back as `{ refreshToken }`.
+  - Cookie-based `/auth/refresh` and `/auth/logout` require header
+    `x-beautyspa-csrf: 1` (403 otherwise): a custom header forces a CORS
+    preflight, which only `WEB_ORIGIN` passes. A body token needs no CSRF
+    header (browsers never send it on their own).
 - `api-client` takes a `TokenStore` interface (memory+cookie on web, SecureStore
   on native) and refreshes once on 401.
 

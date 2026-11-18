@@ -1,4 +1,5 @@
 export * from "./common";
 export * from "./errors";
+export * from "./auth";
 export * from "./availability";
 export * from "./health";

@@ -43,3 +43,23 @@ function sameDatabase(a: string, b: string): boolean {
   const ub = new URL(b);
   return ua.host === ub.host && ua.pathname === ub.pathname;
 }
+
+/**
+ * REDIS_URL_TEST, refusing DB index 0 (no path or `/0`) and the database that
+ * REDIS_URL points at: tests call FLUSHDB on it.
+ */
+export function testRedisUrl(): string {
+  const url = process.env.REDIS_URL_TEST;
+  if (!url) throw new Error("REDIS_URL_TEST is required for integration tests");
+  const db = redisDb(url);
+  if (db === "0") throw new Error("Refusing to use REDIS_URL_TEST on DB index 0: use e.g. redis://localhost:6379/1");
+  const main = process.env.REDIS_URL;
+  if (main && (main === url || (new URL(main).host === new URL(url).host && redisDb(main) === db))) {
+    throw new Error("Refusing to use REDIS_URL_TEST: it points at the same database as REDIS_URL");
+  }
+  return url;
+}
+
+function redisDb(url: string): string {
+  return new URL(url).pathname.replace(/^\//, "") || "0";
+}

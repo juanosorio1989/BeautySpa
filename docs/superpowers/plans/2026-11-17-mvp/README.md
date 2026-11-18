@@ -9,7 +9,7 @@ written in detail (so it builds on real code, not guesses).
 | # | Plan | Delivers | Status |
 |---|---|---|---|
 | 01 | [Foundation and availability engine](01-foundation.md) | Monorepo, tooling, Docker, `datetime`, `contracts` base, `availability` engine, NestJS skeleton (`/v1`, OpenAPI, problem+json), full Prisma schema with exclusion constraints, CI | merged (PR #1) |
-| 02 | Auth | Phone OTP (Twilio Verify), staff password + TOTP + recovery, invites/reset, access + rotating refresh tokens, RBAC guards, `create-owner` CLI, `api-client` with `TokenStore` | to write |
+| 02 | [Auth](02-auth.md) | Phone OTP (Twilio Verify), staff password + TOTP + recovery, invites/reset, access + rotating refresh tokens, RBAC guards, `create-owner` CLI, `api-client` with `TokenStore` | merged |
 | 03 | Catalog, staff, schedules API | Services, categories, levels, resources, employees, working hours, time off, settings, audit log, full seeds | to write |
 | 04 | Booking API | `/availability`, holds, booking, reschedule/move, cancel, status changes, walk-in, hold sweeper, export/delete | to write |
 | 05 | Notifications | Provider interface, WhatsApp/SMS/email/console providers, channel router, BullMQ reminders, signed manage links, Twilio webhooks, consent | to write |

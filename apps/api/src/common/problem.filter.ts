@@ -1,7 +1,7 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from "@nestjs/common";
 import type { Response } from "express";
 import { ZodValidationException } from "nestjs-zod";
-import { ErrorCode, type Problem } from "@beautyspa/contracts";
+import { ErrorCode, ProblemSchema, type Problem } from "@beautyspa/contracts";
 
 const STATUS_CODES: Record<number, ErrorCode> = {
   400: "VALIDATION_FAILED",
@@ -14,6 +14,16 @@ const STATUS_CODES: Record<number, ErrorCode> = {
 
 function codeForStatus(status: number): ErrorCode {
   return STATUS_CODES[status] ?? (status >= 400 && status < 500 ? "BAD_REQUEST" : "INTERNAL");
+}
+
+const FieldErrors = ProblemSchema.shape.errors.unwrap();
+
+/** A well-formed `errors` array from an HttpException body, or undefined (malformed arrays are dropped). */
+function fieldErrors(body: unknown): Problem["errors"] {
+  if (typeof body !== "object" || body === null) return undefined;
+  const parsed = FieldErrors.safeParse((body as { errors?: unknown }).errors);
+  // Zod strips unknown keys: only `path` and `message` reach the response.
+  return parsed.success ? parsed.data : undefined;
 }
 
 // body-parser / http-errors shape: numeric 4xx status plus string type
@@ -46,12 +56,14 @@ export class ProblemFilter implements ExceptionFilter {
       const parsedCode = typeof body === "object" && body !== null ? ErrorCode.safeParse((body as { code?: unknown }).code) : undefined;
       const code = parsedCode?.success ? parsedCode.data : codeForStatus(status);
       const detail = typeof body === "string" ? body : (body as { message?: unknown }).message;
+      const errors = status < 500 ? fieldErrors(body) : undefined;
       return {
         type: "about:blank",
         title: HttpStatus[status]?.replaceAll("_", " ") ?? "Error",
         status,
         code,
         ...(status < 500 && typeof detail === "string" ? { detail } : {}),
+        ...(errors ? { errors } : {}),
       };
     }
     if (isHttpError(exception)) {

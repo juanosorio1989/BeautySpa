@@ -3,21 +3,24 @@
 REST, JSON, versioned by path. OpenAPI generated from `packages/contracts`,
 served at `/v1/docs` (and `/v1/openapi.json`). Errors are
 `application/problem+json` with a stable `code` (e.g. `SLOT_TAKEN`,
-`HOLD_EXPIRED`, `OTP_INVALID`, `OUTSIDE_CANCEL_WINDOW`, `FORBIDDEN`, `CONFLICT`, `BAD_REQUEST`, `VALIDATION_FAILED`, `NOT_FOUND`, `UNAUTHORIZED`, `RATE_LIMITED`, `INTERNAL`).
+`HOLD_EXPIRED`, `OTP_INVALID`, `MFA_INVALID` (wrong TOTP/recovery code), `LINK_INVALID` (expired/used/unknown invite or reset token), `OUTSIDE_CANCEL_WINDOW`, `FORBIDDEN`, `CONFLICT`, `BAD_REQUEST`, `VALIDATION_FAILED`, `NOT_FOUND`, `UNAUTHORIZED`, `RATE_LIMITED`, `INTERNAL`).
 
 ## Auth
 
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/auth/otp/start` | `{ phone, locale }` → sends code (WhatsApp, fallback SMS). Rate-limited. |
-| POST | `/auth/otp/verify` | `{ phone, code }` → tokens + `{ isNew }`. Creates customer if new. |
-| POST | `/auth/staff/login` | `{ email, password }` → `{ mfaToken }` (short-lived) or enrollment required |
-| POST | `/auth/staff/mfa/enroll` | returns TOTP secret/QR; confirm with first code |
+| POST | `/auth/otp/verify` | `{ phone, code, locale? }` → tokens + `{ isNew }` (`isNew` = customer has no name yet). Creates customer if new; `locale` is used only then. |
+| POST | `/auth/staff/login` | `{ email, password }` → `{ status: "MFA_REQUIRED" \| "ENROLL_REQUIRED", mfaToken, mfaTokenExpiresAt }` |
+| POST | `/auth/staff/mfa/enroll` | `{ mfaToken }` → TOTP secret + otpauth URL |
+| POST | `/auth/staff/mfa/enroll/confirm` | `{ mfaToken, code }` → tokens + 10 recovery codes (shown once) |
 | POST | `/auth/staff/mfa/verify` | `{ mfaToken, code }` → tokens |
-| POST | `/auth/staff/invite/accept`, `/auth/staff/password/forgot`, `/auth/staff/password/reset` | single-use emailed tokens |
-| POST | `/auth/staff/mfa/recover` | `{ mfaToken, recoveryCode }` → tokens, forces re-enroll |
-| POST | `/auth/refresh` | refresh from cookie or body → new pair (rotation) |
-| POST | `/auth/logout` | revokes the family |
+| POST | `/auth/staff/invite/accept`, `/auth/staff/password/forgot`, `/auth/staff/password/reset` | single-use emailed tokens; `invite/accept` `{ token, password }` returns `ENROLL_REQUIRED` + enroll `mfaToken` (or `MFA_REQUIRED` if already enrolled) |
+| POST | `/auth/staff/mfa/recover` | `{ mfaToken, recoveryCode }` → clears old TOTP, returns `ENROLL_REQUIRED` + enroll `mfaToken` (no session) |
+| POST | `/auth/refresh` | refresh from cookie or body → new pair (rotation). Cookie use requires header `x-beautyspa-csrf: 1`. |
+| POST | `/auth/logout` | revokes the family. Cookie use requires header `x-beautyspa-csrf: 1`. |
+
+Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=Lax; Path=/v1/auth). A client sending header `x-token-transport: body` (native) gets it in the JSON body instead and no cookie.
 
 ## Public (no auth)
 

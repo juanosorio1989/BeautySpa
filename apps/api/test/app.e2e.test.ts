@@ -1,5 +1,6 @@
 import "reflect-metadata";
-import { Body, ConflictException, Controller, Get, INestApplication, Module, Post } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Get, INestApplication, Module, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { createZodDto } from "nestjs-zod";
@@ -9,6 +10,7 @@ import { ProblemSchema } from "@beautyspa/contracts";
 import { HealthModule } from "../src/health/health.module.js";
 import { configureApp } from "../src/bootstrap.js";
 import { loadEnv } from "../src/config/env.js";
+import { testEnv } from "./support/test-env.js";
 
 class EchoDto extends createZodDto(z.object({ name: z.string() })) {}
 
@@ -24,6 +26,25 @@ class EchoController {
     throw new ConflictException({ code: "SLOT_TAKEN" });
   }
 
+  @Get("field-error")
+  fieldError(): never {
+    throw new BadRequestException({
+      code: "VALIDATION_FAILED",
+      message: "Only US phone numbers are supported",
+      errors: [{ path: "phone", message: "Only US phone numbers are supported" }],
+    });
+  }
+
+  @Get("bad-errors")
+  badErrors(): never {
+    throw new BadRequestException({ code: "VALIDATION_FAILED", errors: [{ path: 1, secret: "x" }] });
+  }
+
+  @Get("ip")
+  ip(@Req() req: Request) {
+    return { ip: req.ip };
+  }
+
   @Get("boom")
   boom(): never {
     throw new Error("secret detail");
@@ -33,12 +54,7 @@ class EchoController {
 @Module({ imports: [HealthModule], controllers: [EchoController] })
 class TestModule {}
 
-const env = loadEnv({
-  NODE_ENV: "test",
-  DATABASE_URL: "postgresql://u:p@localhost:5432/db",
-  REDIS_URL: "redis://localhost:6379",
-  WEB_ORIGIN: "http://localhost:3000",
-});
+const env = testEnv();
 
 describe("api skeleton", () => {
   let app: INestApplication;
@@ -111,6 +127,23 @@ describe("api skeleton", () => {
     expect(ProblemSchema.safeParse(res.body).success).toBe(true);
   });
 
+  it("an errors array on an HttpException body is passed through", async () => {
+    const res = await request(app.getHttpServer()).get("/v1/echo/field-error");
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.detail).toBe("Only US phone numbers are supported");
+    expect(res.body.errors).toEqual([{ path: "phone", message: "Only US phone numbers are supported" }]);
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
+  it("a malformed errors array on an HttpException body is dropped", async () => {
+    const res = await request(app.getHttpServer()).get("/v1/echo/bad-errors");
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toBeUndefined();
+    expect(res.text).not.toContain("secret");
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
   it("unknown error returns 500 INTERNAL without leaking details", async () => {
     const res = await request(app.getHttpServer()).get("/v1/echo/boom");
     expect(res.status).toBe(500);
@@ -134,7 +167,43 @@ describe("api skeleton", () => {
     expect(ok.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
   });
 
+  it("CORS preflight allows only the auth/CSRF headers, not x-token-transport", async () => {
+    const res = await request(app.getHttpServer())
+      .options("/v1/health")
+      .set("Origin", "http://localhost:3000")
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "x-token-transport,x-beautyspa-csrf");
+    const allowed = String(res.headers["access-control-allow-headers"] ?? "").toLowerCase().split(/\s*,\s*/);
+    expect(allowed).toEqual(expect.arrayContaining(["authorization", "content-type", "x-beautyspa-csrf"]));
+    expect(allowed).not.toContain("x-token-transport");
+  });
+
   it("loadEnv({}) throws naming DATABASE_URL", () => {
     expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
+  });
+});
+
+describe("trust proxy", () => {
+  const ipWith = async (trustProxy: string, xff: string): Promise<string> => {
+    const moduleRef = await Test.createTestingModule({ imports: [TestModule] }).compile();
+    const app = moduleRef.createNestApplication();
+    await configureApp(app, testEnv({ TRUST_PROXY: trustProxy }));
+    await app.init();
+    try {
+      const res = await request(app.getHttpServer()).get("/v1/echo/ip").set("X-Forwarded-For", xff);
+      return res.body.ip as string;
+    } finally {
+      await app.close();
+    }
+  };
+
+  it("TRUST_PROXY=1 uses the right-most X-Forwarded-For entry, not a forged left-most one", async () => {
+    expect(await ipWith("1", "6.6.6.6, 203.0.113.7")).toBe("203.0.113.7");
+  });
+
+  it("TRUST_PROXY=false ignores X-Forwarded-For", async () => {
+    const ip = await ipWith("false", "6.6.6.6, 203.0.113.7");
+    expect(ip).not.toBe("6.6.6.6");
+    expect(ip).not.toBe("203.0.113.7");
   });
 });

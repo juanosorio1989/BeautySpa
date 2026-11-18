@@ -1,4 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type StaffRole } from "@prisma/client";
+import { Encryptor } from "../../src/auth/crypto/encryption.js";
+import { hashPassword } from "../../src/auth/crypto/password.js";
+import { testEnv } from "../support/test-env.js";
 import { testDatabaseUrl } from "./setup.js";
 
 export function createTestClient(): PrismaClient {
@@ -138,5 +141,38 @@ export function bookSegment(prisma: PrismaClient, f: Fixture, s: SegmentInput) {
         },
       },
     },
+  });
+}
+
+export interface CreateStaffOpts {
+  email: string;
+  role: StaffRole;
+  password?: string;
+  totpSecret?: string;
+  active?: boolean;
+  canLogin?: boolean;
+}
+
+/**
+ * Creates a staff user (email lowercased). `password` is hashed with argon2id;
+ * `totpSecret` is encrypted with the test `Encryptor` (same key as the app's
+ * `testEnv()`) and marks the user as enrolled. `canLogin` defaults to true.
+ */
+export async function createStaff(prisma: PrismaClient, f: Fixture, opts: CreateStaffOpts): Promise<{ id: string }> {
+  const env = testEnv();
+  const encryptor = new Encryptor({ keyId: env.DATA_ENCRYPTION_KEY_ID, keyB64: env.DATA_ENCRYPTION_KEY });
+  return prisma.staffUser.create({
+    data: {
+      organizationId: f.orgId,
+      email: opts.email.toLowerCase(),
+      role: opts.role,
+      locale: "en",
+      active: opts.active ?? true,
+      canLogin: opts.canLogin ?? true,
+      passwordHash: opts.password ? await hashPassword(opts.password) : null,
+      totpSecretEnc: opts.totpSecret ? encryptor.encrypt(opts.totpSecret) : null,
+      totpEnrolledAt: opts.totpSecret ? new Date() : null,
+    },
+    select: { id: true },
   });
 }
