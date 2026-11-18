@@ -37,6 +37,43 @@ Tests build config with `testEnv(overrides)` (`test/support/test-env.ts`: throwa
 Integration tests use `createIntegrationApp({ env, imports, override })` and `resetState(prisma, redis)` from
 `test/integration/app.ts`.
 
+## Auth
+
+`AuthModule` (`src/auth/`) registers `AccessGuard` as the global `APP_GUARD`. The guard **fails closed**: a route
+without an auth decorator answers 403 `FORBIDDEN` to everyone, so every new controller must declare a policy.
+
+| Decorator | Allows |
+|---|---|
+| `@Public()` | anyone, no token (`/health`, `/auth/refresh`, `/auth/logout`, login routes) |
+| `@CustomerAuth()` | a customer access token |
+| `@StaffAuth()` / `@StaffAuth("OWNER", ...)` | any staff token / only the listed roles |
+| `@Principal()` | param decorator: the verified `AccessClaims` |
+
+Policies sit on the handler or the controller (handler wins), metadata key `auth:policy`. Tokens come only from
+`Authorization: Bearer <jwt>`. Missing, invalid or expired token, or `org` other than `TenancyService.getOrgId()`:
+401 `UNAUTHORIZED`. Valid token of the wrong kind or role: 403 `FORBIDDEN`.
+
+- `TokenService`: EdDSA JWTs with `jose`, key from `JWT_PRIVATE_KEY_B64`, `kid` = `JWT_KEY_ID`. Access tokens
+  (`aud: beautyspa`, 15 min; `typ`/`role` must agree) and MFA step tokens (`aud: beautyspa-mfa`, `typ: mfa`,
+  `purpose` `verify`/`enroll`, 5 min) never verify as each other.
+- `RefreshTokenService`: opaque tokens stored as SHA-256 in `refresh_token`; `create` starts a family, `rotate`
+  rotates inside one transaction (successor keeps the family and `expires_at`), reuse or a lost concurrent rotation
+  revokes the family and writes audit `auth.refresh_reuse`; `revokeFamilyOf`, `revokeAllFor`.
+- `SessionService.start(subject, req, res)` is what login flows call; `refresh` and `logout` back
+  `POST /v1/auth/refresh` (200 `TokenResponse`) and `POST /v1/auth/logout` (204, also for unknown tokens).
+  A session only starts or refreshes for a customer without `deleted_at` or a staff user with `active` and
+  `can_login`.
+- Transport: header `x-token-transport: body` → refresh token in the JSON body, no cookie. Otherwise cookie
+  `bs_refresh` (`HttpOnly`, `SameSite=Lax`, `Path=/v1/auth`, `Secure` = `COOKIE_SECURE`, `Domain` = `COOKIE_DOMAIN`)
+  and no `refreshToken` in the body. A cookie is accepted on refresh/logout only with `x-beautyspa-csrf: 1`
+  (else 403); a body `refreshToken` takes precedence over the cookie.
+- `AuditService.record(entry, tx?)` (`src/audit/`) appends to `audit_log`, optionally inside a transaction. Never
+  put tokens, hashes, passwords or TOTP secrets in `before`/`after`.
+
+Tests: `src/auth/token.service.test.ts` (unit), `test/integration/auth/{session,guard}.int.test.ts` (test-only
+controllers passed through `createIntegrationApp({ imports })`). `TenancyService` caches the org id per app, so an
+integration test that re-seeds the org per case needs a fresh app per case.
+
 ## Auth crypto
 
 Plain functions in `src/auth/crypto/` (`node:crypto`, plus `@node-rs/argon2`):
