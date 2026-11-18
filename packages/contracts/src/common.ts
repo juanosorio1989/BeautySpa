@@ -26,3 +26,49 @@ export type IsoDate = z.infer<typeof IsoDateSchema>;
 
 export const IsoInstantSchema = z.string().datetime({ offset: true });
 export type IsoInstant = z.infer<typeof IsoInstantSchema>;
+
+export const WallTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+export type WallTime = z.infer<typeof WallTimeSchema>;
+
+export const EndWallTimeSchema = z.union([WallTimeSchema, z.literal("24:00")]);
+export type EndWallTime = z.infer<typeof EndWallTimeSchema>;
+
+export const WeekdaySchema = z.number().int().min(0).max(6);
+export type Weekday = z.infer<typeof WeekdaySchema>;
+
+export const DayHoursSchema = z
+  .object({ weekday: WeekdaySchema, start: WallTimeSchema, end: EndWallTimeSchema })
+  .refine((o) => o.start < o.end, { message: "end must be after start", path: ["end"] });
+export type DayHours = z.infer<typeof DayHoursSchema>;
+
+export const WeekHoursSchema = z
+  .array(DayHoursSchema)
+  .max(50)
+  .superRefine((days, ctx) => {
+    const order = days.map((_, i) => i).sort((a, b) => {
+      const x = days[a]!;
+      const y = days[b]!;
+      return x.weekday - y.weekday || (x.start < y.start ? -1 : x.start > y.start ? 1 : 0);
+    });
+    let prev: DayHours | undefined;
+    for (const i of order) {
+      const cur = days[i]!;
+      if (prev && prev.weekday === cur.weekday && cur.start < prev.end) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Overlapping ranges", path: [i] });
+      }
+      if (!prev || prev.weekday !== cur.weekday || cur.end > prev.end) prev = cur;
+    }
+  });
+export type WeekHours = z.infer<typeof WeekHoursSchema>;
+
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const TimezoneSchema = z.string().min(1).max(64).refine(isValidTimeZone, "Invalid timezone");
+export type Timezone = z.infer<typeof TimezoneSchema>;
