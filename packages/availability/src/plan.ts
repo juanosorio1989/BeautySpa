@@ -135,8 +135,8 @@ function resourcesOfType(p: Prepared, typeId: string): ResourceInput[] {
 }
 
 /**
- * Assign resources with backtracking. With `lowerBound`, only the minimal blocks (`end`) are
- * checked, which is a necessary condition used for pruning. Otherwise the full plan (resources
+ * Assign resources with backtracking. With `lowerBound`, only the lower-bound blocks `lbBlocks`
+ * (default: `end`, i.e. every buffer dropped) are checked, a necessary condition used for pruning. Otherwise the full plan (resources
  * and employees with the real blocks) is verified. Returns resource ids and blocks, or null.
  */
 export function assignResources(
@@ -228,9 +228,13 @@ export function planAt(
       const end = start + durationMin * MINUTE;
       if (!covers(p.employeeFree.get(employee.id) ?? [], { start, end })) continue;
       if (drafts.some((d) => d !== undefined && d.employee.id === employee.id && overlaps({ start, end }, d))) continue;
-      // Symmetry: employees with equal terms and free time are interchangeable unless already in the plan.
+      // Symmetry: interchangeable = same terms for this and every remaining choice, same candidacy, same free time (unless already in the plan).
       const used = drafts.some((d) => d !== undefined && d.employee.id === employee.id);
-      const key = used ? `id:${employee.id}` : `${durationMin}|${priceCents}|${freeKey(employee)}`;
+      const remaining = order
+        .slice(k + 1)
+        .map((j) => (candidates[j]!.includes(employee) ? JSON.stringify(levelTerms(services[j]!, employee)) : "-"))
+        .join("|");
+      const key = used ? `id:${employee.id}` : `${durationMin}|${priceCents}|${remaining}|${freeKey(employee)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       if (++nodes > maxNodes) return null;

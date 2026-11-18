@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ana, bea, carla, chair1, chair2, dani, gel, haircut, location, mani, MANI_ID, MON, pedi, PEDI_ID } from "../test/fixtures";
+import { ana, bea, carla, chair1, chair2, dani, gel, haircut, location, mani, MON, pedi } from "../test/fixtures";
 import { MAX_NODES_PER_START, planAt, prepare } from "./plan";
 import type { Context } from "./types";
 
@@ -19,7 +19,5 @@ describe("planAt node budget", () => {
   });
   it("yields no plan when the budget is exhausted", () => {
     expect(planAt(p, [mani, pedi], [[ana, bea], [ana, bea]], t, "parallel", 1)).toBeNull();
-    expect(MANI_ID).toBeDefined();
-    expect(PEDI_ID).toBeDefined();
   });
 });

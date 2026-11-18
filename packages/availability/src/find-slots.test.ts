@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ana, ANA_ID, at, bea, BEA_ID, carla, CARLA_ID, chair1, CHAIR_1_ID, chair2, CHAIR_2_ID, dani, DANI_ID,
+  ana, ANA_ID, at, everyDay, bea, BEA_ID, carla, CARLA_ID, chair1, CHAIR_1_ID, chair2, CHAIR_2_ID, dani, DANI_ID,
   gel, GEL_ID, haircut, HAIRCUT_ID, location, makeEmployee, makeResource, mani, MANI_ID, MON, pedi, PEDI_ID,
 } from "../test/fixtures";
 import { AvailabilityError } from "./errors";
@@ -229,5 +229,28 @@ describe("findSlots", () => {
     const { s, ms } = windowed(8, 3);
     expect(s).toEqual([]);
     expect(ms).toBeLessThan(200);
+  });
+  describe("symmetry classes consider the remaining choices", () => {
+    const noChair = { ...pedi, resourceTypeId: null };
+    const short = everyDay("09:00", "10:00");
+    const expectParallel = (slots: ReturnType<typeof findSlots>) => {
+      expect(slots.length).toBeGreaterThan(0);
+      const [m, p] = slots[0]!.segments;
+      expect([m!.employeeId, p!.employeeId]).toEqual([BEA_ID, ANA_ID]);
+      expect([m!.start, p!.start]).toEqual([at(MON, "09:00"), at(MON, "09:00")]);
+    };
+    const cases: [string, (hours: ReturnType<typeof everyDay>) => FindSlotsInput][] = [
+      ["explicit later choice", (h) => base([c(MANI_ID), c(PEDI_ID, ANA_ID)], {
+        services: [mani, noChair], employees: [makeEmployee(ana, { workingHours: h }), makeEmployee(bea, { workingHours: h })],
+      })],
+      ["later choice not offered by one employee", (h) => base([c(MANI_ID), c(PEDI_ID)], {
+        services: [mani, noChair],
+        employees: [makeEmployee(ana, { workingHours: h }), makeEmployee(bea, { workingHours: h, serviceIds: [MANI_ID] })],
+      })],
+    ];
+    for (const [name, build] of cases) {
+      it(`${name}, short hours`, () => expectParallel(findSlots(build(short))));
+      it(`${name}, full hours: first slot is the parallel plan`, () => expectParallel(findSlots(build(everyDay("09:00", "19:00")))));
+    }
   });
 });
