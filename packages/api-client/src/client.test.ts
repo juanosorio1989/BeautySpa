@@ -1,0 +1,163 @@
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { ApiError } from "./errors";
+import type { FetchLike } from "./fetch";
+import { createApiClient } from "./client";
+import { MemoryTokenStore, createCookieTokenStore } from "./token-store";
+
+type Call = { url: string; init: Parameters<FetchLike>[1] };
+type Reply = { status: number; body?: unknown; raw?: string };
+
+function fake(script: Reply[] | ((c: Call) => Reply)) {
+  const calls: Call[] = [];
+  const fetch: FetchLike = (url, init) => {
+    const call = { url, init };
+    calls.push(call);
+    const r = typeof script === "function" ? script(call) : script[calls.length - 1]!;
+    const text = r.raw ?? (r.body === undefined ? "" : JSON.stringify(r.body));
+    return Promise.resolve({
+      status: r.status,
+      headers: { get: () => null },
+      text: () => Promise.resolve(text),
+    });
+  };
+  return { calls, fetch };
+}
+
+const tokens = (extra: object = {}) => ({
+  accessToken: "acc2",
+  accessTokenExpiresAt: "2030-01-01T00:00:00.000Z",
+  ...extra,
+});
+const problem = (status: number, code: string) => ({
+  status: status,
+  body: { type: "about:blank", title: "t", status, code },
+});
+const Me = z.object({ id: z.string() });
+
+describe("auth methods", () => {
+  it("otpVerify in body transport sends transport header and stores tokens", async () => {
+    const { calls, fetch } = fake([{ status: 200, body: tokens({ refreshToken: "ref2", isNew: true }) }]);
+    const store = new MemoryTokenStore();
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body" });
+    await api.auth.otpVerify({ phone: "+521234567890", code: "123456" } as never);
+    expect(calls[0]!.url).toBe("http://x/v1/auth/otp/verify");
+    expect(calls[0]!.init.headers["x-token-transport"]).toBe("body");
+    expect(store.getAccessToken()).toBe("acc2");
+    await expect(store.getRefreshToken()).resolves.toBe("ref2");
+  });
+
+  it("cookie transport refresh uses include + csrf, no body, no transport header", async () => {
+    const { calls, fetch } = fake([{ status: 200, body: tokens() }]);
+    const store = createCookieTokenStore();
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
+    await api.auth.refresh();
+    const init = calls[0]!.init;
+    expect(calls[0]!.url).toBe("http://x/v1/auth/refresh");
+    expect(init.credentials).toBe("include");
+    expect(init.headers["x-beautyspa-csrf"]).toBe("1");
+    expect(init.headers["x-token-transport"]).toBeUndefined();
+    expect(init.body).toBeUndefined();
+    expect(store.getAccessToken()).toBe("acc2");
+  });
+
+  it("body transport refresh sends the refresh token in the body", async () => {
+    const { calls, fetch } = fake([{ status: 200, body: tokens({ refreshToken: "r3" }) }]);
+    const store = new MemoryTokenStore();
+    await store.setRefreshToken("r1");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body" });
+    await api.auth.refresh();
+    expect(JSON.parse(calls[0]!.init.body!)).toEqual({ refreshToken: "r1" });
+    expect(calls[0]!.init.headers["x-token-transport"]).toBe("body");
+    await expect(store.getRefreshToken()).resolves.toBe("r3");
+  });
+
+  it("logout clears the store even when the server returns 500", async () => {
+    const { fetch } = fake([problem(500, "INTERNAL")]);
+    const store = new MemoryTokenStore();
+    store.setAccessToken("a");
+    await store.setRefreshToken("r");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body" });
+    await expect(api.auth.logout()).rejects.toBeInstanceOf(ApiError);
+    expect(store.getAccessToken()).toBeNull();
+    await expect(store.getRefreshToken()).resolves.toBeNull();
+  });
+});
+
+describe("request", () => {
+  it("refreshes once on 401 and retries with the new bearer", async () => {
+    const { calls, fetch } = fake([
+      problem(401, "UNAUTHENTICATED"),
+      { status: 200, body: tokens() },
+      { status: 200, body: { id: "u1" } },
+    ]);
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
+    const out = await api.request({ method: "GET", path: "/me", schema: Me });
+    expect(out).toEqual({ id: "u1" });
+    expect(calls).toHaveLength(3);
+    expect(calls[0]!.url).toBe("http://x/v1/me");
+    expect(calls[0]!.init.headers.authorization).toBe("Bearer old");
+    expect(calls[1]!.init.headers.authorization).toBeUndefined();
+    expect(calls[2]!.init.headers.authorization).toBe("Bearer acc2");
+  });
+
+  it("single-flights concurrent refreshes", async () => {
+    let refreshed = false;
+    const { calls, fetch } = fake((c) => {
+      if (c.url.endsWith("/auth/refresh")) {
+        refreshed = true;
+        return { status: 200, body: tokens() };
+      }
+      return c.init.headers.authorization === "Bearer acc2"
+        ? { status: 200, body: { id: "u" } }
+        : problem(401, "UNAUTHENTICATED");
+    });
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
+    const r = await Promise.all([
+      api.request({ method: "GET", path: "/me", schema: Me }),
+      api.request({ method: "GET", path: "/me", schema: Me }),
+    ]);
+    expect(r).toEqual([{ id: "u" }, { id: "u" }]);
+    expect(refreshed).toBe(true);
+    expect(calls.filter((c) => c.url.endsWith("/auth/refresh"))).toHaveLength(1);
+  });
+
+  it("refresh failure expires the session once and rethrows the 401", async () => {
+    const { fetch } = fake((c) =>
+      c.url.endsWith("/auth/refresh") ? problem(401, "UNAUTHENTICATED") : problem(401, "UNAUTHENTICATED"),
+    );
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    await store.setRefreshToken("r");
+    const onSessionExpired = vi.fn();
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body", onSessionExpired });
+    const reqs = [
+      api.request({ method: "GET", path: "/me", schema: Me }),
+      api.request({ method: "GET", path: "/me", schema: Me }),
+    ];
+    for (const p of reqs) await expect(p).rejects.toMatchObject({ status: 401 });
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+    expect(store.getAccessToken()).toBeNull();
+    await expect(store.getRefreshToken()).resolves.toBeNull();
+  });
+
+  it("maps a 409 problem and a non-problem 502", async () => {
+    const { fetch } = fake([problem(409, "SLOT_TAKEN"), { status: 502, raw: "<html>bad gateway</html>" }]);
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: new MemoryTokenStore(), transport: "cookie" });
+    const e1 = await api.request({ method: "POST", path: "/x", body: {}, schema: null }).catch((e: unknown) => e);
+    expect((e1 as ApiError).problem.code).toBe("SLOT_TAKEN");
+    const e2 = await api.request({ method: "GET", path: "/x", schema: Me }).catch((e: unknown) => e);
+    expect(e2).toBeInstanceOf(ApiError);
+    expect((e2 as ApiError).problem.code).toBe("INTERNAL");
+  });
+
+  it("rejects when a 200 body fails the schema", async () => {
+    const { fetch } = fake([{ status: 200, body: { nope: 1 } }]);
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: new MemoryTokenStore(), transport: "cookie" });
+    await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toBeInstanceOf(z.ZodError);
+  });
+});
