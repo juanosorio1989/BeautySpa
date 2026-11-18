@@ -1,6 +1,8 @@
 # Data model (PostgreSQL 16 + Prisma)
 
-Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere; timestamps are
+Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere (append-only
+`notification_consent` and `audit_log` carry only `changed_at` / `at`; join
+tables `staff_location` and `employee_service` use a composite primary key); timestamps are
 `timestamptz` in UTC; money is integer cents (USD); translatable text is
 `jsonb` `{ "en": "...", "es": "..." }`; tenant-owned tables carry
 `organization_id` (and `location_id` where it applies).
@@ -83,6 +85,17 @@ ALTER TABLE appointment_segment
 - Prisma does not model these constraints. A test asserts both constraints exist
   after `prisma migrate deploy`, and CI fails if `prisma migrate diff` would drop
   them.
+- Implementation: migration `*_booking_constraints` (hand-written) also adds
+  `CHECK (starts_at < ends_at AND ends_at <= block_ends_at)` named
+  `segment_time_order` (violation `23514`). Prisma 6 reports neither violation
+  as a P-code: it throws `PrismaClientUnknownRequestError` and the SQLSTATE is
+  only in the message (`code: "23P01"`).
+- Drift check (`pnpm --filter @beautyspa/api db:drift`): `prisma migrate diff
+  --from-migrations --to-schema-datamodel --exit-code`. Prisma 6.19 ignores
+  exclusion and check constraints in this diff, so they never show as drift and
+  no filtering workaround is needed. The diff wipes its shadow database, so the
+  shadow is a separate `<test db>_shadow` database (created on first use, or
+  `SHADOW_DATABASE_URL`), never the integration-test database itself.
 
 ## Notifications and audit
 

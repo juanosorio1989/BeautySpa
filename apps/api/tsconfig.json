@@ -8,5 +8,10 @@
     "outDir": "dist",
     "isolatedModules": false
   },
-  "include": ["src", "test", "*.ts"]
+  "include": [
+    "src",
+    "test",
+    "prisma",
+    "*.ts"
+  ]
 }
