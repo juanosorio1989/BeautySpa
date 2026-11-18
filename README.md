@@ -1,15 +1,6 @@
 # BeautySpa
 
-Salon booking SaaS. Turborepo + pnpm monorepo (`apps/*`, `packages/*`).
+Salon booking SaaS: a multi-tenant API and apps for salons to manage services, staff, availability and bookings.
+Turborepo + pnpm monorepo (`apps/*`, `packages/*`).
 
-## Quick start
-
-```bash
-nvm use            # Node 22
-pnpm install
-cp .env.example .env
-docker compose up -d   # postgres, redis, mailpit
-pnpm lint && pnpm typecheck && pnpm test
-```
-
-Full setup docs arrive with the later foundation tasks.
+See [docs/](docs/README.md) for setup ([docs/development](docs/development/README.md)), specs and plans.
