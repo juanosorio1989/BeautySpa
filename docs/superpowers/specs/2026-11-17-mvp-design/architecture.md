@@ -79,9 +79,9 @@ Tokens (identical for web and native):
   `org`, `role` (`typ: customer` always has role `CUSTOMER`).
 - **Refresh token**: opaque random 256-bit, stored as SHA-256 only, 30 days
   (clients) / 12 h (staff). **Rotates on every use**; each belongs to a
-  `family`. Reuse of a rotated or revoked token (including two concurrent
-  refreshes with the same token) revokes the whole family and is audited as
-  `auth.refresh_reuse`.
+  `family`. Reuse of a rotated token (including two concurrent refreshes with
+  the same token) revokes the whole family and is audited as
+  `auth.refresh_reuse`. A token revoked by logout is simply refused (401).
 - **Refresh lifetime is absolute per login** **(call)**: a rotated token
   inherits `expires_at` from the token it replaces, so refreshing never extends
   a session. Clients re-verify by OTP after 30 days; staff log in again after
@@ -93,7 +93,10 @@ Tokens (identical for web and native):
     (`HttpOnly; SameSite=Lax; Path=/v1/auth`, `Secure` per `COOKIE_SECURE`,
     `Domain` per `COOKIE_DOMAIN`), never in the JSON body. Requires web and
     API under the same registrable domain (`app.example.com`,
-    `api.example.com`).
+    `api.example.com`). A refresh whose token came from the cookie always
+    answers with a cookie, even if `x-token-transport: body` is sent, and
+    CORS does not allow that header, so page script can never read a refresh
+    token.
   - Native (future): a request with header `x-token-transport: body` gets the
     refresh token in the JSON body (`refreshToken`) and no cookie; it is
     stored in SecureStore and sent back as `{ refreshToken }`.

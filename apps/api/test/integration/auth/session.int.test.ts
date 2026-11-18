@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TokenResponse } from "@beautyspa/contracts";
+import { AuditService } from "../../../src/audit/audit.service.js";
 import { AuthModule } from "../../../src/auth/auth.module.js";
 import { sha256Hex } from "../../../src/auth/crypto/tokens.js";
 import { Public } from "../../../src/auth/decorators.js";
@@ -267,5 +268,73 @@ describe("sessions: refresh rotation, transports, logout", () => {
   it("logout with an unknown token is 204", async () => {
     const res = await request(server()).post("/v1/auth/logout").set(BODY).send({ refreshToken: "unknown-token" });
     expect(res.status).toBe(204);
+  });
+
+  it("a cookie-presented token always gets a cookie back, even with x-token-transport: body", async () => {
+    const a = cookieToken(await login("customer", f.customerId));
+    const res = await refreshWithCookie(a, { ...CSRF, ...BODY });
+    expect(res.status).toBe(200);
+    expect(res.body.refreshToken).toBeUndefined();
+    expect(refreshCookie(res)).toBeDefined();
+    expect(cookieToken(res)).not.toBe(a);
+  });
+
+  it("a failed (401) cookie refresh clears the cookie", async () => {
+    const res = await refreshWithCookie("unknown-token");
+    expect(res.status).toBe(401);
+    expect(refreshCookie(res)).toMatch(/^bs_refresh=;.*Expires=Thu, 01 Jan 1970/);
+  });
+
+  it("refresh after logout is a plain 401: no reuse audit row", async () => {
+    const a = cookieToken(await login("customer", f.customerId));
+    expect((await request(server()).post("/v1/auth/logout").set("Cookie", `bs_refresh=${a}`).set(CSRF)).status).toBe(204);
+    const res = await refreshWithCookie(a);
+    expect(res.status).toBe(401);
+    expect(await ctx.prisma.auditLog.count({ where: { action: "auth.refresh_reuse" } })).toBe(0);
+    expect((await row(a))!.rotatedAt).toBeNull();
+  });
+
+  it("when both a cookie and a body token are sent, the body token is rotated", async () => {
+    const cookieA = cookieToken(await login("customer", f.customerId));
+    const bodyA = (await login("customer", f.customerId, BODY)).body.refreshToken as string;
+    const res = await request(server())
+      .post("/v1/auth/refresh")
+      .set("Cookie", `bs_refresh=${cookieA}`)
+      .set({ ...CSRF, ...BODY })
+      .send({ refreshToken: bodyA });
+    expect(res.status).toBe(200);
+    expect((await row(bodyA))!.rotatedAt).not.toBeNull();
+    expect((await row(cookieA))!.rotatedAt).toBeNull();
+  });
+});
+
+describe("refresh reuse when the audit write fails", () => {
+  let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
+
+  beforeEach(async () => {
+    ctx = await createIntegrationApp({
+      imports: [TestLoginModule],
+      override: (b) =>
+        b.overrideProvider(AuditService).useValue({
+          record: () => Promise.reject(new Error("audit store down")),
+        }),
+    });
+    await resetState(ctx.prisma, ctx.redis);
+  });
+  afterEach(async () => {
+    await ctx?.close();
+  });
+
+  it("still answers 401 and the family stays revoked", async () => {
+    const f = await seedFixture(ctx.prisma);
+    const server = ctx.app.getHttpServer();
+    const a = (await request(server).post(`/v1/test/login/customer/${f.customerId}`).set(BODY)).body
+      .refreshToken as string;
+    expect((await request(server).post("/v1/auth/refresh").set(BODY).send({ refreshToken: a })).status).toBe(200);
+    const reuse = await request(server).post("/v1/auth/refresh").set(BODY).send({ refreshToken: a });
+    expect(reuse.status).toBe(401);
+    const family = await ctx.prisma.refreshToken.findMany();
+    expect(family).toHaveLength(2);
+    expect(family.every((r) => r.revokedAt !== null)).toBe(true);
   });
 });

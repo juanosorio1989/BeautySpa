@@ -12,7 +12,12 @@ export async function configureApp(app: INestApplication, env: Env): Promise<voi
   (app as NestExpressApplication).set("trust proxy", env.TRUST_PROXY);
   app.use(helmet());
   app.use(cookieParser());
-  app.enableCors({ origin: [env.WEB_ORIGIN], credentials: true });
+  // Native clients do not use CORS, so `x-token-transport` is deliberately not allowed for browsers.
+  app.enableCors({
+    origin: [env.WEB_ORIGIN],
+    credentials: true,
+    allowedHeaders: ["authorization", "content-type", "x-beautyspa-csrf"],
+  });
   app.useGlobalPipes(new ZodValidationPipe());
   app.useGlobalFilters(new ProblemFilter());
 

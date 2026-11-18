@@ -13,13 +13,14 @@ export const REFRESH_COOKIE_PATH = "/v1/auth";
 const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
 
 /** Where the refresh token was read from on refresh/logout. */
-type Presented = { token: string; via: "cookie" | "body" } | null;
+type Presented = { token: string; via: Transport } | null;
+type Transport = "cookie" | "body";
 
 /**
  * Starts, refreshes and ends sessions. Transport: a request with header
  * `x-token-transport: body` gets the refresh token in the JSON body and no
- * cookie (native); every other request gets it only as the `bs_refresh`
- * cookie. A cookie-borne refresh token is honoured only with header
+ * cookie (native); every other request, and every refresh whose token came
+ * from the cookie, gets it only as the `bs_refresh` cookie. A cookie-borne refresh token is honoured only with header
  * `x-beautyspa-csrf: 1` (forces a CORS preflight); a body token needs no
  * CSRF header because browsers never send it implicitly.
  */
@@ -37,7 +38,7 @@ export class SessionService {
     const claims = await this.loadClaims(subject);
     if (!claims) throw unauthorized();
     const refresh = await this.refreshTokens.create(subject, requestMeta(req));
-    return this.respond(claims, refresh, req, res);
+    return this.respond(claims, refresh, this.requestedTransport(req), res);
   }
 
   async refresh(req: Request, res: Response): Promise<TokenResponse> {
@@ -50,9 +51,12 @@ export class SessionService {
         await this.refreshTokens.revokeAllFor(rotated.subject);
         throw unauthorized();
       }
-      return await this.respond(claims, rotated, req, res);
+      // A cookie-borne token never comes back in JSON, whatever the header says:
+      // page script could otherwise read a fresh refresh token (HttpOnly bypass).
+      const transport = presented.via === "cookie" ? "cookie" : this.requestedTransport(req);
+      return await this.respond(claims, rotated, transport, res);
     } catch (err) {
-      if (presented.via === "cookie") this.clearCookie(res);
+      if (presented.via === "cookie" && err instanceof UnauthorizedException) this.clearCookie(res);
       throw err;
     }
   }
@@ -95,15 +99,19 @@ export class SessionService {
     return { sub: subject.id, typ: "staff", org: staff.organizationId, role: staff.role };
   }
 
+  private requestedTransport(req: Request): Transport {
+    return req.get(AUTH_HEADERS.tokenTransport) === "body" ? "body" : "cookie";
+  }
+
   private async respond(
     claims: AccessClaims,
     refresh: { token: string; expiresAt: Date },
-    req: Request,
+    transport: Transport,
     res: Response,
   ): Promise<TokenResponse> {
     const access = await this.tokens.issueAccess(claims);
     const body: TokenResponse = { accessToken: access.token, accessTokenExpiresAt: access.expiresAt.toISOString() };
-    if (req.get(AUTH_HEADERS.tokenTransport) === "body") return { ...body, refreshToken: refresh.token };
+    if (transport === "body") return { ...body, refreshToken: refresh.token };
     res.cookie(REFRESH_COOKIE, refresh.token, { ...this.cookieOptions(), expires: refresh.expiresAt });
     return body;
   }

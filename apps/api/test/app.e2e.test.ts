@@ -130,6 +130,17 @@ describe("api skeleton", () => {
     expect(ok.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
   });
 
+  it("CORS preflight allows only the auth/CSRF headers, not x-token-transport", async () => {
+    const res = await request(app.getHttpServer())
+      .options("/v1/health")
+      .set("Origin", "http://localhost:3000")
+      .set("Access-Control-Request-Method", "POST")
+      .set("Access-Control-Request-Headers", "x-token-transport,x-beautyspa-csrf");
+    const allowed = String(res.headers["access-control-allow-headers"] ?? "").toLowerCase().split(/\s*,\s*/);
+    expect(allowed).toEqual(expect.arrayContaining(["authorization", "content-type", "x-beautyspa-csrf"]));
+    expect(allowed).not.toContain("x-token-transport");
+  });
+
   it("loadEnv({}) throws naming DATABASE_URL", () => {
     expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
   });

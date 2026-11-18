@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { AuditService } from "../audit/audit.service.js";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -15,7 +15,7 @@ export const REFRESH_TTL_MS: Record<Subject["type"], number> = {
 type RotateOutcome =
   | { kind: "ok"; subject: Subject; token: string; expiresAt: Date }
   | { kind: "invalid" }
-  | { kind: "reuse" };
+  | { kind: "reuse"; familyId: string; subject: Subject };
 
 const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
 
@@ -27,6 +27,8 @@ const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
  */
 @Injectable()
 export class RefreshTokenService {
+  private readonly logger = new Logger(RefreshTokenService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -51,40 +53,33 @@ export class RefreshTokenService {
   }
 
   /**
-   * Rotates `token`. Throws 401 `UNAUTHORIZED` when it is unknown, expired,
-   * already rotated or revoked (the last two revoke the family and write an
-   * `auth.refresh_reuse` audit row, committed before the 401 is thrown).
+   * Rotates `token`. Throws 401 `UNAUTHORIZED` when it is unknown, expired or
+   * revoked. Presenting an already rotated token (or losing a concurrent
+   * rotation) is reuse: the family revocation is committed first, then an
+   * `auth.refresh_reuse` audit row is written; an audit failure is logged and
+   * the answer is still 401.
    */
   async rotate(token: string, meta: RequestMeta): Promise<{ subject: Subject; token: string; expiresAt: Date }> {
+    const orgId = await this.tenancy.getOrgId();
     const outcome = await this.prisma.$transaction(async (tx): Promise<RotateOutcome> => {
       const now = new Date();
       const current = await tx.refreshToken.findUnique({ where: { tokenHash: sha256Hex(token) } });
       if (!current || current.expiresAt <= now) return { kind: "invalid" };
+      const subject: Subject = { type: current.subjectType, id: current.subjectId };
+      // Revoked but never rotated (logout, revokeAllFor): an ended session, not reuse.
+      if (current.revokedAt !== null && current.rotatedAt === null) return { kind: "invalid" };
 
       const claimed =
-        current.rotatedAt === null && current.revokedAt === null
+        current.rotatedAt === null
           ? await tx.refreshToken.updateMany({
               where: { id: current.id, rotatedAt: null, revokedAt: null },
               data: { rotatedAt: now },
             })
           : { count: 0 };
       if (claimed.count !== 1) {
-        // Reuse of a spent token, or a concurrent rotation that lost the race.
+        // Reuse of a rotated token, or a concurrent rotation that lost the race.
         await this.revokeFamily(tx, current.familyId, now);
-        await this.audit.record(
-          {
-            orgId: await this.tenancy.getOrgId(),
-            actorType: "SYSTEM",
-            actorId: null,
-            action: "auth.refresh_reuse",
-            entity: "refresh_token_family",
-            entityId: current.familyId,
-            after: { subjectType: current.subjectType, subjectId: current.subjectId },
-            ip: meta.ip,
-          },
-          tx,
-        );
-        return { kind: "reuse" };
+        return { kind: "reuse", familyId: current.familyId, subject };
       }
 
       const next = randomToken();
@@ -99,15 +94,32 @@ export class RefreshTokenService {
           ip: meta.ip,
         },
       });
-      return {
-        kind: "ok",
-        subject: { type: current.subjectType, id: current.subjectId },
-        token: next,
-        expiresAt: current.expiresAt,
-      };
+      return { kind: "ok", subject, token: next, expiresAt: current.expiresAt };
     });
+
+    if (outcome.kind === "reuse") await this.auditReuse(orgId, outcome.familyId, outcome.subject, meta);
     if (outcome.kind !== "ok") throw unauthorized();
     return { subject: outcome.subject, token: outcome.token, expiresAt: outcome.expiresAt };
+  }
+
+  /** Runs after the revocation committed; never turns the 401 into a 500. */
+  private async auditReuse(orgId: string, familyId: string, subject: Subject, meta: RequestMeta): Promise<void> {
+    try {
+      await this.audit.record({
+        orgId,
+        actorType: "SYSTEM",
+        actorId: null,
+        action: "auth.refresh_reuse",
+        entity: "refresh_token_family",
+        entityId: familyId,
+        after: { subjectType: subject.type, subjectId: subject.id },
+        ip: meta.ip,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `auth.refresh_reuse audit write failed for family ${familyId}: ${err instanceof Error ? err.name : "unknown error"}`,
+      );
+    }
   }
 
   /** Revokes the family `token` belongs to. No-op for an unknown token. */

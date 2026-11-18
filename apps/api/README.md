@@ -57,8 +57,10 @@ Policies sit on the handler or the controller (handler wins), metadata key `auth
   (`aud: beautyspa`, 15 min; `typ`/`role` must agree) and MFA step tokens (`aud: beautyspa-mfa`, `typ: mfa`,
   `purpose` `verify`/`enroll`, 5 min) never verify as each other.
 - `RefreshTokenService`: opaque tokens stored as SHA-256 in `refresh_token`; `create` starts a family, `rotate`
-  rotates inside one transaction (successor keeps the family and `expires_at`), reuse or a lost concurrent rotation
-  revokes the family and writes audit `auth.refresh_reuse`; `revokeFamilyOf`, `revokeAllFor`.
+  rotates inside one transaction (successor keeps the family and `expires_at`). Presenting a rotated token, or losing a
+  concurrent rotation, revokes the family (committed first), then writes audit `auth.refresh_reuse` after commit
+  (an audit failure is logged as a warning; the answer stays 401). A token revoked by logout/`revokeAllFor` is a
+  plain 401 with no audit. Also `revokeFamilyOf`, `revokeAllFor`.
 - `SessionService.start(subject, req, res)` is what login flows call; `refresh` and `logout` back
   `POST /v1/auth/refresh` (200 `TokenResponse`) and `POST /v1/auth/logout` (204, also for unknown tokens).
   A session only starts or refreshes for a customer without `deleted_at` or a staff user with `active` and
@@ -66,7 +68,10 @@ Policies sit on the handler or the controller (handler wins), metadata key `auth
 - Transport: header `x-token-transport: body` → refresh token in the JSON body, no cookie. Otherwise cookie
   `bs_refresh` (`HttpOnly`, `SameSite=Lax`, `Path=/v1/auth`, `Secure` = `COOKIE_SECURE`, `Domain` = `COOKIE_DOMAIN`)
   and no `refreshToken` in the body. A cookie is accepted on refresh/logout only with `x-beautyspa-csrf: 1`
-  (else 403); a body `refreshToken` takes precedence over the cookie.
+  (else 403); a body `refreshToken` takes precedence over the cookie. A refresh whose token came from the cookie
+  always answers with a cookie, ignoring `x-token-transport`, and a 401 on that path clears the cookie.
+  CORS (`src/bootstrap.ts`) allows only the request headers `authorization`, `content-type`, `x-beautyspa-csrf`:
+  browsers cannot send `x-token-transport` cross-origin (native clients do not use CORS).
 - `AuditService.record(entry, tx?)` (`src/audit/`) appends to `audit_log`, optionally inside a transaction. Never
   put tokens, hashes, passwords or TOTP secrets in `before`/`after`.
 
