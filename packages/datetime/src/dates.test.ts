@@ -15,4 +15,12 @@ describe("dates", () => {
   it("datesInRange throws RangeError when from > to", () => {
     expect(() => datesInRange("2026-12-02", "2026-12-01")).toThrow(RangeError);
   });
+  it("datesInRange throws RangeError on a malformed bound", () => {
+    expect(() => datesInRange("2026-12-01", "garbage")).toThrow(RangeError);
+    expect(() => datesInRange("garbage", "2026-12-01")).toThrow(RangeError);
+  });
+  it("rejects impossible dates instead of rolling over", () => {
+    expect(() => weekdayOf("2026-02-31")).toThrow(RangeError);
+    expect(() => addDays("2026-13-01", 1)).toThrow(RangeError);
+  });
 });

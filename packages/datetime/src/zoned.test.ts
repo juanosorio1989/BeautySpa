@@ -48,3 +48,20 @@ describe("todayIn", () => {
     expect(todayIn(NY, Date.parse("2026-12-08T03:00:00Z"))).toBe("2026-12-07");
   });
 });
+
+describe("validation", () => {
+  it("rejects impossible wall times", () => {
+    expect(() => wallTimeToUtc("2026-12-07", "09:60", NY)).toThrow(RangeError);
+    expect(() => wallTimeToUtc("2026-12-07", "25:00", NY)).toThrow(RangeError);
+    expect(() => wallTimeToUtc("2026-12-07", "24:01", NY)).toThrow(RangeError);
+    expect(() => wallTimeToUtc("2026-12-07", "9:00", NY)).toThrow(RangeError);
+  });
+  it("accepts 24:00 as the end of the local day", () => {
+    expect(wallTimeToUtc("2026-12-07", "24:00", NY)).toBe(wallTimeToUtc("2026-12-08", "00:00", NY));
+  });
+  it("rejects invalid time zones", () => {
+    expect(() => wallTimeToUtc("2026-12-07", "09:00", "Not/AZone")).toThrow(RangeError);
+    expect(() => utcToWall(0, "Not/AZone")).toThrow(RangeError);
+    expect(() => todayIn("Not/AZone", 0)).toThrow(RangeError);
+  });
+});

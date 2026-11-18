@@ -6,7 +6,9 @@ import type { IsoDate, WallTime, Weekday } from "./dates";
 
 /** Offset (UTC minus local, in minutes) of `timeZone` at `instant`. */
 function offsetMinutes(instant: number, timeZone: string): number {
-  return new TZDate(instant, timeZone).getTimezoneOffset();
+  const offset = new TZDate(instant, timeZone).getTimezoneOffset();
+  if (!Number.isFinite(offset)) throw new RangeError(`Invalid time zone: ${timeZone}`);
+  return offset;
 }
 
 /**
@@ -16,7 +18,11 @@ function offsetMinutes(instant: number, timeZone: string): number {
 export function wallTimeToUtc(date: IsoDate, time: WallTime, timeZone: string): number {
   const match = /^(\d{2}):(\d{2})$/.exec(time);
   if (!match) throw new RangeError(`Invalid wall time: ${time}`);
-  const wall = _isoToNoonUtc(date) - 12 * 60 * MINUTE + (Number(match[1]) * 60 + Number(match[2])) * MINUTE;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const validTime = (hours < 24 && minutes < 60) || (hours === 24 && minutes === 0);
+  if (!validTime) throw new RangeError(`Invalid wall time: ${time}`);
+  const wall = _isoToNoonUtc(date) - 12 * 60 * MINUTE + (hours * 60 + minutes) * MINUTE;
 
   const before = offsetMinutes(wall - 24 * 60 * MINUTE, timeZone);
   const after = offsetMinutes(wall + 24 * 60 * MINUTE, timeZone);
@@ -35,6 +41,7 @@ export function utcToWall(
   instant: number,
   timeZone: string,
 ): { date: IsoDate; time: WallTime; weekday: Weekday } {
+  offsetMinutes(instant, timeZone);
   const z = new TZDate(instant, timeZone);
   return {
     date: `${z.getFullYear()}-${pad(z.getMonth() + 1)}-${pad(z.getDate())}`,

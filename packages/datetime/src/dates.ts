@@ -10,7 +10,9 @@ function isoToNoonUtc(date: IsoDate): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) throw new RangeError(`Invalid ISO date: ${date}`);
   const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  return Date.UTC(y, m - 1, d, 12);
+  const ms = Date.UTC(y, m - 1, d, 12);
+  if (noonUtcToIso(ms) !== date) throw new RangeError(`Invalid ISO date: ${date}`);
+  return ms;
 }
 
 function noonUtcToIso(ms: number): IsoDate {
@@ -26,9 +28,11 @@ export function addDays(date: IsoDate, days: number): IsoDate {
 }
 
 export function datesInRange(from: IsoDate, to: IsoDate): IsoDate[] {
-  if (from > to) throw new RangeError(`Invalid range: ${from} > ${to}`);
+  const start = isoToNoonUtc(from);
+  const end = isoToNoonUtc(to);
+  if (start > end) throw new RangeError(`Invalid range: ${from} > ${to}`);
   const result: IsoDate[] = [];
-  for (let d = from; d <= to; d = addDays(d, 1)) result.push(d);
+  for (let t = start; t <= end; t += DAY) result.push(noonUtcToIso(t));
   return result;
 }
 

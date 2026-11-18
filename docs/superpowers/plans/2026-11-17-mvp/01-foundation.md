@@ -53,7 +53,7 @@ Main session: Opus 5.5 (orchestrates, does not implement normal tasks).
 
 **Files:**
 - Create: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `.nvmrc`, `.gitignore`, `.npmrc`, `.env.example`, `docker-compose.yml`, `docker/postgres/init.sql`
-- Create: `packages/config/package.json`, `packages/config/tsconfig.base.json`, `packages/config/tsconfig.platform.json`, `packages/config/tsconfig.node.json`, `packages/config/eslint.base.mjs`, `packages/config/eslint.platform.mjs`, `packages/config/vitest.preset.ts`
+- Create: `packages/config/package.json`, `packages/config/tsconfig.base.json`, `packages/config/tsconfig.platform.json`, `packages/config/tsconfig.node.json`, `packages/config/eslint.base.mjs`, `packages/config/eslint.platform.mjs`, `packages/config/vitest.preset.mjs`
 - Create: `eslint.config.mjs` (root), `README.md` (root, short; full setup in Task 8)
 
 **Interfaces:**
@@ -62,7 +62,7 @@ Main session: Opus 5.5 (orchestrates, does not implement normal tasks).
   - Turbo tasks: `build` (dependsOn `^build`, outputs `dist/**`), `dev` (persistent, no cache), `lint`, `typecheck` (dependsOn `^build`), `test` (dependsOn `^build`), `test:int` (dependsOn `^build`, no cache).
   - `@beautyspa/config/tsconfig.base.json` (strict, `noUncheckedIndexedAccess`, `moduleResolution: "Bundler"`, `target: "ES2022"`), `tsconfig.platform.json` (extends base, `lib: ["ES2022"]`, `types: []`), `tsconfig.node.json` (extends base, `types: ["node"]`).
   - `@beautyspa/config/eslint.platform.mjs`: base config + `no-restricted-imports` banning `next`, `next/*`, `@nestjs/*`, `react-dom`, `node:*`, `fs`, `path`, `crypto`, `http`.
-  - `@beautyspa/config/vitest.preset.ts`: `defineConfig({ test: { environment: "node", include: ["src/**/*.test.ts", "test/**/*.test.ts"] } })`.
+  - `@beautyspa/config/vitest.preset.mjs`: `defineConfig({ test: { environment: "node", include: ["src/**/*.test.ts", "test/**/*.test.ts"] } })`.
   - Docker Compose services: `postgres` (`postgres:16`, port 5432, user/password/db `beautyspa`, init script creates DB `beautyspa_test`), `redis` (`redis:7`, port 6379), `mailpit` (ports 1025/8025). All with healthchecks.
   - `.env.example`: `DATABASE_URL=postgresql://beautyspa:beautyspa@localhost:5432/beautyspa`, `DATABASE_URL_TEST=postgresql://beautyspa:beautyspa@localhost:5432/beautyspa_test`, `REDIS_URL=redis://localhost:6379`, `WEB_ORIGIN=http://localhost:3000`, `PORT=3001`, `NODE_ENV=development`.
 
