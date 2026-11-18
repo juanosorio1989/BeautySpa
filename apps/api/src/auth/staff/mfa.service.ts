@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import type { Request, Response } from "express";
+import type { Prisma } from "@prisma/client";
 import type { Redis } from "ioredis";
 import type {
   MfaCodeRequest,
@@ -39,6 +40,11 @@ const SPENT_STEP_SPAN = REPLAY_TTL_SEC / TOTP_STEP_SEC + 2;
 const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
 const mfaInvalid = () => new BadRequestException({ code: "MFA_INVALID", message: "Invalid code" });
 
+/** `SELECT ... FOR UPDATE` on the staff row: serializes MFA state changes of one user. */
+async function lockStaffRow(tx: Prisma.TransactionClient, staffId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM staff_user WHERE id = ${staffId}::uuid FOR UPDATE`;
+}
+
 type StaffRow = {
   id: string;
   organizationId: string;
@@ -67,9 +73,10 @@ export class MfaService {
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
-  /** New pending secret (replaces any previous pending one). 409 once enrolled. */
+  /** New pending secret (replaces any previous pending one). 409 once enrolled. Shares the per-staff MFA limit. */
   async enrollStart(body: MfaTokenRequest): Promise<MfaEnrollStartResponse> {
     const staff = await this.eligibleStaff(body.mfaToken, "enroll");
+    await this.limit(staff.id);
     if (staff.totpEnrolledAt) throw new ConflictException({ code: "CONFLICT", message: "TOTP already enrolled" });
     const secret = generateTotpSecret();
     await this.prisma.staffUser.update({
@@ -86,11 +93,21 @@ export class MfaService {
     if (staff.totpEnrolledAt || !staff.totpSecretEnc) {
       throw new ConflictException({ code: "CONFLICT", message: "No pending TOTP enrollment" });
     }
-    await this.checkCode(staff.id, staff.totpSecretEnc, body.code);
+    const verifiedSecretEnc = staff.totpSecretEnc;
+    await this.checkCode(staff.id, verifiedSecretEnc, body.code);
 
     const recoveryCodes = generateRecoveryCodes();
     await this.prisma.$transaction(async (tx) => {
-      await tx.staffUser.update({ where: { id: staff.id }, data: { totpEnrolledAt: new Date() } });
+      await lockStaffRow(tx, staff.id);
+      // Only the exact pending secret the code was checked against may be enrolled: a
+      // concurrent enrollStart (new secret) or a concurrent confirm makes this a 409.
+      const enrolled = await tx.staffUser.updateMany({
+        where: { id: staff.id, totpEnrolledAt: null, totpSecretEnc: verifiedSecretEnc },
+        data: { totpEnrolledAt: new Date() },
+      });
+      if (enrolled.count !== 1) {
+        throw new ConflictException({ code: "CONFLICT", message: "No pending TOTP enrollment" });
+      }
       await tx.staffRecoveryCode.deleteMany({ where: { staffUserId: staff.id } });
       await tx.staffRecoveryCode.createMany({
         data: recoveryCodes.map((c) => ({ staffUserId: staff.id, codeHash: hashRecoveryCode(c) })),
@@ -139,6 +156,9 @@ export class MfaService {
     const codeHash = hashRecoveryCode(body.recoveryCode);
 
     const recovered = await this.prisma.$transaction(async (tx) => {
+      // Serializes recoveries of one user (two different valid codes would otherwise
+      // race on the "delete the other codes" step and deadlock or both succeed).
+      await lockStaffRow(tx, staff.id);
       const code = await tx.staffRecoveryCode.findFirst({
         where: { staffUserId: staff.id, codeHash, usedAt: null },
         select: { id: true },

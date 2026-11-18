@@ -117,8 +117,11 @@ returns `ENROLL_REQUIRED` (no session).
 
 - Unknown email, inactive, `can_login=false`, no password or wrong password: the same 401 `Invalid email or password`
   (a dummy argon2 verify equalizes timing). Wrong password on a real account writes `auth.staff.login_failed`.
-- Limits (429 `RATE_LIMITED`): 5 failures / 15 min per email (`login:fail:<hashKeyPart(email)>`, checked before the
-  password, reset on success), 30 attempts / 15 min per IP, 5 confirm/verify/recover attempts / 5 min per staff id.
+- Limits (429 `RATE_LIMITED`): 5 attempts / 15 min per email (`login:fail:<hashKeyPart(email)>`, consumed before
+  the password check so parallel bursts get no extra guesses, reset on success), 30 attempts / 15 min per IP,
+  5 enroll/confirm/verify/recover attempts / 5 min per staff id.
+- Confirm and recover lock the `staff_user` row (`FOR UPDATE`); confirm enrolls only the exact pending secret the
+  code was checked against (else 409), so concurrent confirms or recoveries succeed once.
 - TOTP: secret AES-256-GCM encrypted (`Encryptor`, provided and exported by `AuthModule`); a wrong or replayed code
   is 400 `MFA_INVALID`; each matched step is spent once (`totp:used:<staffId>:<step>`, 120 s; cleared when a new
   secret is issued). Audit: `auth.staff.mfa_enrolled`, `auth.staff.login`, `auth.staff.recovery_used`.

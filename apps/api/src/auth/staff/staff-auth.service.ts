@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from "@nestjs/common";
+import { HttpException, HttpStatus, Injectable, UnauthorizedException, type OnModuleInit } from "@nestjs/common";
 import type { Request } from "express";
 import type { MfaStepResponse, StaffLoginRequest } from "@beautyspa/contracts";
 import { AuditService } from "../../audit/audit.service.js";
@@ -22,10 +22,12 @@ const invalidCredentials = () => new UnauthorizedException({ code: "UNAUTHORIZED
  * Unknown email, inactive, `can_login=false`, no password and wrong password all
  * answer the same 401 after an argon2 verification of similar cost. Five failures
  * per email in 15 min lock that email (429) until the window ends; a success resets.
+ * The per-email counter is consumed before the password check, so a parallel burst
+ * cannot get more than 5 guesses per window.
  */
 @Injectable()
-export class StaffAuthService {
-  private dummyHash: Promise<string> | null = null;
+export class StaffAuthService implements OnModuleInit {
+  private dummyHash = "";
 
   constructor(
     private readonly prisma: PrismaService,
@@ -40,7 +42,7 @@ export class StaffAuthService {
     const ip = requestMeta(req).ip;
     await this.rateLimit.enforce(`login:ip:${this.rateLimit.hashKeyPart(ip ?? "unknown")}`, ...LOGIN_PER_IP);
     const failKey = `login:fail:${this.rateLimit.hashKeyPart(email)}`;
-    if (await this.rateLimit.peek(failKey, LOGIN_FAILURES_PER_EMAIL[0])) {
+    if (!(await this.rateLimit.consume(failKey, ...LOGIN_FAILURES_PER_EMAIL)).allowed) {
       throw new HttpException(
         { code: "RATE_LIMITED", message: "Too many attempts, try again later" },
         HttpStatus.TOO_MANY_REQUESTS,
@@ -54,13 +56,11 @@ export class StaffAuthService {
     });
 
     if (!staff || !staff.active || !staff.canLogin || !staff.passwordHash) {
-      await verifyPassword(await this.getDummyHash(), body.password);
-      await this.rateLimit.consume(failKey, ...LOGIN_FAILURES_PER_EMAIL);
+      await verifyPassword(this.dummyHash, body.password);
       throw invalidCredentials();
     }
 
     if (!(await verifyPassword(staff.passwordHash, body.password))) {
-      await this.rateLimit.consume(failKey, ...LOGIN_FAILURES_PER_EMAIL);
       await this.audit.record({
         orgId,
         actorType: "SYSTEM",
@@ -83,14 +83,8 @@ export class StaffAuthService {
     };
   }
 
-  /** Hashed once, lazily, and reused; a failed hash is retried on the next call. */
-  private getDummyHash(): Promise<string> {
-    if (!this.dummyHash) {
-      this.dummyHash = hashPassword(DUMMY_PASSWORD_HASH_INPUT).catch((err: unknown) => {
-        this.dummyHash = null;
-        throw err;
-      });
-    }
-    return this.dummyHash;
+  /** The dummy hash for unknown/ineligible accounts, computed once at startup. */
+  async onModuleInit(): Promise<void> {
+    this.dummyHash = await hashPassword(DUMMY_PASSWORD_HASH_INPUT);
   }
 }

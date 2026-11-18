@@ -255,6 +255,62 @@ describe("staff TOTP enroll, verify, recover", () => {
     });
   });
 
+  describe("concurrency", () => {
+    it("a code for a replaced pending secret does not enroll the newer secret", async () => {
+      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD });
+      const mfaToken = await enrollToken(staff.id);
+      const a = (await post("mfa/enroll", { mfaToken })).body.secret as string;
+      const b = (await post("mfa/enroll", { mfaToken })).body.secret as string;
+      const res = await post("mfa/enroll/confirm", { mfaToken, code: totpCode(a, Date.now()) });
+      expect([400, 409]).toContain(res.status);
+      const row = await ctx.prisma.staffUser.findUniqueOrThrow({ where: { id: staff.id } });
+      expect(row.totpEnrolledAt).toBeNull();
+      expect(await ctx.prisma.staffRecoveryCode.count({ where: { staffUserId: staff.id } })).toBe(0);
+      expect(b).not.toBe(a);
+    });
+
+    it("two concurrent confirms (different valid steps) enroll exactly once", async () => {
+      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD });
+      const mfaToken = await enrollToken(staff.id);
+      const secret = (await post("mfa/enroll", { mfaToken })).body.secret as string;
+      const [r1, r2] = await Promise.all([
+        post("mfa/enroll/confirm", { mfaToken, code: totpCode(secret, Date.now()) }),
+        post("mfa/enroll/confirm", { mfaToken, code: nextStepCode(secret) }),
+      ]);
+      const statuses = [r1.status, r2.status].sort();
+      expect(statuses[0]).toBe(200);
+      expect([400, 409]).toContain(statuses[1]);
+      expect(await ctx.prisma.staffRecoveryCode.count({ where: { staffUserId: staff.id } })).toBe(10);
+      expect(await ctx.prisma.auditLog.count({ where: { action: "auth.staff.mfa_enrolled" } })).toBe(1);
+    });
+
+    it("two concurrent recoveries with different valid codes: one succeeds, the other is rejected, never 500", async () => {
+      const staff = await createStaff(ctx.prisma, f, {
+        email: "ana@salon.com",
+        role: "EMPLOYEE",
+        password: PASSWORD,
+        totpSecret: generateTotpSecret(),
+      });
+      const codes = generateRecoveryCodes();
+      await ctx.prisma.staffRecoveryCode.createMany({
+        data: codes.map((c) => ({ staffUserId: staff.id, codeHash: hashRecoveryCode(c) })),
+      });
+      const mfaToken = await verifyToken(staff.id);
+      const [r1, r2] = await Promise.all([
+        post("mfa/recover", { mfaToken, recoveryCode: codes[0]! }),
+        post("mfa/recover", { mfaToken, recoveryCode: codes[1]! }),
+      ]);
+      const ok = [r1, r2].filter((r) => r.status === 200);
+      const rejected = [r1, r2].filter((r) => r.status !== 200);
+      expect(ok).toHaveLength(1);
+      expect(ok[0]!.body.status).toBe("ENROLL_REQUIRED");
+      expect([400, 401]).toContain(rejected[0]!.status);
+      const left = await ctx.prisma.staffRecoveryCode.findMany({ where: { staffUserId: staff.id } });
+      expect(left).toHaveLength(1);
+      expect(await ctx.prisma.auditLog.count({ where: { action: "auth.staff.recovery_used" } })).toBe(1);
+    });
+  });
+
   it("full flow: login → enroll → confirm → login → verify", async () => {
     await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "OWNER", password: PASSWORD });
     const first = await post("login", { email: "ana@salon.com", password: PASSWORD });

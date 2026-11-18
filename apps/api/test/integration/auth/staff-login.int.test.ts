@@ -98,6 +98,15 @@ describe("staff password login", () => {
     expect((await login("ghost@salon.com", "x")).status).toBe(429);
   });
 
+  it("a parallel burst of wrong passwords for one email gets at most 5 guesses", async () => {
+    await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD });
+    const responses = await Promise.all(Array.from({ length: 8 }, () => login("ana@salon.com", "wrong")));
+    const statuses = responses.map((r) => r.status);
+    expect(statuses.filter((s) => s === 401).length).toBeLessThanOrEqual(5);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(8 - statuses.filter((s) => s === 401).length);
+    expect((await login("ana@salon.com", PASSWORD)).status).toBe(429);
+  });
+
   it("a successful login resets the failure counter", async () => {
     await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD });
     for (let i = 0; i < 4; i++) expect((await login("ana@salon.com", "wrong")).status).toBe(401);
