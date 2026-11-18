@@ -28,6 +28,12 @@ export interface ApiClientOptions {
   tokenStore: TokenStore;
   transport: "cookie" | "body";
   onSessionExpired?: () => void;
+  /**
+   * Optional cross-context lock around each shared refresh (the refresh request
+   * runs inside `fn`). Web passes `(fn) => navigator.locks.request("bs-refresh", fn)`
+   * so two tabs never rotate the same refresh token at once.
+   */
+  refreshLock?: <T>(fn: () => Promise<T>) => Promise<T>;
 }
 
 export interface RequestOptions<T> {
@@ -102,12 +108,23 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
   function refreshOnce(): Promise<TokenResult> {
     refreshing ??= (async () => {
       try {
-        return await doRefresh();
+        return await (opts.refreshLock ? opts.refreshLock(doRefresh) : doRefresh());
       } finally {
         refreshing = null;
       }
     })();
     return refreshing;
+  }
+
+  /** Waits for any in-flight refresh to settle (its outcome is ignored). */
+  async function settleRefresh(): Promise<void> {
+    while (refreshing) {
+      try {
+        await refreshing;
+      } catch {
+        // The refresh's own caller handles its error.
+      }
+    }
   }
 
   async function request<T>(o: RequestOptions<T>): Promise<T> {
@@ -185,12 +202,16 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     passwordReset: (b) => post("/auth/staff/password/reset", b, null),
     refresh: () => refreshOnce(),
     async logout() {
+      // A refresh still in flight would store fresh tokens after `clearStore`; let it finish
+      // first (body transport then logs out the token it just received).
+      await settleRefresh();
       try {
         const headers: Record<string, string> = transport === "cookie" ? { [AUTH_HEADERS.csrf]: "1" } : {};
         const body =
           transport === "body" ? { refreshToken: (await tokenStore.getRefreshToken()) ?? undefined } : undefined;
         await send({ method: "POST", path: "/auth/logout", ...(body ? { body } : {}), schema: null }, headers, true);
       } finally {
+        await settleRefresh();
         await clearStore();
       }
     },

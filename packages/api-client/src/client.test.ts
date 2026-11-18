@@ -251,3 +251,126 @@ describe("request", () => {
     expect(store.getAccessToken()).toBe("old");
   });
 });
+
+describe("logout vs an in-flight refresh", () => {
+  const reply = (status: number, body?: unknown) => ({
+    status,
+    headers: { get: () => null },
+    text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
+  });
+  const flush = async () => {
+    for (let i = 0; i < 100; i++) await Promise.resolve();
+  };
+
+  function gatedRefresh(refreshReply: () => ReturnType<typeof reply>) {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const calls: { url: string; body?: string }[] = [];
+    const fetch: FetchLike = async (url, init) => {
+      calls.push({ url, body: init.body });
+      if (url.endsWith("/auth/refresh")) {
+        await gate;
+        return refreshReply();
+      }
+      return reply(204);
+    };
+    return { fetch, calls, release };
+  }
+
+  it("waits for the refresh so its late tokens cannot repopulate the store, and logs out the new token", async () => {
+    const { fetch, calls, release } = gatedRefresh(() => reply(200, tokens({ refreshToken: "r2" })));
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    await store.setRefreshToken("r1");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body" });
+    const refreshed = api.auth.refresh();
+    const loggedOut = api.auth.logout();
+    await flush();
+    release();
+    await expect(refreshed).resolves.toMatchObject({ accessToken: "acc2" });
+    await loggedOut;
+    expect(store.getAccessToken()).toBeNull();
+    await expect(store.getRefreshToken()).resolves.toBeNull();
+    const logoutCall = calls.find((c) => c.url.endsWith("/auth/logout"))!;
+    expect(JSON.parse(logoutCall.body!)).toEqual({ refreshToken: "r2" });
+  });
+
+  it("still logs out and clears the store when the in-flight refresh fails", async () => {
+    const { fetch, calls, release } = gatedRefresh(() => reply(503, problem(503, "INTERNAL").body));
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    await store.setRefreshToken("r1");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body" });
+    const refreshed = api.auth.refresh().catch((e: unknown) => e);
+    const loggedOut = api.auth.logout();
+    await flush();
+    release();
+    expect(await refreshed).toBeInstanceOf(ApiError);
+    await loggedOut;
+    expect(calls.some((c) => c.url.endsWith("/auth/logout"))).toBe(true);
+    expect(store.getAccessToken()).toBeNull();
+    await expect(store.getRefreshToken()).resolves.toBeNull();
+  });
+});
+
+describe("refreshLock", () => {
+  it("runs each shared refresh once inside the lock, wrapping the fetch", async () => {
+    const events: string[] = [];
+    const { fetch } = fake((c) => {
+      events.push(`fetch ${c.url.replace("http://x/v1", "")}`);
+      if (c.url.endsWith("/auth/refresh")) return { status: 200, body: tokens() };
+      return c.init.headers.authorization === "Bearer acc2"
+        ? { status: 200, body: { id: "u" } }
+        : problem(401, "UNAUTHENTICATED");
+    });
+    let lockCalls = 0;
+    const refreshLock = async <T,>(fn: () => Promise<T>): Promise<T> => {
+      lockCalls++;
+      events.push("lock");
+      try {
+        return await fn();
+      } finally {
+        events.push("unlock");
+      }
+    };
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie", refreshLock });
+    await Promise.all([
+      api.request({ method: "GET", path: "/me", schema: Me }),
+      api.request({ method: "GET", path: "/me", schema: Me }),
+    ]);
+    expect(lockCalls).toBe(1);
+    const i = events.indexOf("fetch /auth/refresh");
+    expect(events.filter((e) => e === "fetch /auth/refresh")).toHaveLength(1);
+    expect(events[i - 1]).toBe("lock");
+    expect(events[i + 1]).toBe("unlock");
+
+    await api.auth.refresh();
+    expect(lockCalls).toBe(2);
+  });
+
+  it("a session-ending refresh inside the lock still clears the store and rejects", async () => {
+    const { fetch } = fake(() => problem(401, "UNAUTHENTICATED"));
+    let lockCalls = 0;
+    const refreshLock = <T,>(fn: () => Promise<T>): Promise<T> => {
+      lockCalls++;
+      return fn();
+    };
+    const onSessionExpired = vi.fn();
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    const api = createApiClient({
+      baseUrl: "http://x",
+      fetch,
+      tokenStore: store,
+      transport: "cookie",
+      refreshLock,
+      onSessionExpired,
+    });
+    await expect(api.auth.refresh()).rejects.toMatchObject({ status: 401 });
+    expect(lockCalls).toBe(1);
+    expect(onSessionExpired).toHaveBeenCalledTimes(1);
+    expect(store.getAccessToken()).toBeNull();
+  });
+});

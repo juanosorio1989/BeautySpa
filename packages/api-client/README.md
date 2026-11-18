@@ -13,4 +13,9 @@ Typed client for the BeautySpa API. No DOM or Node types: you inject `fetch`.
   (including an anonymous `auth.refresh()` at boot); the request then throws its original 401.
   Network errors, 5xx and 429 on refresh leave the session intact and the refresh error itself is
   thrown, so callers can tell an outage from a logout.
+- `refreshLock` (optional): `<T>(fn: () => Promise<T>) => Promise<T>`; each shared refresh runs inside it.
+  Web should pass `(fn) => navigator.locks.request("bs-refresh", fn)` (wired in plan 06) so two tabs never
+  rotate the same refresh token at once; the package itself has no DOM types.
+- `auth.logout()` first waits for an in-flight refresh (ignoring its outcome), so a late refresh can never
+  store tokens after the store was cleared; with body transport it then logs out the freshly issued token.
 - Errors are `ApiError` with a contracts `Problem` (`err.problem.code`).
