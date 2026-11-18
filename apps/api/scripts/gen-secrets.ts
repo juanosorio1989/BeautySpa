@@ -3,7 +3,7 @@
  * repo-root `.env` (copied from `.env.example` when absent). Prints only key
  * names, never values.
  */
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { addMissingSecrets, defaultGenerators } from "./secrets.js";
 
@@ -19,3 +19,5 @@ if (added.length > 0) {
 } else {
   console.log("Nothing to add");
 }
+// The file holds private keys: owner read/write only, also when it already existed.
+chmodSync(envPath, 0o600);
