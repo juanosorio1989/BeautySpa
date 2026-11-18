@@ -1,10 +1,8 @@
 import { MINUTE } from "@beautyspa/datetime";
 import { AvailabilityError } from "./errors";
 import { findServiceOrThrow } from "./lookup";
-import { beyondHorizon, candidatesFor, earliestStart, planAt, prepare } from "./plan";
+import { MAX_CHOICES, beyondHorizon, candidatesFor, earliestStart, planAt, prepare } from "./plan";
 import type { FindSlotsInput, ServiceInput, Slot } from "./types";
-
-const MAX_CHOICES = 4;
 
 export function findSlots(input: FindSlotsInput): Slot[] {
   const { choices, date, ctx } = split(input);

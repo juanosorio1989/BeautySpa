@@ -101,4 +101,29 @@ describe("validatePlan", () => {
     expect(reason(segs, c, early)).toBe("ok");
     expect(reason(segs, { ...c, override: false }, early)).toBe("EMPLOYEE_UNAVAILABLE");
   });
+  it("I2. missing resourceId is RESOURCE_UNAVAILABLE", () => {
+    const segs = plan().map((x) => ({ ...x }));
+    delete (segs[1] as Partial<PlannedSegment>).resourceId;
+    expect(validatePlan(ctx, choices, segs)).toEqual({ ok: false, reason: "RESOURCE_UNAVAILABLE" });
+  });
+  it("I3. more than 4 choices is MALFORMED_PLAN", () => {
+    const six: ServiceChoice[] = Array.from({ length: 6 }, () => ({ serviceId: gel.id, employeeId: "ANY" }));
+    const segs: PlannedSegment[] = six.map((_, i) => ({
+      serviceId: gel.id, employeeId: i % 2 ? BEA_ID : ANA_ID, resourceId: null,
+      start: at(MON, "09:00") + i * 15 * 60_000, end: at(MON, "09:15") + i * 15 * 60_000,
+      blockEnd: at(MON, "09:15") + i * 15 * 60_000, durationMin: 15, priceCents: 1500,
+    }));
+    expect(reason(segs, ctx, six)).toBe("MALFORMED_PLAN");
+  });
+  it("R6. validate rejects a dropped buffer on a chair segment", () => {
+    const onlyAna = ctx;
+    const cs = [choices[1]!, { serviceId: gel.id, employeeId: "ANY" }];
+    const t = at(MON, "09:00");
+    const m = 60_000;
+    const forged: PlannedSegment[] = [
+      { serviceId: PEDI_ID, employeeId: ANA_ID, resourceId: CHAIR_1_ID, start: t, end: t + 45 * m, blockEnd: t + 45 * m, durationMin: 45, priceCents: 4000 },
+      { serviceId: gel.id, employeeId: ANA_ID, resourceId: null, start: t + 45 * m, end: t + 60 * m, blockEnd: t + 60 * m, durationMin: 15, priceCents: 1500 },
+    ];
+    expect(reason(forged, onlyAna, cs)).toBe("MALFORMED_PLAN");
+  });
 });

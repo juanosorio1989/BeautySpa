@@ -2,9 +2,10 @@ import { localDayBoundsUtc, MINUTE, utcToWall } from "@beautyspa/datetime";
 import { AvailabilityError } from "./errors";
 import { findServiceOrThrow } from "./lookup";
 import {
-  assignResourcesCheck,
+  MAX_CHOICES,
   beyondHorizon,
   blockEnds,
+  resourcesFit,
   earliestStart,
   employeesFit,
   levelTerms,
@@ -17,7 +18,7 @@ type Result = { ok: true } | { ok: false; reason: PlanRejection };
 const fail = (reason: PlanRejection): Result => ({ ok: false, reason });
 
 export function validatePlan(ctx: Context, choices: ServiceChoice[], segments: PlannedSegment[]): Result {
-  if (choices.length === 0 || choices.length !== segments.length) return fail("MALFORMED_PLAN");
+  if (choices.length === 0 || choices.length > MAX_CHOICES || choices.length !== segments.length) return fail("MALFORMED_PLAN");
   const drafts: Draft[] = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]!;
@@ -55,17 +56,17 @@ export function validatePlan(ctx: Context, choices: ServiceChoice[], segments: P
   if (segments.some((s) => s.end > dayEnd)) return fail("MALFORMED_PLAN");
   if (!shapeOk(drafts, t)) return fail("MALFORMED_PLAN");
 
-  const blocks = blockEnds(drafts.map((d) => ({ employeeId: d.employee.id, start: d.start, end: d.end, bufferMin: d.service.bufferAfterMin })));
-  if (segments.some((s, i) => s.blockEnd !== blocks[i])) return fail("MALFORMED_PLAN");
+  const resourceIds = segments.map((sg) => sg.resourceId ?? null);
+  const needs = drafts.map((d) => d.service.resourceTypeId !== null);
+  if (needs.some((x, i) => x && resourceIds[i] === null)) return fail("RESOURCE_UNAVAILABLE");
+  if (needs.some((x, i) => !x && resourceIds[i] !== null)) return fail("MALFORMED_PLAN");
+
+  const blocks = blockEnds(drafts, resourceIds);
+  if (segments.some((sg, i) => sg.blockEnd !== blocks[i])) return fail("MALFORMED_PLAN");
 
   const p = prepare(ctx, date);
   if (!employeesFit(p, drafts, blocks)) return fail("EMPLOYEE_UNAVAILABLE");
-  const resourceIds = segments.map((s) => s.resourceId);
-  const needs = drafts.map((d) => d.service.resourceTypeId !== null);
-  if (resourceIds.some((id, i) => (id !== null) !== needs[i])) {
-    return fail(needs.some((x, i) => x && resourceIds[i] === null) ? "RESOURCE_UNAVAILABLE" : "MALFORMED_PLAN");
-  }
-  return assignResourcesCheck(p, drafts, blocks, resourceIds) ? { ok: true } : fail("RESOURCE_UNAVAILABLE");
+  return resourcesFit(p, drafts, blocks, resourceIds) ? { ok: true } : fail("RESOURCE_UNAVAILABLE");
 }
 
 /** Plan shape: fully sequential from `t`, or parallel block of all parallelizable services at `t` then the rest. */

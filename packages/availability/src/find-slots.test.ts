@@ -169,4 +169,40 @@ describe("findSlots", () => {
     const s = findSlots(base([c(PEDI_ID), c(PEDI_ID)]))[0]!;
     expect(new Set(s.segments.map((x) => x.resourceId))).toEqual(new Set([CHAIR_1_ID, CHAIR_2_ID]));
   });
+  it("C1. scarce resources do not blow up the search", () => {
+    const many = Array.from({ length: 20 }, (_, i) =>
+      makeEmployee(ana, { id: `00000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}` }),
+    );
+    const t0 = Date.now();
+    const s = findSlots(base([c(PEDI_ID), c(PEDI_ID), c(PEDI_ID), c(PEDI_ID)], {
+      mode: "STAFF", employees: many, busy: [wholeDay(CARLA_ID, CHAIR_1_ID), wholeDay(CARLA_ID, CHAIR_2_ID)],
+    }));
+    expect(s).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(200);
+  });
+  it("R6. buffer is kept when the same employee's next segment uses another/no resource", () => {
+    const onlyAna = [ana, { ...bea, timeOff: [{ start: at(MON, "00:00"), end: at("2026-12-08", "00:00") }] }];
+    // gel would have to start at pedi's end by ana, but the chair buffer keeps ana blocked
+    expect(findSlots(base([c(PEDI_ID), c(GEL_ID)], { employees: onlyAna }))).toEqual([]);
+  });
+  it("R6. buffer dropped when the same chair is reused by the same employee", () => {
+    const onlyAna = [ana, { ...bea, timeOff: [{ start: at(MON, "00:00"), end: at("2026-12-08", "00:00") }] }];
+    const s = findSlots(base([c(PEDI_ID), c(PEDI_ID)], { employees: onlyAna }))[0]!;
+    const [a, b] = s.segments;
+    expect(b!.start).toBe(a!.end);
+    expect(a!.resourceId).toBe(b!.resourceId);
+    expect(a!.blockEnd).toBe(a!.end);
+  });
+  it("R7. ANY ordering uses input busy only, not in-plan segments", () => {
+    // bea busy 1h earlier in the day: input ordering always prefers ana for every segment.
+    const s = findSlots(base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(PEDI_ID)], {
+      busy: [busy(BEA_ID, null, "09:00", "10:00")],
+      employees: [ana, bea, carla, dani],
+    }));
+    const first = s.find((x) => x.start === at(MON, "10:00"))!;
+    expect(first.segments.map((x) => x.employeeId)[0]).toBe(ANA_ID);
+    // fully sequential (4 parallelizable, 2 techs): every segment picks ana while she is free
+    const seq = findSlots(base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(MANI_ID)], { busy: [busy(BEA_ID, null, "09:00", "10:00")] }));
+    expect(seq[0]!.segments.every((x) => x.employeeId === ANA_ID)).toBe(true);
+  });
 });

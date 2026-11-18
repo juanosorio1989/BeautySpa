@@ -88,16 +88,24 @@ export interface Draft {
   priceCents: number;
 }
 
+export const MAX_CHOICES = 4;
+
 /**
- * Buffer blocks the employee/resource after a segment, except when the same employee
- * starts another segment exactly at its end (one client's back-to-back services).
+ * Buffer blocks the employee/resource after a segment, except when the same employee starts
+ * another segment exactly at its end AND the segment needs no resource or that next segment
+ * uses the same resource (a chair is never released early).
  */
-export function blockEnds(drafts: { employeeId: string; start: Ms; end: Ms; bufferMin: number }[]): Ms[] {
-  return drafts.map((d) =>
-    drafts.some((o) => o !== d && o.employeeId === d.employeeId && o.start === d.end)
-      ? d.end
-      : d.end + d.bufferMin * MINUTE,
-  );
+export function blockEnds(drafts: Draft[], resourceIds: (string | null)[]): Ms[] {
+  return drafts.map((d, i) => {
+    const dropped = drafts.some(
+      (o, j) =>
+        j !== i &&
+        o.employee.id === d.employee.id &&
+        o.start === d.end &&
+        (d.service.resourceTypeId === null || resourceIds[j] === resourceIds[i]),
+    );
+    return dropped ? d.end : d.end + d.service.bufferAfterMin * MINUTE;
+  });
 }
 
 const overlaps = (a: Interval, b: Interval): boolean => a.start < b.end && b.start < a.end;
@@ -124,28 +132,37 @@ function resourcesOfType(p: Prepared, typeId: string): ResourceInput[] {
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.id < b.id ? -1 : 1));
 }
 
-/** Assign resources with backtracking; returns resource id (or null) per draft, or null if impossible. */
-export function assignResources(p: Prepared, drafts: Draft[], blocks: Ms[]): (string | null)[] | null {
-  const result: (string | null)[] = drafts.map(() => null);
-  const rec = (i: number): boolean => {
-    if (i === drafts.length) return true;
+/**
+ * Assign resources with backtracking. With `lowerBound`, only the minimal blocks (`end`) are
+ * checked, which is a necessary condition used for pruning. Otherwise the full plan (resources
+ * and employees with the real blocks) is verified. Returns resource ids and blocks, or null.
+ */
+export function assignResources(
+  p: Prepared,
+  drafts: Draft[],
+  lowerBound: boolean,
+): { ids: (string | null)[]; blocks: Ms[] } | null {
+  const ids: (string | null)[] = drafts.map(() => null);
+  const minRange = (i: number): Interval => ({ start: drafts[i]!.start, end: drafts[i]!.end });
+  const rec = (i: number): { ids: (string | null)[]; blocks: Ms[] } | null => {
+    if (i === drafts.length) {
+      if (lowerBound) return { ids: [...ids], blocks: drafts.map((d) => d.end) };
+      const blocks = blockEnds(drafts, ids);
+      return employeesFit(p, drafts, blocks) && resourcesFit(p, drafts, blocks, ids) ? { ids: [...ids], blocks } : null;
+    }
     const d = drafts[i]!;
     if (d.service.resourceTypeId === null) return rec(i + 1);
-    const range = { start: d.start, end: blocks[i]! };
     for (const r of resourcesOfType(p, d.service.resourceTypeId)) {
-      if (!covers(p.resourceFree.get(r.id) ?? [], range)) continue;
-      let clash = false;
-      for (let j = 0; j < i; j++) {
-        if (result[j] === r.id && overlaps(range, { start: drafts[j]!.start, end: blocks[j]! })) clash = true;
-      }
-      if (clash) continue;
-      result[i] = r.id;
-      if (rec(i + 1)) return true;
-      result[i] = null;
+      if (!covers(p.resourceFree.get(r.id) ?? [], minRange(i))) continue;
+      if (ids.some((x, j) => j < i && x === r.id && overlaps(minRange(i), minRange(j)))) continue;
+      ids[i] = r.id;
+      const found = rec(i + 1);
+      if (found) return found;
+      ids[i] = null;
     }
-    return false;
+    return null;
   };
-  return rec(0) ? result : null;
+  return rec(0);
 }
 
 export type Shape = "parallel" | "sequential";
@@ -169,17 +186,15 @@ export function planAt(
 
   const finish = (): PlannedSegment[] | null => {
     const all = drafts as Draft[];
-    const blocks = blockEnds(all.map((d) => ({ employeeId: d.employee.id, start: d.start, end: d.end, bufferMin: d.service.bufferAfterMin })));
-    if (!employeesFit(p, all, blocks)) return null;
-    const resources = assignResources(p, all, blocks);
-    if (resources === null) return null;
+    const found = assignResources(p, all, false);
+    if (found === null) return null;
     return all.map((d, i) => ({
       serviceId: d.service.id,
       employeeId: d.employee.id,
-      resourceId: resources[i] ?? null,
+      resourceId: found.ids[i] ?? null,
       start: d.start,
       end: d.end,
-      blockEnd: blocks[i]!,
+      blockEnd: found.blocks[i]!,
       durationMin: d.durationMin,
       priceCents: d.priceCents,
     }));
@@ -197,6 +212,12 @@ export function planAt(
       if (!covers(p.employeeFree.get(employee.id) ?? [], { start, end })) continue;
       if (drafts.some((d) => d !== undefined && d.employee.id === employee.id && overlaps({ start, end }, d))) continue;
       drafts[idx] = { employee, service, start, end, durationMin, priceCents };
+      // Prune: placed segments must already be resource-feasible with minimal blocks.
+      const placed = drafts.filter((d): d is Draft => d !== undefined);
+      if (assignResources(p, placed, true) === null) {
+        drafts[idx] = undefined;
+        continue;
+      }
       // Parallel block ends when its last member is placed: next cursor is the max end so far.
       const nextCursor = inBlock
         ? k + 1 < n && !(services[order[k + 1]!]!.parallelizable)
@@ -212,8 +233,8 @@ export function planAt(
   return rec(0, t);
 }
 
-/** Validate caller-provided resource ids against free time, type, and in-plan overlap. */
-export function assignResourcesCheck(p: Prepared, drafts: Draft[], blocks: Ms[], ids: (string | null)[]): boolean {
+/** Check resource ids against free time, type, and in-plan overlap using the given blocks. */
+export function resourcesFit(p: Prepared, drafts: Draft[], blocks: Ms[], ids: (string | null)[]): boolean {
   for (let i = 0; i < drafts.length; i++) {
     const id = ids[i];
     const typeId = drafts[i]!.service.resourceTypeId;

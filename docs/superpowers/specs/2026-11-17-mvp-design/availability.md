@@ -54,12 +54,15 @@ Max 4 services per request **(call)**.
    - **Same-employee consecutive segments (call)**: when segment *n+1* uses
      the same employee as segment *n* and starts at its end, segment *n*'s
      block ends at its `ends_at` (no buffer between one client's back-to-back
-     services).
+     services) **only if** segment *n* needs no resource or segment *n+1* uses
+     the same resource. Otherwise the buffer stays, so a chair is never
+     released early (one `block_ends_at` per segment, as in the DB).
    - **Assignment by backtracking (call)** (at most 4 segments): candidates
      per segment are ordered by booked minutes that local day (sum of
      `block_ends_at - starts_at` of the employee's busy segments starting that
      day, ascending; counted from the input busy list only, not from segments
-     of the plan being built), then by id. Resources are tried by name. A
+     of the plan being built), then by id. Resources are tried by name. Branches
+     that are already resource-infeasible (minimal blocks) are pruned early. A
      parallel block needs distinct employees; a sequential plan may reuse one.
 5. **Employee choice for "ANY"** **(call)**: among free qualified employees, pick
    the one with the fewest booked minutes that day; ties by stable id order.
