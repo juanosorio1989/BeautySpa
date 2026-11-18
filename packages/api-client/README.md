@@ -11,5 +11,6 @@ Typed client for the BeautySpa API. No DOM or Node types: you inject `fetch`.
 - A 401 on an authed call triggers one shared refresh (also shared with `auth.refresh()`) and one retry.
   `onSessionExpired` fires, and the store is cleared, only when a refresh is answered 401 or 403
   (including an anonymous `auth.refresh()` at boot); the request then throws its original 401.
-  Network errors, 5xx and 429 on refresh are rethrown and leave the session intact.
+  Network errors, 5xx and 429 on refresh leave the session intact and the refresh error itself is
+  thrown, so callers can tell an outage from a logout.
 - Errors are `ApiError` with a contracts `Problem` (`err.problem.code`).

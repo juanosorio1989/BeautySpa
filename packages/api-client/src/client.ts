@@ -125,9 +125,11 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       }
       try {
         await refreshOnce();
-      } catch {
-        // refresh() already cleared the store and notified; surface the original 401
-        throw err;
+      } catch (refreshErr) {
+        // Session ended (refresh answered 401/403): surface the original 401.
+        // Any other refresh failure (network, 5xx, 429) is rethrown as is.
+        if (refreshErr instanceof ApiError && (refreshErr.status === 401 || refreshErr.status === 403)) throw err;
+        throw refreshErr;
       }
       return send(o, {}, true);
     }

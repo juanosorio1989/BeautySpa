@@ -179,20 +179,36 @@ describe("request", () => {
     await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toBeInstanceOf(z.ZodError);
   });
 
-  it("public auth.refresh() shares the in-flight refresh with a 401 retry", async () => {
-    const { calls, fetch } = fake((c) => {
-      if (c.url.endsWith("/auth/refresh")) return { status: 200, body: tokens() };
-      return c.init.headers.authorization === "Bearer acc2"
-        ? { status: 200, body: { id: "u" } }
-        : problem(401, "UNAUTHENTICATED");
+  it("public auth.refresh() joins a refresh already in flight", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const urls: string[] = [];
+    const reply = (status: number, body: unknown) => ({
+      status,
+      headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify(body)),
     });
+    const fetch: FetchLike = async (url, init) => {
+      urls.push(url);
+      if (url.endsWith("/auth/refresh")) {
+        await gate;
+        return reply(200, tokens());
+      }
+      return init.headers.authorization === "Bearer acc2"
+        ? reply(200, { id: "u" })
+        : reply(401, problem(401, "UNAUTHENTICATED").body);
+    };
     const store = new MemoryTokenStore();
     store.setAccessToken("old");
     const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
-    const [t, me] = await Promise.all([api.auth.refresh(), api.request({ method: "GET", path: "/me", schema: Me })]);
-    expect(t.accessToken).toBe("acc2");
-    expect(me).toEqual({ id: "u" });
-    expect(calls.filter((c) => c.url.endsWith("/auth/refresh"))).toHaveLength(1);
+    const me = api.request({ method: "GET", path: "/me", schema: Me });
+    for (let i = 0; i < 100 && !urls.some((u) => u.endsWith("/auth/refresh")); i++) await Promise.resolve();
+    expect(urls.some((u) => u.endsWith("/auth/refresh"))).toBe(true);
+    const t = api.auth.refresh();
+    release();
+    await expect(me).resolves.toEqual({ id: "u" });
+    await expect(t).resolves.toMatchObject({ accessToken: "acc2" });
+    expect(urls.filter((u) => u.endsWith("/auth/refresh"))).toHaveLength(1);
   });
 
   it("a late 401 after a finished refresh retries without a second refresh", async () => {
@@ -229,7 +245,7 @@ describe("request", () => {
     await store.setRefreshToken("r");
     const onSessionExpired = vi.fn();
     const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body", onSessionExpired });
-    await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toMatchObject({ status: 401 });
+    await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toMatchObject({ status: 503 });
     expect(onSessionExpired).not.toHaveBeenCalled();
     await expect(store.getRefreshToken()).resolves.toBe("r");
     expect(store.getAccessToken()).toBe("old");
