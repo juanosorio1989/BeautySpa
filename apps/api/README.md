@@ -23,6 +23,6 @@ The booking exclusion constraints are raw SQL in `prisma/migrations/*_booking_co
 | `db:generate` | regenerate the Prisma client (also runs on `postinstall`) |
 | `test:int` | integration tests (`vitest.int.config.mts`, `test/integration/**/*.int.test.ts`) against `DATABASE_URL_TEST` |
 
-`test:int` applies pending migrations to `DATABASE_URL_TEST` (database name must contain `test`) and truncates all tables before each test.
+`test:int` applies pending migrations to `DATABASE_URL_TEST` (database name must contain `test` as a `_`-separated word, e.g. `beautyspa_test`, and differ from `DATABASE_URL`) and truncates all tables before each test. The drift check refuses a shadow database whose name lacks `shadow`/`test` or that equals `DATABASE_URL`.
 If you edit an already-applied migration locally, reset the test database by hand:
 `DATABASE_URL=$DATABASE_URL_TEST pnpm exec prisma migrate reset`.

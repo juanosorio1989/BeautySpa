@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 import swc from "unplugin-swc";
 
-// Integration tests: real PostgreSQL at DATABASE_URL_TEST (database is reset once per run).
+// Integration tests: real PostgreSQL at DATABASE_URL_TEST (pending migrations applied once per run, tables truncated per test).
 export default defineConfig({
   plugins: [swc.vite({ module: { type: "es6" } })],
   test: {

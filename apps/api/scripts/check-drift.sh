@@ -26,6 +26,17 @@ if [[ -z "${SHADOW_DATABASE_URL:-}" ]]; then
     || { echo "check-drift: could not create shadow database $shadow_db" >&2; echo "$out" >&2; exit 1; }
 fi
 
+# The shadow database is wiped: refuse anything that does not look disposable.
+shadow_name="$(node -e 'console.log(new URL(process.argv[1]).pathname.slice(1))' "$SHADOW_DATABASE_URL")"
+if [[ "$shadow_name" != *shadow* && "$shadow_name" != *test* ]]; then
+  echo "check-drift: refusing shadow database \"$shadow_name\" (name must contain \"shadow\" or \"test\")" >&2
+  exit 1
+fi
+if [[ -n "${DATABASE_URL:-}" && "$SHADOW_DATABASE_URL" == "$DATABASE_URL" ]]; then
+  echo "check-drift: refusing shadow database equal to DATABASE_URL" >&2
+  exit 1
+fi
+
 set +e
 pnpm exec prisma migrate diff \
   --from-migrations prisma/migrations \

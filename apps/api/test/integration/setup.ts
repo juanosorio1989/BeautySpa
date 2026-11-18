@@ -20,13 +20,26 @@ export default function setup(): void {
   });
 }
 
-/** DATABASE_URL_TEST, refusing anything whose database name does not contain "test". */
+/**
+ * DATABASE_URL_TEST, refusing any URL that could point at real data: the
+ * database name must contain "test" as a whole `_`-separated word and the URL
+ * must differ from DATABASE_URL.
+ */
 export function testDatabaseUrl(): string {
   const url = process.env.DATABASE_URL_TEST;
   if (!url) throw new Error("DATABASE_URL_TEST is required for integration tests");
   const dbName = new URL(url).pathname.replace(/^\//, "");
-  if (!dbName.includes("test")) {
-    throw new Error(`Refusing to reset database "${dbName}": name must contain "test"`);
+  if (!/(^|_)test(_|$)/.test(dbName)) {
+    throw new Error(`Refusing to use database "${dbName}": name must contain "test" (e.g. app_test)`);
+  }
+  if (process.env.DATABASE_URL && sameDatabase(url, process.env.DATABASE_URL)) {
+    throw new Error("Refusing to use DATABASE_URL_TEST: it points at the same database as DATABASE_URL");
   }
   return url;
+}
+
+function sameDatabase(a: string, b: string): boolean {
+  const ua = new URL(a);
+  const ub = new URL(b);
+  return ua.host === ub.host && ua.pathname === ub.pathname;
 }

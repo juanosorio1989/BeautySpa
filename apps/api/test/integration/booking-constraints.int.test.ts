@@ -67,6 +67,18 @@ describe("appointment_segment booking constraints", () => {
     expect(await prisma.appointmentSegment.count()).toBe(2);
   });
 
+  it("ignores a non-occupying segment on a shared resource", async () => {
+    await bookSegment(prisma, f, {
+      staffUserId: f.staffA,
+      startsAt: "10:00",
+      endsAt: "11:00",
+      resourceId: f.resource1,
+      occupies: false,
+    });
+    await bookSegment(prisma, f, { staffUserId: f.staffB, startsAt: "10:30", endsAt: "11:30", resourceId: f.resource1 });
+    expect(await prisma.appointmentSegment.count()).toBe(2);
+  });
+
   it("allows different employees overlapping when both have no resource", async () => {
     await bookSegment(prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00", resourceId: null });
     await bookSegment(prisma, f, { staffUserId: f.staffB, startsAt: "10:30", endsAt: "11:30", resourceId: null });

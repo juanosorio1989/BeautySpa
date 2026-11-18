@@ -27,7 +27,8 @@ export function pgCode(err: unknown): string | undefined {
   const e = err as { meta?: Record<string, unknown>; cause?: { code?: unknown }; message?: string };
   const metaCode = e.meta?.code;
   if (typeof metaCode === "string" && /^[0-9A-Z]{5}$/.test(metaCode)) return metaCode;
-  if (typeof e.cause?.code === "string") return e.cause.code;
+  const causeCode = e.cause?.code;
+  if (typeof causeCode === "string" && /^[0-9A-Z]{5}$/.test(causeCode)) return causeCode;
   return /code: "([0-9A-Z]{5})"/.exec(e.message ?? "")?.[1];
 }
 
@@ -46,6 +47,7 @@ export interface Fixture {
   staffA: string;
   staffB: string;
   serviceId: string;
+  resourceTypeId: string;
   resource1: string;
   resource2: string;
   customerId: string;
@@ -68,10 +70,10 @@ export async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
     data: { organizationId: org.id, name: { en: "Pedicure chair", es: "Silla de pedicura" } },
   });
   const resource1 = await prisma.resource.create({
-    data: { locationId: location.id, resourceTypeId: resourceType.id, name: "Chair 1" },
+    data: { organizationId: org.id, locationId: location.id, resourceTypeId: resourceType.id, name: "Chair 1" },
   });
   const resource2 = await prisma.resource.create({
-    data: { locationId: location.id, resourceTypeId: resourceType.id, name: "Chair 2" },
+    data: { organizationId: org.id, locationId: location.id, resourceTypeId: resourceType.id, name: "Chair 2" },
   });
   const service = await prisma.service.create({
     data: {
@@ -92,6 +94,7 @@ export async function seedFixture(prisma: PrismaClient): Promise<Fixture> {
     staffA: staffA.id,
     staffB: staffB.id,
     serviceId: service.id,
+    resourceTypeId: resourceType.id,
     resource1: resource1.id,
     resource2: resource2.id,
     customerId: customer.id,
@@ -122,6 +125,7 @@ export function bookSegment(prisma: PrismaClient, f: Fixture, s: SegmentInput) {
       source: "ONLINE",
       segments: {
         create: {
+          organizationId: f.orgId,
           serviceId: f.serviceId,
           staffUserId: s.staffUserId,
           resourceId: s.resourceId ?? null,
