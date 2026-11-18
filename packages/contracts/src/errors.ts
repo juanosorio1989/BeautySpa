@@ -9,6 +9,8 @@ export const ErrorCode = z.enum([
   "SLOT_TAKEN",
   "HOLD_EXPIRED",
   "OTP_INVALID",
+  "MFA_INVALID",
+  "LINK_INVALID",
   "OUTSIDE_CANCEL_WINDOW",
   "CONFLICT",
   "BAD_REQUEST",
