@@ -66,7 +66,10 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
 Staff lifecycle **(call)**:
 - Technicians who never log in: `can_login = false`, no credentials; they still
   have schedules and appointments.
-- First OWNER: CLI `pnpm --filter api create-owner` prints a one-time invite link.
+- First OWNER: CLI `pnpm --filter @beautyspa/api create-owner --email <e> [--locale en|es]`
+  creates the OWNER, or for an existing OWNER with that email clears password,
+  TOTP, recovery codes and sessions; either way it prints a fresh 72 h invite
+  link. It refuses an email that belongs to a non-owner.
 - OWNER invites staff by email (Resend): single-use link, 72 h, to set a password
   and enroll TOTP. Password reset: same mechanism, 1 h link.
 - Lost TOTP device: one of 10 recovery codes issued at enrollment, or the OWNER

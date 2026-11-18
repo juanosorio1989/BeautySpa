@@ -126,6 +126,31 @@ returns `ENROLL_REQUIRED` (no session).
   is 400 `MFA_INVALID`; each matched step is spent once (`totp:used:<staffId>:<step>`, 120 s; cleared when a new
   secret is issued). Audit: `auth.staff.mfa_enrolled`, `auth.staff.login`, `auth.staff.recovery_used`.
 
+### Staff links (invite, password reset) and OWNER actions
+
+`StaffLinksService` (`src/auth/staff/staff-links.service.ts`). Links are `${WEB_ORIGIN}/<locale>/staff/invite?token=`
+(72 h) or `/staff/reset?token=` (1 h), locale from `staff_user.locale`; 32 random bytes base64url, only the sha256
+hex is stored in `staff_auth_token`; a new link marks older unused ones of the same purpose used.
+
+- `POST /v1/auth/staff/invite/accept` `{ token, password }` → 200 `ENROLL_REQUIRED` (or `MFA_REQUIRED` if enrolled);
+  sets the password and `can_login`. `password/forgot` `{ email }` → always 204; only an active, `can_login`,
+  password-holding member gets a reset email; over 3 per email per hour nothing is sent. `password/reset`
+  `{ token, password }` → 204, revokes every session. All `@Public()`, 10 requests / 15 min per IP each (429).
+- Unknown, used, expired, wrong-purpose or inactive-staff links: 400 `LINK_INVALID`. The link is spent by a
+  conditional update inside the transaction, so concurrent uses succeed once.
+- `POST /v1/staff/employees/:id/invite` and `/:id/reset-2fa`: `@StaffAuth("OWNER")`, 204, `:id` a UUID (400).
+  Invite: 404 outside the org, 409 without email, inactive or with a password. Reset-2FA: 403 on yourself, clears
+  TOTP and recovery codes and revokes sessions.
+- Audit: `auth.staff.invite_accepted`, `auth.staff.password_reset`, `staff.invite`, `staff.reset_2fa`
+  (`before: { totpEnrolled }`), `staff.owner_cli` (SYSTEM). Never tokens or passwords.
+- Mail (`src/mail/`, global `MAILER`): `ConsoleMailer` (dev/test; logs the text, keeps the last 50 in `sent`) or
+  `ResendMailer` (`EMAIL_PROVIDER=resend`). Copy in `src/auth/staff/emails.ts` (EN/ES).
+- CLI `src/cli/create-owner.ts` (`pnpm --filter @beautyspa/api create-owner --email <e> [--locale en|es]`): see
+  [docs/development](../../docs/development/README.md#first-owner).
+
+Tests: `src/mail/resend.mailer.test.ts`, `src/cli/create-owner.test.ts`,
+`test/integration/auth/{staff-links,owner-cli}.int.test.ts`.
+
 ## Auth crypto
 
 Plain functions in `src/auth/crypto/` (`node:crypto`, plus `@node-rs/argon2`):

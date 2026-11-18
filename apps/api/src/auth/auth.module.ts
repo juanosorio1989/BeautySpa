@@ -16,8 +16,11 @@ import { RefreshTokenService } from "./refresh-token.service.js";
 import { SessionController } from "./session.controller.js";
 import { SessionService } from "./session.service.js";
 import { MfaService } from "./staff/mfa.service.js";
+import { StaffAdminController } from "./staff/staff-admin.controller.js";
 import { StaffAuthController } from "./staff/staff-auth.controller.js";
 import { StaffAuthService } from "./staff/staff-auth.service.js";
+import { StaffLinksController } from "./staff/staff-links.controller.js";
+import { StaffLinksService } from "./staff/staff-links.service.js";
 import { TokenService } from "./token.service.js";
 
 /** `loadEnv` already refuses `console`/`fake` in production and `fake` outside tests. */
@@ -34,7 +37,7 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
 
 @Module({
   imports: [AuditModule],
-  controllers: [SessionController, OtpController, StaffAuthController],
+  controllers: [SessionController, OtpController, StaffAuthController, StaffLinksController, StaffAdminController],
   providers: [
     TokenService,
     RefreshTokenService,
@@ -42,6 +45,7 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
     OtpService,
     StaffAuthService,
     MfaService,
+    StaffLinksService,
     {
       provide: Encryptor,
       inject: [ENV],
@@ -50,6 +54,6 @@ function otpProviderFactory(env: Env, redis: Redis): OtpProvider {
     { provide: OTP_PROVIDER, inject: [ENV, REDIS], useFactory: otpProviderFactory },
     { provide: APP_GUARD, useClass: AccessGuard },
   ],
-  exports: [TokenService, RefreshTokenService, SessionService, Encryptor],
+  exports: [TokenService, RefreshTokenService, SessionService, Encryptor, StaffLinksService],
 })
 export class AuthModule {}
