@@ -63,7 +63,7 @@ One final branch review (`reviewer-opus`). Not a money/production-data branch.
 | OTP start per phone | 3 | 600 s | 429 `RATE_LIMITED` |
 | OTP start per IP | 10 | 3600 s | 429 |
 | OTP verify per phone | 5 | 600 s | 429 |
-| Staff login failures per email | 5 | 900 s | 429 until the window ends (lockout); success resets |
+| Staff login attempts per email | 5 | 900 s | 429 until the window ends (lockout); counted before the password check (race-safe), success resets |
 | Staff login per IP | 30 | 900 s | 429 |
 | MFA verify/confirm/recover per staff id | 5 | 300 s | 429 |
 | Password forgot per email | 3 | 3600 s | still 204, no email sent |
@@ -285,7 +285,7 @@ Phone and email in Redis keys are replaced by the first 16 hex chars of their sh
 **Interfaces:**
 - Consumes: `hashPassword`, `verifyPassword`, `Encryptor` (provided in `AuthModule` from `env.DATA_ENCRYPTION_KEY`/`_ID`), `generateTotpSecret`, `verifyTotp`, `otpauthUrl`, recovery-code functions, `TokenService.issueMfa/verifyMfa`, `SessionService.start`, `RateLimitService`, `AuditService`, `TenancyService`.
 - Produces:
-  - `StaffAuthService.login(body: StaffLoginRequest, req): Promise<MfaStepResponse>` — if `rl:login:fail:<hash(email)>` is blocked (`peek(key, 5)`) → 429; per-IP limit; find `staff_user` by org + email; missing, `active=false`, `can_login=false` or no `password_hash` → still run `verifyPassword(dummyHash, pw)`, count a failure, 401 `{ code: "UNAUTHORIZED", message: "Invalid email or password" }`; wrong password → count failure, audit `auth.staff.login_failed` (entity `staff_user`), same 401; success → `reset` failure key; `totp_enrolled_at` set → `MFA_REQUIRED` + `issueMfa(id, org, "verify")`, else `ENROLL_REQUIRED` + `issueMfa(id, org, "enroll")`.
+  - `StaffAuthService.login(body: StaffLoginRequest, req): Promise<MfaStepResponse>` — per-IP limit; then `consume(rl:login:fail:<hash(email)>, 5, 900)` before the password check, not allowed → 429 (decided in review: check-then-count was racy); find `staff_user` by org + email; missing, `active=false`, `can_login=false` or no `password_hash` → still run `verifyPassword(dummyHash, pw)`, count a failure, 401 `{ code: "UNAUTHORIZED", message: "Invalid email or password" }`; wrong password → count failure, audit `auth.staff.login_failed` (entity `staff_user`), same 401; success → `reset` failure key; `totp_enrolled_at` set → `MFA_REQUIRED` + `issueMfa(id, org, "verify")`, else `ENROLL_REQUIRED` + `issueMfa(id, org, "enroll")`.
   - `MfaService.enrollStart(mfaToken): Promise<MfaEnrollStartResponse>` — enroll purpose; 409 `CONFLICT` if already enrolled; stores a new encrypted secret in `totp_secret_enc` (pending while `totp_enrolled_at` is null; re-calling replaces it).
   - `MfaService.enrollConfirm(body: MfaCodeRequest, req, res): Promise<MfaEnrollConfirmResponse>` — enroll purpose; per-staff limit; no pending secret → 409; code checked with `verifyTotp` + replay guard → else 400 `MFA_INVALID`; in one transaction set `totp_enrolled_at`, delete old recovery codes, insert 10 new hashes; audit `auth.staff.mfa_enrolled`; `SessionService.start`; return tokens + plaintext codes.
   - `MfaService.verify(body: MfaCodeRequest, req, res): Promise<TokenResponse>` — verify purpose; per-staff limit; re-check `active` and `can_login`; TOTP + replay guard → else 400 `MFA_INVALID`; audit `auth.staff.login`; session.
