@@ -168,8 +168,9 @@ describe("sessions: refresh rotation, transports, logout", () => {
     expect(JSON.stringify(audit)).not.toContain(a);
     expect(JSON.stringify(audit)).not.toContain(sha256Hex(a));
 
-    // The successor died with the family; presenting it is reuse too.
+    // The successor was revoked with the family but never rotated: a plain 401, not reuse (no second audit row).
     expect((await refreshWithBody(b)).status).toBe(401);
+    expect(await ctx.prisma.auditLog.count({ where: { action: "auth.refresh_reuse" } })).toBe(1);
   });
 
   it("two concurrent refreshes with the same token: exactly one wins", async () => {

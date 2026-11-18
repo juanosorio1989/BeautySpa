@@ -23,7 +23,9 @@ const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
  * Opaque refresh tokens (32 random bytes, base64url). Only `sha256Hex(token)` is
  * stored. Each login starts a family; every refresh rotates the token within
  * the family and the successor inherits `expires_at` (absolute lifetime per
- * login). Presenting a rotated or revoked token revokes the whole family.
+ * login). Only reuse revokes the whole family: presenting an already rotated
+ * token, or losing a concurrent claim on the same token. A token that is only
+ * revoked (logout, `revokeAllFor`, a family already revoked) is a plain 401.
  */
 @Injectable()
 export class RefreshTokenService {
