@@ -72,6 +72,26 @@ describe("auth methods", () => {
     await expect(store.getRefreshToken()).resolves.toBe("r3");
   });
 
+  it("cookie logout sends csrf + include and no body", async () => {
+    const { calls, fetch } = fake([{ status: 204 }]);
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: createCookieTokenStore(), transport: "cookie" });
+    await api.auth.logout();
+    const init = calls[0]!.init;
+    expect(calls[0]!.url).toBe("http://x/v1/auth/logout");
+    expect(init.headers["x-beautyspa-csrf"]).toBe("1");
+    expect(init.credentials).toBe("include");
+    expect(init.body).toBeUndefined();
+  });
+
+  it("body logout sends the refresh token", async () => {
+    const { calls, fetch } = fake([{ status: 204 }]);
+    const store = new MemoryTokenStore();
+    await store.setRefreshToken("r1");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body" });
+    await api.auth.logout();
+    expect(JSON.parse(calls[0]!.init.body!)).toEqual({ refreshToken: "r1" });
+  });
+
   it("logout clears the store even when the server returns 500", async () => {
     const { fetch } = fake([problem(500, "INTERNAL")]);
     const store = new MemoryTokenStore();
@@ -127,9 +147,7 @@ describe("request", () => {
   });
 
   it("refresh failure expires the session once and rethrows the 401", async () => {
-    const { fetch } = fake((c) =>
-      c.url.endsWith("/auth/refresh") ? problem(401, "UNAUTHENTICATED") : problem(401, "UNAUTHENTICATED"),
-    );
+    const { fetch } = fake(() => problem(401, "UNAUTHENTICATED"));
     const store = new MemoryTokenStore();
     store.setAccessToken("old");
     await store.setRefreshToken("r");
@@ -159,5 +177,61 @@ describe("request", () => {
     const { fetch } = fake([{ status: 200, body: { nope: 1 } }]);
     const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: new MemoryTokenStore(), transport: "cookie" });
     await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toBeInstanceOf(z.ZodError);
+  });
+
+  it("public auth.refresh() shares the in-flight refresh with a 401 retry", async () => {
+    const { calls, fetch } = fake((c) => {
+      if (c.url.endsWith("/auth/refresh")) return { status: 200, body: tokens() };
+      return c.init.headers.authorization === "Bearer acc2"
+        ? { status: 200, body: { id: "u" } }
+        : problem(401, "UNAUTHENTICATED");
+    });
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
+    const [t, me] = await Promise.all([api.auth.refresh(), api.request({ method: "GET", path: "/me", schema: Me })]);
+    expect(t.accessToken).toBe("acc2");
+    expect(me).toEqual({ id: "u" });
+    expect(calls.filter((c) => c.url.endsWith("/auth/refresh"))).toHaveLength(1);
+  });
+
+  it("a late 401 after a finished refresh retries without a second refresh", async () => {
+    let releaseB: () => void = () => {};
+    const gate = new Promise<void>((r) => (releaseB = r));
+    const calls: string[] = [];
+    const fetch: FetchLike = async (url, init) => {
+      calls.push(`${url} ${init.headers.authorization ?? "-"}`);
+      const reply = (status: number, body: unknown) => ({
+        status,
+        headers: { get: () => null },
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+      if (url.endsWith("/auth/refresh")) return reply(200, tokens());
+      if (init.headers.authorization === "Bearer acc2") return reply(200, { id: "u" });
+      if (url.endsWith("/b")) await gate;
+      return reply(401, problem(401, "UNAUTHENTICATED").body);
+    };
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
+    const b = api.request({ method: "GET", path: "/b", schema: Me });
+    await api.request({ method: "GET", path: "/a", schema: Me }); // 401 -> refresh -> retry
+    releaseB();
+    await expect(b).resolves.toEqual({ id: "u" });
+    expect(calls.filter((c) => c.includes("/auth/refresh"))).toHaveLength(1);
+    expect(calls[calls.length - 1]).toBe("http://x/v1/b Bearer acc2");
+  });
+
+  it("a 503 on refresh does not expire the session", async () => {
+    const { fetch } = fake((c) => (c.url.endsWith("/auth/refresh") ? problem(503, "INTERNAL") : problem(401, "UNAUTHENTICATED")));
+    const store = new MemoryTokenStore();
+    store.setAccessToken("old");
+    await store.setRefreshToken("r");
+    const onSessionExpired = vi.fn();
+    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "body", onSessionExpired });
+    await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toMatchObject({ status: 401 });
+    expect(onSessionExpired).not.toHaveBeenCalled();
+    await expect(store.getRefreshToken()).resolves.toBe("r");
+    expect(store.getAccessToken()).toBe("old");
   });
 });

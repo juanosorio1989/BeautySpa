@@ -66,7 +66,7 @@ export interface ApiClient {
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {
   const { baseUrl, tokenStore, transport } = opts;
-  let refreshing: Promise<void> | null = null;
+  let refreshing: Promise<TokenResult> | null = null;
 
   async function send<T>(
     o: RequestOptions<T>,
@@ -99,10 +99,10 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     await tokenStore.setRefreshToken(null);
   }
 
-  function refreshOnce(): Promise<void> {
+  function refreshOnce(): Promise<TokenResult> {
     refreshing ??= (async () => {
       try {
-        await refresh();
+        return await doRefresh();
       } finally {
         refreshing = null;
       }
@@ -112,10 +112,17 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
 
   async function request<T>(o: RequestOptions<T>): Promise<T> {
     const authed = o.auth !== false;
+    const sentToken = authed ? tokenStore.getAccessToken() : null;
     try {
       return await send(o, {}, authed);
     } catch (err) {
       if (!authed || !(err instanceof ApiError) || err.status !== 401) throw err;
+      const current = tokenStore.getAccessToken();
+      if (current !== sentToken) {
+        // another call already refreshed while this one was in flight
+        if (current === null) throw err;
+        return send(o, {}, true);
+      }
       try {
         await refreshOnce();
       } catch {
@@ -126,7 +133,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     }
   }
 
-  async function refresh(): Promise<TokenResult> {
+  async function doRefresh(): Promise<TokenResult> {
     try {
       const headers: Record<string, string> =
         transport === "body"
@@ -142,8 +149,10 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       await storeTokens(t);
       return t;
     } catch (err) {
-      await clearStore();
-      opts.onSessionExpired?.();
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        await clearStore();
+        opts.onSessionExpired?.();
+      }
       throw err;
     }
   }
@@ -172,7 +181,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     inviteAccept: (b) => post("/auth/staff/invite/accept", b, MfaStepResponseSchema),
     passwordForgot: (b) => post("/auth/staff/password/forgot", b, null),
     passwordReset: (b) => post("/auth/staff/password/reset", b, null),
-    refresh,
+    refresh: () => refreshOnce(),
     async logout() {
       try {
         const headers: Record<string, string> = transport === "cookie" ? { [AUTH_HEADERS.csrf]: "1" } : {};
