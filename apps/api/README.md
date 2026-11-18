@@ -37,6 +37,21 @@ Tests build config with `testEnv(overrides)` (`test/support/test-env.ts`: throwa
 Integration tests use `createIntegrationApp({ env, imports, override })` and `resetState(prisma, redis)` from
 `test/integration/app.ts`.
 
+## Auth crypto
+
+Plain functions in `src/auth/crypto/` (`node:crypto`, plus `@node-rs/argon2`):
+
+- `Encryptor` (`encryption.ts`): AES-256-GCM, 32-byte key (`DATA_ENCRYPTION_KEY`), random 12-byte IV, 16-byte tag;
+  payload `<keyId>.<b64url iv>.<b64url ciphertext||tag>`. Errors: `Unknown encryption key id`, `Decryption failed`.
+- TOTP (`totp.ts`): RFC 6238, HMAC-SHA1, 30 s, 6 digits, 20-byte base32 secret; `verifyTotp` accepts +-1 step
+  (constant-time) and returns the matched step for replay checks. Issuer `BeautySpa` in `otpauthUrl`.
+- Base32 (`base32.ts`): RFC 4648, uppercase, no padding; decode is case-insensitive and ignores spaces/`=`.
+- Passwords (`password.ts`): argon2id, m=19456 KiB, t=2, p=1; `verifyPassword` returns false on a malformed hash.
+  Hash `DUMMY_PASSWORD_HASH_INPUT` once at startup to equalize timing for unknown users.
+- Tokens (`tokens.ts`): `randomToken` = 32 random bytes base64url; store only `sha256Hex` of it.
+- Recovery codes (`recovery-codes.ts`): 10 codes of 80 bits, `xxxx-xxxx-xxxx-xxxx` lowercase base32; stored as
+  SHA-256 hex of the normalized code (lowercase, no spaces or dashes).
+
 ## Database (Prisma 6, PostgreSQL 16)
 
 Schema: `prisma/schema.prisma` (spec: `docs/superpowers/specs/2026-11-17-mvp-design/data-model.md`).
