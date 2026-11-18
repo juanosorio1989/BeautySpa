@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint typecheck test build
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: beautyspa
+          POSTGRES_PASSWORD: beautyspa
+          POSTGRES_DB: beautyspa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beautyspa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://beautyspa:beautyspa@localhost:5432/beautyspa
+      DATABASE_URL_TEST: postgresql://beautyspa:beautyspa@localhost:5432/beautyspa_test
+      REDIS_URL: redis://localhost:6379
+      WEB_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create test database
+        run: psql -h localhost -U beautyspa -d beautyspa -c 'CREATE DATABASE beautyspa_test'
+        env:
+          PGPASSWORD: beautyspa
+      - run: pnpm turbo run build --filter=@beautyspa/api...
+      - run: pnpm --filter @beautyspa/api db:deploy
+      - run: pnpm --filter @beautyspa/api test:int
+      - run: pnpm --filter @beautyspa/api db:drift

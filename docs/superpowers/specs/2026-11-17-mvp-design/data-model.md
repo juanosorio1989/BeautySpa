@@ -1,6 +1,8 @@
 # Data model (PostgreSQL 16 + Prisma)
 
-Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere; timestamps are
+Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere (append-only
+`notification_consent` and `audit_log` carry only `changed_at` / `at`; join
+tables `staff_location` and `employee_service` use a composite primary key); timestamps are
 `timestamptz` in UTC; money is integer cents (USD); translatable text is
 `jsonb` `{ "en": "...", "es": "..." }`; tenant-owned tables carry
 `organization_id` (and `location_id` where it applies).
@@ -11,8 +13,21 @@ Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere; timestamps are
 |---|---|
 | `organization` | `name`, `slug` (unique), `default_locale` |
 | `location` | `organization_id`, `name`, `address`, `phone`, `timezone` (IANA), `settings` jsonb: `slotIntervalMin` (15), `holdMinutes` (5), `cancelWindowHours` (24), `bookingHorizonDays` (60), `minLeadMinutes` (60) |
-| `location_hours` | `location_id`, `weekday` 0–6, `opens` time, `closes` time |
+| `location_hours` | `location_id`, `weekday` 0–6, `opens` time, `closes` time. An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00". |
 | `location_closure` | `location_id`, `starts_at`, `ends_at`, `reason` |
+
+**Tenancy columns.** Top-level tables and the hot child tables `resource`,
+`appointment_segment`, `working_hours`, `time_off` and `notification_consent`
+carry `organization_id` directly (NOT NULL, FK, indexed) so the busiest queries
+filter by tenant without a join. All other child tables (`location_hours`,
+`staff_location`, `employee_profile`, `service_level_price`, ...) inherit
+tenancy through their parent; RLS will join through it.
+
+**Deletes keep history.** FKs from history rows are `ON DELETE RESTRICT`:
+`appointment.customer_id`, `appointment_segment.resource_id`,
+`service.resource_type_id` and `notification_consent.customer_id` (consent is
+evidence). Customers are soft-deleted (`deleted_at`); resources are
+deactivated (`active = false`).
 
 ## Staff and auth
 
@@ -25,16 +40,16 @@ Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere; timestamps are
 | `level` | `organization_id`, `name` jsonb, `rank` (e.g. Junior, Senior) |
 | `employee_profile` | `staff_user_id` (PK), `display_name`, `bio` jsonb, `photo_url`, `level_id`, `bookable_online` |
 | `employee_service` | `staff_user_id`, `service_id` — what each employee can do |
-| `working_hours` | `staff_user_id`, `location_id`, `weekday`, `start_time`, `end_time` (local wall time). Several rows per day = breaks are gaps. |
-| `time_off` | `staff_user_id`, `location_id` (nullable = all locations), `starts_at`, `ends_at`, `kind` (`VACATION`, `BLOCK`), `note`. Recurring breaks are gaps in `working_hours`; one-off breaks are `BLOCK`. |
+| `working_hours` | `organization_id`, `staff_user_id`, `location_id`, `weekday`, `start_time`, `end_time` (local wall time; An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".) Several rows per day = breaks are gaps. |
+| `time_off` | `organization_id`, `staff_user_id`, `location_id` (nullable = all locations), `starts_at`, `ends_at`, `kind` (`VACATION`, `BLOCK`), `note`. Recurring breaks are gaps in `working_hours`; one-off breaks are `BLOCK`. |
 | `refresh_token` | `subject_type` (`customer`/`staff`), `subject_id`, `family_id`, `token_hash` (unique), `expires_at`, `rotated_at`, `revoked_at`, `user_agent`, `ip` |
 
 ## Customers
 
 | Table | Key columns |
 |---|---|
-| `customer` | `organization_id`, `phone_e164` (unique per org), `name`, `email` (optional), `locale`, `phone_verified_at`, `created_via` (`ONLINE`, `RECEPTION`), `private_notes_enc` (staff-only, encrypted), `deleted_at` |
-| `notification_consent` | `customer_id`, `channel` (`WHATSAPP`, `SMS`, `EMAIL`), `granted`, `source` (`BOOKING_FORM`, `PROFILE`, `RECEPTION`, `INBOUND_STOP`), `changed_at`. Append-only history; current state = latest row per channel. |
+| `customer` | `organization_id`, `phone_e164` (unique per org), `name` (nullable: the row is created at OTP verify, before the name step), `email` (optional), `locale`, `phone_verified_at`, `created_via` (`ONLINE`, `RECEPTION`), `private_notes_enc` (staff-only, encrypted), `deleted_at` |
+| `notification_consent` | `organization_id`, `customer_id`, `channel` (`WHATSAPP`, `SMS`, `EMAIL`), `granted`, `source` (`BOOKING_FORM`, `PROFILE`, `RECEPTION`, `INBOUND_STOP`), `changed_at`. Append-only history; current state = latest row per channel. |
 
 ## Catalog and resources
 
@@ -44,14 +59,14 @@ Conventions: UUID v7 ids; `created_at`/`updated_at` everywhere; timestamps are
 | `service` | `organization_id`, `category_id`, `name` jsonb, `description` jsonb, `duration_min`, `buffer_after_min`, `price_cents`, `parallelizable` bool, `resource_type_id` (nullable), `online_bookable`, `active` |
 | `service_level_price` | `service_id`, `level_id`, `duration_min`, `price_cents` — overrides by level |
 | `resource_type` | `organization_id`, `name` jsonb (e.g. Pedicure chair) |
-| `resource` | `location_id`, `resource_type_id`, `name`, `active` |
+| `resource` | `organization_id`, `location_id`, `resource_type_id`, `name`, `active` |
 
 ## Appointments
 
 | Table | Key columns |
 |---|---|
 | `appointment` | `organization_id`, `location_id`, `customer_id` (nullable while `HELD` anonymous), `status` (`HELD`, `BOOKED`, `CHECKED_IN`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), `source` (`ONLINE`, `RECEPTION`, `WALK_IN`), `hold_expires_at`, `confirmed_by_customer_at`, `manage_version` int, `notes`, `created_by_staff_id`, `cancelled_at`, `cancel_reason`, `cancelled_by` |
-| `appointment_segment` | `appointment_id`, `service_id`, `staff_user_id`, `resource_id` (nullable), `starts_at`, `ends_at`, `block_ends_at` (= `ends_at` + buffer), `duration_min`, `price_cents` (snapshots), `occupies` bool |
+| `appointment_segment` | `organization_id`, `appointment_id`, `service_id`, `staff_user_id`, `resource_id` (nullable), `starts_at`, `ends_at`, `block_ends_at` (`ends_at + buffer_after_min`, or `ends_at` when the buffer is dropped for a same-employee back-to-back segment (see availability.md); the API always stores `blockEnd` from the validated plan, never recomputes it), `duration_min`, `price_cents` (snapshots), `occupies` bool |
 
 ### No double booking (raw SQL migration)
 
@@ -83,13 +98,24 @@ ALTER TABLE appointment_segment
 - Prisma does not model these constraints. A test asserts both constraints exist
   after `prisma migrate deploy`, and CI fails if `prisma migrate diff` would drop
   them.
+- Implementation: migration `*_booking_constraints` (hand-written) also adds
+  `CHECK (starts_at < ends_at AND ends_at <= block_ends_at)` named
+  `segment_time_order` (violation `23514`). Prisma 6 reports neither violation
+  as a P-code: it throws `PrismaClientUnknownRequestError` and the SQLSTATE is
+  only in the message (`code: "23P01"`).
+- Drift check (`pnpm --filter @beautyspa/api db:drift`): `prisma migrate diff
+  --from-migrations --to-schema-datamodel --exit-code`. Prisma 6.19 ignores
+  exclusion and check constraints in this diff, so they never show as drift and
+  no filtering workaround is needed. The diff wipes its shadow database, so the
+  shadow is a separate `<test db>_shadow` database (created on first use, or
+  `SHADOW_DATABASE_URL`), never the integration-test database itself.
 
 ## Notifications and audit
 
 | Table | Key columns |
 |---|---|
 | `notification_log` | `organization_id`, `appointment_id`, `customer_id`, `template_key`, `locale`, `channel`, `provider`, `provider_message_id`, `status` (`QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `SKIPPED`), `error`, `attempts`, `sent_at`, `updated_at` |
-| `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id`, `before` jsonb, `after` jsonb, `ip`, `at`. Append-only. |
+| `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only. |
 
 ## Encryption
 

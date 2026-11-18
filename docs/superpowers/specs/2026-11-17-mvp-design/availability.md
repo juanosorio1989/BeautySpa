@@ -18,8 +18,10 @@ findSlots({
   now,
 }) -> Slot[]
 
-Slot = { startsAt, endsAt, segments: [{ serviceId, employeeId, resourceId?, startsAt, endsAt, blockEndsAt, durationMin, priceCents }] }
+Slot = { start, end, segments: [{ serviceId, employeeId, resourceId, start, end, blockEnd, durationMin, priceCents }] }
 ```
+
+The engine works in epoch milliseconds (`start`/`end`/`blockEnd`); the API converts at its edge to the contracts' ISO fields (`startsAt`/`endsAt`/`blockEndsAt`).
 
 Max 4 services per request **(call)**.
 
@@ -51,6 +53,29 @@ Max 4 services per request **(call)**.
      type over the same range.
    - Duration and price come from the employee's level override, else the
      service default.
+   - **Same-employee consecutive segments (call)**: when segment *n+1* uses
+     the same employee as segment *n* and starts at its end, segment *n*'s
+     block ends at its `ends_at` (no buffer between one client's back-to-back
+     services) **only if** segment *n* needs no resource or segment *n+1* uses
+     the same resource. Otherwise the buffer stays, so a chair is never
+     released early (one `block_ends_at` per segment, as in the DB).
+   - **Assignment by backtracking (call)** (at most 4 segments): candidates
+     per segment are ordered by booked minutes that local day (sum of
+     `block_ends_at - starts_at` of the employee's busy segments starting that
+     day, ascending; counted from the input busy list only, not from segments
+     of the plan being built), then by id. Resources are tried by name. Branches
+     that are already infeasible are pruned early using a sound lower bound of
+     each placed block (the buffer is kept unless it can still be dropped).
+   - **Symmetry reduction (call)**: at each depth only one candidate per
+     equivalence class is tried. Two employees are equivalent when they have
+     the same level terms (duration, price) for this and every remaining
+     choice, the same candidacy for every remaining choice, and identical free
+     intervals for the day; employees already used in the plan are never
+     merged. The representative is the first in the ordering above.
+   - **Node budget (call)**: at most `MAX_NODES_PER_START = 5000` search nodes
+     per start time and shape; beyond it that start yields no plan. This can
+     hide a valid slot only in pathological schedules. A
+     parallel block needs distinct employees; a sequential plan may reuse one.
 5. **Employee choice for "ANY"** **(call)**: among free qualified employees, pick
    the one with the fewest booked minutes that day; ties by stable id order.
    Resource choice: first free by name.
@@ -62,7 +87,7 @@ Max 4 services per request **(call)**.
 `mode = 'STAFF'` ignores `minLeadMinutes`, `bookingHorizonDays`,
 `online_bookable`, and `bookable_online`. Walk-in uses it with `t` = now rounded
 down to the slot grid. Staff may also book outside working hours / time off /
-location hours with an explicit `override: true` on the request (UI asks "Book
+location hours **and location closures** with an explicit `override: true` on the request (UI asks "Book
 outside {name}'s hours?"); the override is written to the audit log. Overlaps are
 never allowed (DB constraint).
 
