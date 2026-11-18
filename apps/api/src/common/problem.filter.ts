@@ -8,11 +8,19 @@ const STATUS_CODES: Record<number, ErrorCode> = {
   401: "UNAUTHORIZED",
   403: "FORBIDDEN",
   404: "NOT_FOUND",
+  409: "CONFLICT",
   429: "RATE_LIMITED",
 };
 
 function codeForStatus(status: number): ErrorCode {
-  return STATUS_CODES[status] ?? "INTERNAL";
+  return STATUS_CODES[status] ?? (status >= 400 && status < 500 ? "BAD_REQUEST" : "INTERNAL");
+}
+
+// body-parser / http-errors shape: numeric 4xx status plus string type
+function isHttpError(e: unknown): e is { status: number; type: string } {
+  if (typeof e !== "object" || e === null) return false;
+  const { status, type } = e as { status?: unknown; type?: unknown };
+  return typeof status === "number" && status >= 400 && status < 500 && typeof type === "string";
 }
 
 @Catch()
@@ -43,7 +51,16 @@ export class ProblemFilter implements ExceptionFilter {
         title: HttpStatus[status]?.replaceAll("_", " ") ?? "Error",
         status,
         code,
-        ...(typeof detail === "string" ? { detail } : {}),
+        ...(status < 500 && typeof detail === "string" ? { detail } : {}),
+      };
+    }
+    if (isHttpError(exception)) {
+      const status = exception.status;
+      return {
+        type: "about:blank",
+        title: HttpStatus[status]?.replaceAll("_", " ") ?? "Bad Request",
+        status,
+        code: codeForStatus(status),
       };
     }
     return { type: "about:blank", title: "Internal Server Error", status: 500, code: "INTERNAL" };

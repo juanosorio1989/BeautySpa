@@ -3,7 +3,7 @@
 REST, JSON, versioned by path. OpenAPI generated from `packages/contracts`,
 served at `/v1/docs` (and `/v1/openapi.json`). Errors are
 `application/problem+json` with a stable `code` (e.g. `SLOT_TAKEN`,
-`HOLD_EXPIRED`, `OTP_INVALID`, `OUTSIDE_CANCEL_WINDOW`, `FORBIDDEN`).
+`HOLD_EXPIRED`, `OTP_INVALID`, `OUTSIDE_CANCEL_WINDOW`, `FORBIDDEN`, `CONFLICT`, `BAD_REQUEST`, `VALIDATION_FAILED`, `NOT_FOUND`, `UNAUTHORIZED`, `RATE_LIMITED`, `INTERNAL`).
 
 ## Auth
 

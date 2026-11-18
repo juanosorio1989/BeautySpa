@@ -10,6 +10,8 @@ export const ErrorCode = z.enum([
   "HOLD_EXPIRED",
   "OTP_INVALID",
   "OUTSIDE_CANCEL_WINDOW",
+  "CONFLICT",
+  "BAD_REQUEST",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

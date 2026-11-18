@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Body, Controller, INestApplication, Module, Post } from "@nestjs/common";
+import { Body, ConflictException, Controller, Get, INestApplication, Module, Post } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { createZodDto } from "nestjs-zod";
@@ -17,6 +17,16 @@ class EchoController {
   @Post()
   echo(@Body() body: EchoDto) {
     return body;
+  }
+
+  @Get("conflict")
+  conflict(): never {
+    throw new ConflictException({ code: "SLOT_TAKEN" });
+  }
+
+  @Get("boom")
+  boom(): never {
+    throw new Error("secret detail");
   }
 }
 
@@ -68,6 +78,8 @@ describe("api skeleton", () => {
     const res = await request(app.getHttpServer()).post("/v1/echo").send({});
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
     expect(res.body.errors[0].path).toBe("name");
   });
 
@@ -79,6 +91,34 @@ describe("api skeleton", () => {
     expect(res.status).toBe(400);
     expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
     expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
+  it("oversized body returns 413 BAD_REQUEST problem", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/v1/echo")
+      .send({ name: "x".repeat(200_000) });
+    expect(res.status).toBe(413);
+    expect(res.headers["content-type"]).toMatch(/^application\/problem\+json/);
+    expect(res.body.code).toBe("BAD_REQUEST");
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
+  it("custom code on HttpException is preserved", async () => {
+    const res = await request(app.getHttpServer()).get("/v1/echo/conflict");
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("SLOT_TAKEN");
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
+  it("unknown error returns 500 INTERNAL without leaking details", async () => {
+    const res = await request(app.getHttpServer()).get("/v1/echo/boom");
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("INTERNAL");
+    expect(res.body.detail).toBeUndefined();
+    expect(res.text).not.toContain("secret detail");
+    expect(res.text).not.toMatch(/at /);
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
   });
 
   it("CORS rejects unknown origin and echoes the allowed one", async () => {
