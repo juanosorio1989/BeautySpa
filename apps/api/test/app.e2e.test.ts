@@ -1,5 +1,6 @@
 import "reflect-metadata";
-import { BadRequestException, Body, ConflictException, Controller, Get, INestApplication, Module, Post } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Get, INestApplication, Module, Post, Req } from "@nestjs/common";
+import type { Request } from "express";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { createZodDto } from "nestjs-zod";
@@ -37,6 +38,11 @@ class EchoController {
   @Get("bad-errors")
   badErrors(): never {
     throw new BadRequestException({ code: "VALIDATION_FAILED", errors: [{ path: 1, secret: "x" }] });
+  }
+
+  @Get("ip")
+  ip(@Req() req: Request) {
+    return { ip: req.ip };
   }
 
   @Get("boom")
@@ -174,5 +180,30 @@ describe("api skeleton", () => {
 
   it("loadEnv({}) throws naming DATABASE_URL", () => {
     expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
+  });
+});
+
+describe("trust proxy", () => {
+  const ipWith = async (trustProxy: string, xff: string): Promise<string> => {
+    const moduleRef = await Test.createTestingModule({ imports: [TestModule] }).compile();
+    const app = moduleRef.createNestApplication();
+    await configureApp(app, testEnv({ TRUST_PROXY: trustProxy }));
+    await app.init();
+    try {
+      const res = await request(app.getHttpServer()).get("/v1/echo/ip").set("X-Forwarded-For", xff);
+      return res.body.ip as string;
+    } finally {
+      await app.close();
+    }
+  };
+
+  it("TRUST_PROXY=1 uses the right-most X-Forwarded-For entry, not a forged left-most one", async () => {
+    expect(await ipWith("1", "6.6.6.6, 203.0.113.7")).toBe("203.0.113.7");
+  });
+
+  it("TRUST_PROXY=false ignores X-Forwarded-For", async () => {
+    const ip = await ipWith("false", "6.6.6.6, 203.0.113.7");
+    expect(ip).not.toBe("6.6.6.6");
+    expect(ip).not.toBe("203.0.113.7");
   });
 });

@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -14,7 +16,13 @@ import { RateLimitService } from "../../rate-limit/rate-limit.service.js";
 import { TenancyService } from "../../tenancy/tenancy.service.js";
 import { requestMeta } from "../request-meta.js";
 import { SessionService } from "../session.service.js";
-import { OTP_PROVIDER, type OtpChannel, type OtpProvider } from "./otp-provider.js";
+import {
+  OTP_PROVIDER,
+  OtpInvalidRecipientError,
+  OtpProviderRateLimitedError,
+  type OtpChannel,
+  type OtpProvider,
+} from "./otp-provider.js";
 
 /** Rate limits: [limit, window seconds]. */
 const START_PER_PHONE = [3, 600] as const;
@@ -22,6 +30,9 @@ const START_PER_IP = [10, 3600] as const;
 const VERIFY_PER_PHONE = [5, 600] as const;
 
 const US_ONLY = "Only US phone numbers are supported";
+const INVALID_US = "Enter a valid US phone number";
+/** NANP: +1, area code and exchange each start with 2-9. Non-US NANP ranges are left to Twilio Geo Permissions and Fraud Guard. */
+const NANP = /^\+1[2-9]\d{2}[2-9]\d{6}$/;
 const CHANNELS: readonly OtpChannel[] = ["whatsapp", "sms"];
 
 /**
@@ -54,6 +65,9 @@ export class OtpService {
       } catch (err) {
         // Provider errors carry only a status by contract; never log the phone or the code.
         this.logger.warn(`OTP start over ${channel} failed: ${err instanceof Error ? err.message : "unknown error"}`);
+        // Only an unavailable channel (typed, or any untyped error) falls back to the next one.
+        if (err instanceof OtpInvalidRecipientError) throw phoneError(INVALID_US);
+        if (err instanceof OtpProviderRateLimitedError) throw rateLimited();
       }
     }
     throw new ServiceUnavailableException();
@@ -66,7 +80,7 @@ export class OtpService {
   ): Promise<OtpVerifyResponse> {
     assertUsPhone(req.phone);
     await this.rateLimit.enforce(`otp:verify:phone:${this.rateLimit.hashKeyPart(req.phone)}`, ...VERIFY_PER_PHONE);
-    if (!(await this.provider.check(req.phone, req.code))) throw new BadRequestException({ code: "OTP_INVALID" });
+    if (!(await this.checkCode(req.phone, req.code))) throw new BadRequestException({ code: "OTP_INVALID" });
 
     const orgId = await this.tenancy.getOrgId();
     const key = { organizationId_phoneE164: { organizationId: orgId, phoneE164: req.phone } };
@@ -104,6 +118,17 @@ export class OtpService {
     return { ...tokens, isNew };
   }
 
+  /** Provider rate limit → 429; any other provider failure → 503. */
+  private async checkCode(phone: string, code: string): Promise<boolean> {
+    try {
+      return await this.provider.check(phone, code);
+    } catch (err) {
+      this.logger.warn(`OTP check failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      if (err instanceof OtpProviderRateLimitedError) throw rateLimited();
+      throw new ServiceUnavailableException();
+    }
+  }
+
   private async defaultLocale(orgId: string): Promise<string> {
     const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { defaultLocale: true } });
     return org.defaultLocale;
@@ -111,11 +136,17 @@ export class OtpService {
 }
 
 function assertUsPhone(phone: string): void {
-  if (!phone.startsWith("+1")) {
-    throw new BadRequestException({
-      code: "VALIDATION_FAILED",
-      message: US_ONLY,
-      errors: [{ path: "phone", message: US_ONLY }],
-    });
-  }
+  if (!phone.startsWith("+1")) throw phoneError(US_ONLY);
+  if (!NANP.test(phone)) throw phoneError(INVALID_US);
+}
+
+function phoneError(message: string): BadRequestException {
+  return new BadRequestException({ code: "VALIDATION_FAILED", message, errors: [{ path: "phone", message }] });
+}
+
+function rateLimited(): HttpException {
+  return new HttpException(
+    { code: "RATE_LIMITED", message: "Too many attempts, try again later" },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
 }

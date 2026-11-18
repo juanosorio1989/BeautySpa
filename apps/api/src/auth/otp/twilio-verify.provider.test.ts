@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { testEnv } from "../../../test/support/test-env.js";
+import {
+  OtpInvalidRecipientError,
+  OtpProviderRateLimitedError,
+  OtpProviderUnavailableError,
+} from "./otp-provider.js";
 import { TwilioVerifyProvider } from "./twilio-verify.provider.js";
 
 const SID = "ACtest0000000000000000000000000000";
@@ -33,11 +38,63 @@ describe("TwilioVerifyProvider", () => {
     expect(headers.get("content-type")).toBe("application/x-www-form-urlencoded");
   });
 
-  it("start throws on non-2xx without the response body", async () => {
+  it("start and check pass a 10 s abort signal to fetch", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetchFn = fakeFetch(200, { status: "approved" });
+    const provider = new TwilioVerifyProvider(env, fetchFn);
+    await provider.start("+13055550100", "sms", "en");
+    await provider.check("+13055550100", "123456");
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    for (const [, init] of fetchFn.mock.calls) expect(init.signal).toBeInstanceOf(AbortSignal);
+    timeout.mockRestore();
+  });
+
+  it("start maps 400 to OtpInvalidRecipientError without the response body", async () => {
     const fetchFn = fakeFetch(400, { message: "body-secret-detail" });
     const err = await new TwilioVerifyProvider(env, fetchFn).start("+13055550100", "sms", "en").catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(OtpInvalidRecipientError);
     expect((err as Error).message).toBe("Twilio Verify start failed: 400");
+  });
+
+  it("start maps 429 to OtpProviderRateLimitedError", async () => {
+    const err = await new TwilioVerifyProvider(env, fakeFetch(429, {})).start("+13055550100", "sms", "en").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderRateLimitedError);
+    expect((err as Error).message).toBe("Twilio Verify start failed: 429");
+  });
+
+  it.each([500, 503, 401, 403])("start maps %i to OtpProviderUnavailableError", async (status) => {
+    const err = await new TwilioVerifyProvider(env, fakeFetch(status, { message: "body-secret-detail" }))
+      .start("+13055550100", "whatsapp", "en")
+      .catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((err as Error).message).toBe(`Twilio Verify start failed: ${status}`);
+  });
+
+  it("start maps a network error to OtpProviderUnavailableError without the cause text", async () => {
+    const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
+      throw new TypeError("fetch failed: secret-host-detail");
+    });
+    const err = await new TwilioVerifyProvider(env, fetchFn).start("+13055550100", "whatsapp", "en").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((err as Error).message).toBe("Twilio Verify start failed: network");
+  });
+
+  it("start maps a timeout (AbortSignal.timeout) to OtpProviderUnavailableError", async () => {
+    const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    const err = await new TwilioVerifyProvider(env, fetchFn).start("+13055550100", "whatsapp", "en").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((err as Error).message).toBe("Twilio Verify start failed: timeout");
+  });
+
+  it("start maps an AbortError to OtpProviderUnavailableError", async () => {
+    const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
+      throw new DOMException("This operation was aborted", "AbortError");
+    });
+    const err = await new TwilioVerifyProvider(env, fetchFn).start("+13055550100", "sms", "en").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((err as Error).message).toBe("Twilio Verify start failed: timeout");
   });
 
   it("check posts To/Code to VerificationCheck and returns true when approved", async () => {
@@ -58,6 +115,33 @@ describe("TwilioVerifyProvider", () => {
     await expect(
       new TwilioVerifyProvider(env, fakeFetch(404, { code: 20404 })).check("+13055550100", "123456"),
     ).resolves.toBe(false);
+  });
+
+  it("check maps 429 to OtpProviderRateLimitedError", async () => {
+    const err = await new TwilioVerifyProvider(env, fakeFetch(429, {})).check("+13055550100", "123456").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderRateLimitedError);
+    expect((err as Error).message).toBe("Twilio Verify check failed: 429");
+  });
+
+  it.each([400, 401, 500, 503])("check maps %i to OtpProviderUnavailableError", async (status) => {
+    const err = await new TwilioVerifyProvider(env, fakeFetch(status, {})).check("+13055550100", "123456").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((err as Error).message).toBe(`Twilio Verify check failed: ${status}`);
+  });
+
+  it("check maps a network error or timeout to OtpProviderUnavailableError", async () => {
+    const network = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const timeout = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    const e1 = await new TwilioVerifyProvider(env, network).check("+13055550100", "123456").catch((e: Error) => e);
+    const e2 = await new TwilioVerifyProvider(env, timeout).check("+13055550100", "123456").catch((e: Error) => e);
+    expect(e1).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((e1 as Error).message).toBe("Twilio Verify check failed: network");
+    expect(e2).toBeInstanceOf(OtpProviderUnavailableError);
+    expect((e2 as Error).message).toBe("Twilio Verify check failed: timeout");
   });
 
   it("check throws on 500 without the response body or the token", async () => {

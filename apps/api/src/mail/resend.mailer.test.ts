@@ -35,4 +35,24 @@ describe("ResendMailer", () => {
     expect((err as Error).message).toBe("Resend send failed: 422");
     expect((err as Error).message).not.toContain("body-secret-detail");
   });
+
+  it("passes a 10 s abort signal to fetch", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetchFn = fakeFetch(200, { id: "abc" });
+    await new ResendMailer(env, fetchFn).send({ to: "ana@salon.com", subject: "Hi", text: "Body" });
+    expect(timeout).toHaveBeenCalledWith(10_000);
+    expect(fetchFn.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
+    timeout.mockRestore();
+  });
+
+  it.each(["TimeoutError", "AbortError"])("a %s throws Resend send failed: timeout", async (name) => {
+    const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
+      throw new DOMException("aborted", name);
+    });
+    const err = await new ResendMailer(env, fetchFn)
+      .send({ to: "ana@salon.com", subject: "Hi", text: "Body" })
+      .catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe("Resend send failed: timeout");
+  });
 });

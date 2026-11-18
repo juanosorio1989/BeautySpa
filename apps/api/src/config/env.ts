@@ -1,4 +1,5 @@
 import { createPrivateKey } from "node:crypto";
+import { isIP } from "node:net";
 import { z } from "zod";
 
 /** Nest injection token for the validated `Env` (provided by the global `ConfigModule`). */
@@ -18,6 +19,39 @@ const ed25519KeyB64 = z.string().refine((v) => {
     return false;
   }
 }, "must be a base64 PKCS#8 DER Ed25519 private key");
+
+/** One IPv4/IPv6 address, optionally with a CIDR prefix length. */
+function isIpOrCidr(v: string): boolean {
+  const [addr, prefix, ...rest] = v.split("/");
+  if (rest.length > 0 || !addr) return false;
+  const family = isIP(addr);
+  if (family === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d{1,3}$/.test(prefix)) return false;
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+}
+
+/**
+ * Express `trust proxy`: `"false"` → false, a positive integer → hop count,
+ * else a comma-separated list of IPs/CIDRs. `"true"` is rejected: it trusts the
+ * client-controlled left-most `X-Forwarded-For` entry and defeats per-IP limits.
+ */
+const trustProxy = z.string().transform((v, ctx): false | number | string[] => {
+  const s = v.trim();
+  if (s === "false") return false;
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    if (n >= 1 && Number.isSafeInteger(n)) return n;
+  } else {
+    const list = s.split(",").map((p) => p.trim());
+    if (list.every(isIpOrCidr)) return list;
+  }
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'must be "false", a positive hop count (1 on Railway/Fly), or a comma-separated list of IPs/CIDRs',
+  });
+  return z.NEVER;
+});
 
 /** Base64 of exactly 32 bytes (AES-256 key). */
 const key32B64 = z
@@ -45,7 +79,7 @@ const EnvSchema = z
     EMAIL_FROM: z.string().optional(),
     COOKIE_SECURE: bool.optional(),
     COOKIE_DOMAIN: z.string().optional(),
-    TRUST_PROXY: bool.default("false"),
+    TRUST_PROXY: trustProxy.default("false"),
   })
   .superRefine((e, ctx) => {
     const require = (key: keyof typeof e, message: string) => {

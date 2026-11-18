@@ -30,6 +30,7 @@ import { RefreshTokenService } from "../refresh-token.service.js";
 import { requestMeta } from "../request-meta.js";
 import { TokenService } from "../token.service.js";
 import { inviteEmail, resetEmail } from "./emails.js";
+import { loginFailureKey } from "./staff-auth.service.js";
 
 /** Link lifetimes. */
 export const LINK_TTL_MS: Record<StaffTokenPurpose, number> = {
@@ -51,7 +52,7 @@ const toLocale = (value: string): Locale => {
   return parsed.success ? parsed.data : "en";
 };
 
-type ClaimedLink = { tokenId: string; staffId: string; orgId: string; enrolled: boolean };
+type ClaimedLink = { tokenId: string; staffId: string; orgId: string; enrolled: boolean; email: string | null };
 
 /**
  * Single-use staff links: invites (72 h) and password resets (1 h). The link
@@ -120,6 +121,7 @@ export class StaffLinksService {
         tx,
       );
     });
+    await this.clearLoginLockout(link.email);
     const mfa = await this.tokens.issueMfa(link.staffId, link.orgId, link.enrolled ? "verify" : "enroll");
     return {
       status: link.enrolled ? "MFA_REQUIRED" : "ENROLL_REQUIRED",
@@ -178,6 +180,7 @@ export class StaffLinksService {
         tx,
       );
     });
+    await this.clearLoginLockout(link.email);
   }
 
   /** OWNER emails a 72 h invite to a member of the same org who has an email and no password yet. */
@@ -244,10 +247,11 @@ export class StaffLinksService {
   /**
    * `create-owner` CLI. In the default org: creates an OWNER with that email, or
    * resets an existing OWNER (password, TOTP, recovery codes and sessions cleared;
-   * login re-enabled). Either way returns a fresh 72 h invite link in `locale`.
-   * Throws for an email that belongs to a non-owner.
+   * login re-enabled). Either way returns a fresh 72 h invite link in the OWNER's
+   * locale. `locale`: used on create (default `en`); on reset it replaces the
+   * stored locale only when given. Throws for an email that belongs to a non-owner.
    */
-  async createOrResetOwner(rawEmail: string, locale: Locale): Promise<{ link: string; created: boolean }> {
+  async createOrResetOwner(rawEmail: string, locale?: Locale): Promise<{ link: string; created: boolean }> {
     const email = rawEmail.trim().toLowerCase();
     const orgId = await this.tenancy.getOrgId();
     return this.prisma.$transaction(async (tx) => {
@@ -262,13 +266,20 @@ export class StaffLinksService {
         staffId = existing.id;
         await tx.staffUser.update({
           where: { id: staffId },
-          data: { passwordHash: null, totpSecretEnc: null, totpEnrolledAt: null, canLogin: true, active: true, locale },
+          data: {
+            passwordHash: null,
+            totpSecretEnc: null,
+            totpEnrolledAt: null,
+            canLogin: true,
+            active: true,
+            ...(locale !== undefined && { locale }),
+          },
         });
         await tx.staffRecoveryCode.deleteMany({ where: { staffUserId: staffId } });
         await this.refreshTokens.revokeAllFor({ type: "STAFF", id: staffId }, tx);
       } else {
         const created = await tx.staffUser.create({
-          data: { organizationId: orgId, email, role: "OWNER", canLogin: true, locale },
+          data: { organizationId: orgId, email, role: "OWNER", canLogin: true, locale: locale ?? "en" },
           select: { id: true },
         });
         staffId = created.id;
@@ -290,6 +301,19 @@ export class StaffLinksService {
     });
   }
 
+  /**
+   * A new password set through a link ends any login lockout on that email.
+   * Runs after the commit; a Redis failure is logged and never undoes the success.
+   */
+  private async clearLoginLockout(email: string | null): Promise<void> {
+    if (!email) return;
+    try {
+      await this.rateLimit.reset(loginFailureKey(email));
+    } catch (err) {
+      this.logger.warn(`Login lockout reset failed: ${err instanceof Error ? err.name : "unknown error"}`);
+    }
+  }
+
   private limitIp(scope: "accept" | "forgot" | "reset", ip: string | null): Promise<void> {
     return this.rateLimit.enforce(`link:${scope}:ip:${this.rateLimit.hashKeyPart(ip ?? "unknown")}`, ...LINK_PER_IP);
   }
@@ -304,7 +328,7 @@ export class StaffLinksService {
         purpose: true,
         expiresAt: true,
         usedAt: true,
-        staffUser: { select: { id: true, organizationId: true, active: true, totpEnrolledAt: true } },
+        staffUser: { select: { id: true, organizationId: true, active: true, totpEnrolledAt: true, email: true } },
       },
     });
     if (
@@ -317,7 +341,13 @@ export class StaffLinksService {
     ) {
       throw linkInvalid();
     }
-    return { tokenId: row.id, staffId: row.staffUser.id, orgId, enrolled: row.staffUser.totpEnrolledAt !== null };
+    return {
+      tokenId: row.id,
+      staffId: row.staffUser.id,
+      orgId,
+      enrolled: row.staffUser.totpEnrolledAt !== null,
+      email: row.staffUser.email,
+    };
   }
 
   /** Spends the link inside `tx`; a concurrent use (or expiry since the check) loses here. */

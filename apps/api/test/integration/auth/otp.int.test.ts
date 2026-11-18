@@ -3,7 +3,13 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { AccessClaims, Locale } from "@beautyspa/contracts";
 import { CustomerAuth, Principal } from "../../../src/auth/decorators.js";
-import { OTP_PROVIDER, type OtpProvider } from "../../../src/auth/otp/otp-provider.js";
+import {
+  OTP_PROVIDER,
+  OtpInvalidRecipientError,
+  OtpProviderRateLimitedError,
+  OtpProviderUnavailableError,
+  type OtpProvider,
+} from "../../../src/auth/otp/otp-provider.js";
 import { createIntegrationApp, resetState } from "../app.js";
 import { seedFixture, type Fixture } from "../helpers.js";
 
@@ -61,6 +67,26 @@ describe("customer phone OTP (fake provider)", () => {
     expect(res.body.code).toBe("VALIDATION_FAILED");
     expect(res.body.errors[0].path).toBe("phone");
     expect(res.body.detail).toBe("Only US phone numbers are supported");
+  });
+
+  it.each([
+    ["one digit short", "+1305555010"],
+    ["area code starting with 0", "+10055550100"],
+    ["area code starting with 1", "+11055550100"],
+    ["exchange starting with 1", "+13051550100"],
+    ["one digit long", "+130555501000"],
+  ])("start rejects a malformed +1 number (%s) with VALIDATION_FAILED on phone", async (_label, phone) => {
+    const res = await start(phone);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors[0].path).toBe("phone");
+  });
+
+  it("verify rejects a malformed +1 number with VALIDATION_FAILED on phone", async () => {
+    const res = await verify({ phone: "+1305555010", code: "000000" });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors[0].path).toBe("phone");
   });
 
   it("start rejects a non-E.164 phone with VALIDATION_FAILED", async () => {
@@ -200,6 +226,75 @@ describe("customer phone OTP channel fallback", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ channel: "sms" });
     expect(channels).toEqual(["whatsapp", "sms"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("falls back to sms when whatsapp is unavailable", async () => {
+    const channels: string[] = [];
+    const c = await withProvider({
+      start: async (_phone, channel) => {
+        channels.push(channel);
+        if (channel === "whatsapp") throw new OtpProviderUnavailableError("whatsapp: 503");
+      },
+      check: async () => false,
+    });
+    const res = await start(c);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ channel: "sms" });
+    expect(channels).toEqual(["whatsapp", "sms"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("an invalid recipient on whatsapp is 400 VALIDATION_FAILED on phone and never tries sms", async () => {
+    const channels: string[] = [];
+    const c = await withProvider({
+      start: async (_phone, channel) => {
+        channels.push(channel);
+        throw new OtpInvalidRecipientError("start: 400");
+      },
+      check: async () => false,
+    });
+    const res = await start(c);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors[0].path).toBe("phone");
+    expect(channels).toEqual(["whatsapp"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("a provider rate limit on start is 429 RATE_LIMITED and never tries sms", async () => {
+    const channels: string[] = [];
+    const c = await withProvider({
+      start: async (_phone, channel) => {
+        channels.push(channel);
+        throw new OtpProviderRateLimitedError("start: 429");
+      },
+      check: async () => false,
+    });
+    const res = await start(c);
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("RATE_LIMITED");
+    expect(channels).toEqual(["whatsapp"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("a provider rate limit on verify is 429 RATE_LIMITED", async () => {
+    const c = await withProvider({
+      start: async () => undefined,
+      check: async () => {
+        throw new OtpProviderRateLimitedError("check: 429");
+      },
+    });
+    const res = await request(c.app.getHttpServer())
+      .post("/v1/auth/otp/verify")
+      .set("x-token-transport", "body")
+      .send({ phone: NEW_PHONE, code: "123456" });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("RATE_LIMITED");
     await c.close();
     ctx = undefined;
   });

@@ -3,7 +3,7 @@ import type { Request } from "express";
 import type { MfaStepResponse, StaffLoginRequest } from "@beautyspa/contracts";
 import { AuditService } from "../../audit/audit.service.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
-import { RateLimitService } from "../../rate-limit/rate-limit.service.js";
+import { RateLimitService, hashKeyPart } from "../../rate-limit/rate-limit.service.js";
 import { TenancyService } from "../../tenancy/tenancy.service.js";
 import { DUMMY_PASSWORD_HASH_INPUT, hashPassword, verifyPassword } from "../crypto/password.js";
 import { requestMeta } from "../request-meta.js";
@@ -12,6 +12,11 @@ import { TokenService } from "../token.service.js";
 /** Rate limits: [limit, window seconds]. */
 export const LOGIN_FAILURES_PER_EMAIL = [5, 900] as const;
 export const LOGIN_PER_IP = [30, 900] as const;
+
+/** Rate-limit key of the per-email login failure counter (lockout). `email` must already be trimmed and lowercased. */
+export function loginFailureKey(email: string): string {
+  return `login:fail:${hashKeyPart(email)}`;
+}
 
 const INVALID_CREDENTIALS = "Invalid email or password";
 const invalidCredentials = () => new UnauthorizedException({ code: "UNAUTHORIZED", message: INVALID_CREDENTIALS });
@@ -41,7 +46,7 @@ export class StaffAuthService implements OnModuleInit {
     const email = body.email.trim().toLowerCase();
     const ip = requestMeta(req).ip;
     await this.rateLimit.enforce(`login:ip:${this.rateLimit.hashKeyPart(ip ?? "unknown")}`, ...LOGIN_PER_IP);
-    const failKey = `login:fail:${this.rateLimit.hashKeyPart(email)}`;
+    const failKey = loginFailureKey(email);
     if (!(await this.rateLimit.consume(failKey, ...LOGIN_FAILURES_PER_EMAIL)).allowed) {
       throw new HttpException(
         { code: "RATE_LIMITED", message: "Too many attempts, try again later" },

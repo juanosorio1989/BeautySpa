@@ -42,7 +42,8 @@ pnpm --filter @beautyspa/api create-owner --email you@example.com --locale en
 
 It prints `Owner created` and `Invite link (valid 72 h): ...`. Open the link to set a password and enroll TOTP.
 Running it again for the same email prints `Owner reset`: it clears that OWNER's password, TOTP, recovery codes and
-sessions and prints a new link (older links stop working). It refuses an email that belongs to a non-owner.
+sessions and prints a new link (older links stop working). `--locale` is optional: a new OWNER defaults to `en`;
+a reset keeps the stored locale unless you pass `--locale`. It refuses an email that belongs to a non-owner.
 The link is a one-time credential: do not paste it into chats or tickets.
 
 In development `EMAIL_PROVIDER=console`: invite and password reset emails are not sent, the API logs them

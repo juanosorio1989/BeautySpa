@@ -25,7 +25,7 @@ invalid key names, never values.
 | `EMAIL_PROVIDER` | `console` (default) / `resend`; `resend` needs `RESEND_API_KEY`, `EMAIL_FROM` |
 | `COOKIE_SECURE` | `true`/`false`; default `true` only in production |
 | `COOKIE_DOMAIN` | optional |
-| `TRUST_PROXY` | `true`/`false`, default `false` |
+| `TRUST_PROXY` | `false` (default) / a positive hop count / comma-separated proxy IPs or CIDRs (e.g. `10.0.0.0/8,127.0.0.1`); use `1` on Railway/Fly. `true` is rejected: it trusts the client-forged left-most `X-Forwarded-For` and bypasses every per-IP limit |
 
 `NODE_ENV=production` requires `OTP_PROVIDER=twilio` and `EMAIL_PROVIDER=resend`.
 
@@ -80,15 +80,20 @@ Policies sit on the handler or the controller (handler wins), metadata key `auth
 `src/auth/otp/`. `POST /v1/auth/otp/start` `{ phone, locale }` → 200 `{ channel }`; `POST /v1/auth/otp/verify`
 `{ phone, code, locale? }` → 200 `TokenResponse` + `isNew` (same token transports as refresh). Both `@Public()`.
 
-- US only: a phone not starting with `+1` is 400 `VALIDATION_FAILED` with `errors: [{ path: "phone" }]`.
-- `start` tries WhatsApp, logs a warning and falls back to SMS if it throws; both throw → 503.
+- US only: a phone not starting with `+1`, or not NANP-shaped (`/^\+1[2-9]\d{2}[2-9]\d{6}$/`), is 400
+  `VALIDATION_FAILED` with `errors: [{ path: "phone" }]`. Non-US NANP ranges are left to Twilio Geo Permissions
+  and Fraud Guard.
+- `start` tries WhatsApp and falls back to SMS only when WhatsApp is unavailable (`OtpProviderUnavailableError` or
+  any untyped error); both unavailable → 503. `OtpInvalidRecipientError` → 400 `VALIDATION_FAILED` on `phone` and
+  `OtpProviderRateLimitedError` → 429 `RATE_LIMITED`, neither tries SMS. On `verify`, a provider rate limit is 429
+  and any other provider failure 503.
 - `verify`: a wrong code is 400 `OTP_INVALID`. A correct code upserts the customer on `(organization_id,
   phone_e164)`: new rows get `locale` = request `locale` or the organization's `default_locale`, `created_via =
   ONLINE`; every login sets `phone_verified_at`. A soft-deleted customer is 401 `UNAUTHORIZED`. Writes audit
   `auth.customer.login` (`after: { isNew }`), then `SessionService.start`. `isNew` = the customer has no name yet.
   Verifying a phone is not consent to messages: no `notification_consent` rows are written.
 - Rate limits (429 `RATE_LIMITED`; keys use `hashKeyPart`, never the raw phone or IP): start 3 / 10 min per phone
-  (`otp:start:phone:*`) and 10 / hour per client IP (`otp:start:ip:*`, `req.ip`, so set `TRUST_PROXY` behind a
+  (`otp:start:phone:*`) and 10 / hour per client IP (`otp:start:ip:*`, `req.ip`, so set `TRUST_PROXY` (`1` on Railway/Fly) behind a
   proxy); verify 5 / 10 min per phone (`otp:verify:phone:*`).
 - `ProblemFilter` passes through a well-formed `errors` array (`{ path, message }[]`) from an `HttpException` body.
 
@@ -96,7 +101,7 @@ Providers (`OTP_PROVIDER` token, picked in `AuthModule` by `env.OTP_PROVIDER`):
 
 | `OTP_PROVIDER` | Behavior | Allowed in |
 |---|---|---|
-| `twilio` | Twilio Verify REST API (no SDK, form bodies, Basic auth). Needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Errors carry only the HTTP status. | all |
+| `twilio` | Twilio Verify REST API (no SDK, form bodies, Basic auth). Needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Each request is aborted after 10 s. start: 400 → `OtpInvalidRecipientError`, 429 → `OtpProviderRateLimitedError`, other non-2xx / network / timeout → `OtpProviderUnavailableError`; check: 404 → `false`, 429 → rate limited, other non-2xx / network / timeout → unavailable (errors in `otp-provider.ts`). Errors carry only the HTTP status (or `network` / `timeout`). | all |
 | `console` (default) | Logs `OTP for <phone>: <code>` to the API log; stores only `sha256` of the code in Redis (`otp:console:<hashKeyPart(phone)>`, 10 min, deleted on success). | development, test |
 | `fake` | Sends nothing; accepts only `000000`. | `NODE_ENV=test` only |
 
@@ -118,7 +123,8 @@ returns `ENROLL_REQUIRED` (no session).
 - Unknown email, inactive, `can_login=false`, no password or wrong password: the same 401 `Invalid email or password`
   (a dummy argon2 verify equalizes timing). Wrong password on a real account writes `auth.staff.login_failed`.
 - Limits (429 `RATE_LIMITED`): 5 attempts / 15 min per email (`login:fail:<hashKeyPart(email)>`, consumed before
-  the password check so parallel bursts get no extra guesses, reset on success), 30 attempts / 15 min per IP,
+  the password check so parallel bursts get no extra guesses, reset on success and after a password is set by
+  invite accept or a reset link; key built by `loginFailureKey`), 30 attempts / 15 min per IP,
   5 enroll/confirm/verify/recover attempts / 5 min per staff id.
 - Confirm and recover lock the `staff_user` row (`FOR UPDATE`); confirm enrolls only the exact pending secret the
   code was checked against (else 409), so concurrent confirms or recoveries succeed once.
@@ -144,7 +150,7 @@ hex is stored in `staff_auth_token`; a new link marks older unused ones of the s
 - Audit: `auth.staff.invite_accepted`, `auth.staff.password_reset`, `staff.invite`, `staff.reset_2fa`
   (`before: { totpEnrolled }`), `staff.owner_cli` (SYSTEM). Never tokens or passwords.
 - Mail (`src/mail/`, global `MAILER`): `ConsoleMailer` (dev/test; logs the text, keeps the last 50 in `sent`) or
-  `ResendMailer` (`EMAIL_PROVIDER=resend`). Copy in `src/auth/staff/emails.ts` (EN/ES).
+  `ResendMailer` (`EMAIL_PROVIDER=resend`; aborted after 10 s → `Resend send failed: timeout`). Copy in `src/auth/staff/emails.ts` (EN/ES).
 - CLI `src/cli/create-owner.ts` (`pnpm --filter @beautyspa/api create-owner --email <e> [--locale en|es]`): see
   [docs/development](../../docs/development/README.md#first-owner).
 

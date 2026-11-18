@@ -34,11 +34,30 @@ describe("loadEnv", () => {
     expect(env.TRUST_PROXY).toBe(false);
   });
 
-  it("parses COOKIE_SECURE and TRUST_PROXY strings", () => {
-    const env = loadEnv({ ...base, COOKIE_SECURE: "true", TRUST_PROXY: "true" });
-    expect(env.COOKIE_SECURE).toBe(true);
-    expect(env.TRUST_PROXY).toBe(true);
+  it("parses COOKIE_SECURE", () => {
+    expect(loadEnv({ ...base, COOKIE_SECURE: "true" }).COOKIE_SECURE).toBe(true);
   });
+
+  it("TRUST_PROXY \"false\" is false", () => {
+    expect(loadEnv({ ...base, TRUST_PROXY: "false" }).TRUST_PROXY).toBe(false);
+  });
+
+  it("TRUST_PROXY as a hop count is a number", () => {
+    expect(loadEnv({ ...base, TRUST_PROXY: "1" }).TRUST_PROXY).toBe(1);
+    expect(loadEnv({ ...base, TRUST_PROXY: "2" }).TRUST_PROXY).toBe(2);
+  });
+
+  it("TRUST_PROXY as a list of IPs/CIDRs is a trimmed string array", () => {
+    expect(loadEnv({ ...base, TRUST_PROXY: "10.0.0.0/8, 127.0.0.1" }).TRUST_PROXY).toEqual(["10.0.0.0/8", "127.0.0.1"]);
+    expect(loadEnv({ ...base, TRUST_PROXY: "10.0.0.0/8,127.0.0.1" }).TRUST_PROXY).toEqual(["10.0.0.0/8", "127.0.0.1"]);
+  });
+
+  it.each(["true", "0", "-1", "1.5", "loopback", "10.0.0.0/8,", "not-an-ip"])(
+    "TRUST_PROXY %j is rejected and named",
+    (value) => {
+      expect(() => loadEnv({ ...base, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
+    },
+  );
 
   it("production with default providers names OTP_PROVIDER and EMAIL_PROVIDER", () => {
     const msg = errorOf(() => loadEnv({ ...base, NODE_ENV: "production" }));

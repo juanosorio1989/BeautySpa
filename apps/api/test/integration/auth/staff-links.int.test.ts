@@ -157,6 +157,17 @@ describe("staff invite / password reset links and owner actions", () => {
       expect(JSON.stringify(audit)).not.toContain(NEW_PASSWORD);
     });
 
+    it("accepting an invite clears a login lockout on that email", async () => {
+      const staffId = await newReception();
+      for (let i = 0; i < 5; i++) expect((await login("ana@salon.com", "wrong password here")).status).toBe(401);
+      expect((await login("ana@salon.com", "wrong password here")).status).toBe(429);
+      const link = await invite(staffId);
+      expect((await auth("invite/accept", { token: tokenOf(link), password: NEW_PASSWORD })).status).toBe(200);
+      const l = await login(" Ana@Salon.com ", NEW_PASSWORD);
+      expect(l.status).toBe(200);
+      expect(l.body.status).toBe("ENROLL_REQUIRED");
+    });
+
     it("used, expired, unknown and superseded links are 400 LINK_INVALID", async () => {
       const staffId = await newReception();
       const first = await invite(staffId);
@@ -303,6 +314,20 @@ describe("staff invite / password reset links and owner actions", () => {
       const reused = await auth("password/reset", { token, password: "another-long-password" });
       expect(reused.status).toBe(400);
       expect(reused.body.code).toBe("LINK_INVALID");
+    });
+  });
+
+  describe("lockout and password reset", () => {
+    it("a locked-out staff who resets the password can log in with the new one", async () => {
+      await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: OWNER_PASSWORD });
+      for (let i = 0; i < 5; i++) expect((await login("ana@salon.com", "wrong password here")).status).toBe(401);
+      expect((await login("ana@salon.com", OWNER_PASSWORD)).status).toBe(429);
+
+      await auth("password/forgot", { email: "ana@salon.com" });
+      const token = tokenOf(linkIn(mailer().sent[0]!.text));
+      expect((await auth("password/reset", { token, password: NEW_PASSWORD })).status).toBe(204);
+
+      expect((await login("ana@salon.com", NEW_PASSWORD)).status).toBe(200);
     });
   });
 

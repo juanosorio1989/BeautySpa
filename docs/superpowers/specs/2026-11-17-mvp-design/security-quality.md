@@ -11,6 +11,8 @@
   model.
   - OTP start: 3 per phone per 10 min, 10 per IP per hour; Twilio Verify fraud
     guard on; block premium/international ranges outside US by default.
+  - OTP phones must be NANP-shaped `+1` numbers; non-US NANP ranges (Canada,
+    Caribbean) are left to Twilio Geo Permissions and Fraud Guard.
   - OTP verify: 5 attempts per code.
   - Holds: 10 per IP per 10 min.
   - Staff login: 5 per email per 15 min, then lockout window.

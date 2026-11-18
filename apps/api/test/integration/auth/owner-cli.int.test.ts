@@ -75,6 +75,24 @@ describe("create-owner (StaffLinksService.createOrResetOwner)", () => {
     expect(firstRow.usedAt).not.toBeNull();
   });
 
+  it("creating without a locale defaults to en", async () => {
+    const { link } = await links().createOrResetOwner("boss@salon.com");
+    expect(link).toContain("/en/staff/invite?token=");
+    expect((await ctx.prisma.staffUser.findFirstOrThrow({ where: { email: "boss@salon.com" } })).locale).toBe("en");
+  });
+
+  it("resetting without a locale keeps the owner's locale; with one it changes it", async () => {
+    await links().createOrResetOwner("boss@salon.com", "es");
+    const kept = await links().createOrResetOwner("boss@salon.com");
+    expect(kept.created).toBe(false);
+    expect(kept.link).toContain("/es/staff/invite?token=");
+    expect((await ctx.prisma.staffUser.findFirstOrThrow({ where: { email: "boss@salon.com" } })).locale).toBe("es");
+
+    const changed = await links().createOrResetOwner("boss@salon.com", "en");
+    expect(changed.link).toContain("/en/staff/invite?token=");
+    expect((await ctx.prisma.staffUser.findFirstOrThrow({ where: { email: "boss@salon.com" } })).locale).toBe("en");
+  });
+
   it("rejects the email of a non-owner staff member", async () => {
     await createStaff(ctx.prisma, f, { email: "emp@salon.com", role: "EMPLOYEE", totpSecret: generateTotpSecret() });
     await expect(links().createOrResetOwner("emp@salon.com", "en")).rejects.toThrow(/non-owner/);

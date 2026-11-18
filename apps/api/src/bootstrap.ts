@@ -9,6 +9,7 @@ import type { Env } from "./config/env.js";
 
 export async function configureApp(app: INestApplication, env: Env): Promise<void> {
   app.setGlobalPrefix("v1");
+  // false, a hop count, or a list of trusted proxy IPs/CIDRs; never `true` (see `TRUST_PROXY` in env.ts).
   (app as NestExpressApplication).set("trust proxy", env.TRUST_PROXY);
   app.use(helmet());
   app.use(cookieParser());
