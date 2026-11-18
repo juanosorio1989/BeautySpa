@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Body, ConflictException, Controller, Get, INestApplication, Module, Post } from "@nestjs/common";
+import { BadRequestException, Body, ConflictException, Controller, Get, INestApplication, Module, Post } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { createZodDto } from "nestjs-zod";
@@ -23,6 +23,20 @@ class EchoController {
   @Get("conflict")
   conflict(): never {
     throw new ConflictException({ code: "SLOT_TAKEN" });
+  }
+
+  @Get("field-error")
+  fieldError(): never {
+    throw new BadRequestException({
+      code: "VALIDATION_FAILED",
+      message: "Only US phone numbers are supported",
+      errors: [{ path: "phone", message: "Only US phone numbers are supported" }],
+    });
+  }
+
+  @Get("bad-errors")
+  badErrors(): never {
+    throw new BadRequestException({ code: "VALIDATION_FAILED", errors: [{ path: 1, secret: "x" }] });
   }
 
   @Get("boom")
@@ -104,6 +118,23 @@ describe("api skeleton", () => {
     const res = await request(app.getHttpServer()).get("/v1/echo/conflict");
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("SLOT_TAKEN");
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
+  it("an errors array on an HttpException body is passed through", async () => {
+    const res = await request(app.getHttpServer()).get("/v1/echo/field-error");
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.detail).toBe("Only US phone numbers are supported");
+    expect(res.body.errors).toEqual([{ path: "phone", message: "Only US phone numbers are supported" }]);
+    expect(ProblemSchema.safeParse(res.body).success).toBe(true);
+  });
+
+  it("a malformed errors array on an HttpException body is dropped", async () => {
+    const res = await request(app.getHttpServer()).get("/v1/echo/bad-errors");
+    expect(res.status).toBe(400);
+    expect(res.body.errors).toBeUndefined();
+    expect(res.text).not.toContain("secret");
     expect(ProblemSchema.safeParse(res.body).success).toBe(true);
   });
 

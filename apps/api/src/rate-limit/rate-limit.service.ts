@@ -9,6 +9,11 @@ export interface RateLimitResult {
   retryAfterSec: number;
 }
 
+/** First 16 hex chars of sha256(value), for putting identifiers (phone, email, ip) into Redis keys. */
+export function hashKeyPart(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
 /**
  * Fixed-window counters in Redis (`rl:<key>`). The window starts at the first
  * hit and is not extended by later hits (`EXPIRE ... NX`). Callers build keys
@@ -57,6 +62,6 @@ export class RateLimitService {
 
   /** First 16 hex chars of sha256(value), for putting identifiers into keys. */
   hashKeyPart(value: string): string {
-    return createHash("sha256").update(value).digest("hex").slice(0, 16);
+    return hashKeyPart(value);
   }
 }

@@ -44,7 +44,7 @@ without an auth decorator answers 403 `FORBIDDEN` to everyone, so every new cont
 
 | Decorator | Allows |
 |---|---|
-| `@Public()` | anyone, no token (`/health`, `/auth/refresh`, `/auth/logout`, login routes) |
+| `@Public()` | anyone, no token (`/health`, `/auth/refresh`, `/auth/logout`, `/auth/otp/*`, login routes) |
 | `@CustomerAuth()` | a customer access token |
 | `@StaffAuth()` / `@StaffAuth("OWNER", ...)` | any staff token / only the listed roles |
 | `@Principal()` | param decorator: the verified `AccessClaims` |
@@ -75,7 +75,35 @@ Policies sit on the handler or the controller (handler wins), metadata key `auth
 - `AuditService.record(entry, tx?)` (`src/audit/`) appends to `audit_log`, optionally inside a transaction. Never
   put tokens, hashes, passwords or TOTP secrets in `before`/`after`.
 
-Tests: `src/auth/token.service.test.ts` (unit), `test/integration/auth/{session,guard}.int.test.ts` (test-only
+### Customer phone OTP
+
+`src/auth/otp/`. `POST /v1/auth/otp/start` `{ phone, locale }` → 200 `{ channel }`; `POST /v1/auth/otp/verify`
+`{ phone, code, locale? }` → 200 `TokenResponse` + `isNew` (same token transports as refresh). Both `@Public()`.
+
+- US only: a phone not starting with `+1` is 400 `VALIDATION_FAILED` with `errors: [{ path: "phone" }]`.
+- `start` tries WhatsApp, logs a warning and falls back to SMS if it throws; both throw → 503.
+- `verify`: a wrong code is 400 `OTP_INVALID`. A correct code upserts the customer on `(organization_id,
+  phone_e164)`: new rows get `locale` = request `locale` or the organization's `default_locale`, `created_via =
+  ONLINE`; every login sets `phone_verified_at`. A soft-deleted customer is 401 `UNAUTHORIZED`. Writes audit
+  `auth.customer.login` (`after: { isNew }`), then `SessionService.start`. `isNew` = the customer has no name yet.
+  Verifying a phone is not consent to messages: no `notification_consent` rows are written.
+- Rate limits (429 `RATE_LIMITED`; keys use `hashKeyPart`, never the raw phone or IP): start 3 / 10 min per phone
+  (`otp:start:phone:*`) and 10 / hour per client IP (`otp:start:ip:*`, `req.ip`, so set `TRUST_PROXY` behind a
+  proxy); verify 5 / 10 min per phone (`otp:verify:phone:*`).
+- `ProblemFilter` passes through a well-formed `errors` array (`{ path, message }[]`) from an `HttpException` body.
+
+Providers (`OTP_PROVIDER` token, picked in `AuthModule` by `env.OTP_PROVIDER`):
+
+| `OTP_PROVIDER` | Behavior | Allowed in |
+|---|---|---|
+| `twilio` | Twilio Verify REST API (no SDK, form bodies, Basic auth). Needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Errors carry only the HTTP status. | all |
+| `console` (default) | Logs `OTP for <phone>: <code>` to the API log; stores only `sha256` of the code in Redis (`otp:console:<hashKeyPart(phone)>`, 10 min, deleted on success). | development, test |
+| `fake` | Sends nothing; accepts only `000000`. | `NODE_ENV=test` only |
+
+Dev usage: with the default `console` provider, call `start`, read the 6-digit code from the API log line
+`OTP for +1...: 123456`, and send it to `verify`.
+
+Tests: `src/auth/token.service.test.ts`, `src/auth/otp/*.test.ts` (unit), `test/integration/auth/{session,guard,otp}.int.test.ts` (test-only
 controllers passed through `createIntegrationApp({ imports })`). `TenancyService` caches the org id per app, so an
 integration test that re-seeds the org per case needs a fresh app per case.
 
