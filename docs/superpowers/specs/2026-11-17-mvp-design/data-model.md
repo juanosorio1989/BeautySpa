@@ -13,7 +13,7 @@ tables `staff_location` and `employee_service` use a composite primary key); tim
 |---|---|
 | `organization` | `name`, `slug` (unique), `default_locale` |
 | `location` | `organization_id`, `name`, `address`, `phone`, `timezone` (IANA), `settings` jsonb: `slotIntervalMin` (15), `holdMinutes` (5), `cancelWindowHours` (24), `bookingHorizonDays` (60), `minLeadMinutes` (60) |
-| `location_hours` | `location_id`, `weekday` 0–6, `opens` time, `closes` time |
+| `location_hours` | `location_id`, `weekday` 0–6, `opens` time, `closes` time. An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00". |
 | `location_closure` | `location_id`, `starts_at`, `ends_at`, `reason` |
 
 **Tenancy columns.** Top-level tables and the hot child tables `resource`,
@@ -40,7 +40,7 @@ deactivated (`active = false`).
 | `level` | `organization_id`, `name` jsonb, `rank` (e.g. Junior, Senior) |
 | `employee_profile` | `staff_user_id` (PK), `display_name`, `bio` jsonb, `photo_url`, `level_id`, `bookable_online` |
 | `employee_service` | `staff_user_id`, `service_id` — what each employee can do |
-| `working_hours` | `organization_id`, `staff_user_id`, `location_id`, `weekday`, `start_time`, `end_time` (local wall time). Several rows per day = breaks are gaps. |
+| `working_hours` | `organization_id`, `staff_user_id`, `location_id`, `weekday`, `start_time`, `end_time` (local wall time; An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".) Several rows per day = breaks are gaps. |
 | `time_off` | `organization_id`, `staff_user_id`, `location_id` (nullable = all locations), `starts_at`, `ends_at`, `kind` (`VACATION`, `BLOCK`), `note`. Recurring breaks are gaps in `working_hours`; one-off breaks are `BLOCK`. |
 | `refresh_token` | `subject_type` (`customer`/`staff`), `subject_id`, `family_id`, `token_hash` (unique), `expires_at`, `rotated_at`, `revoked_at`, `user_agent`, `ip` |
 
@@ -66,7 +66,7 @@ deactivated (`active = false`).
 | Table | Key columns |
 |---|---|
 | `appointment` | `organization_id`, `location_id`, `customer_id` (nullable while `HELD` anonymous), `status` (`HELD`, `BOOKED`, `CHECKED_IN`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), `source` (`ONLINE`, `RECEPTION`, `WALK_IN`), `hold_expires_at`, `confirmed_by_customer_at`, `manage_version` int, `notes`, `created_by_staff_id`, `cancelled_at`, `cancel_reason`, `cancelled_by` |
-| `appointment_segment` | `organization_id`, `appointment_id`, `service_id`, `staff_user_id`, `resource_id` (nullable), `starts_at`, `ends_at`, `block_ends_at` (= `ends_at` + buffer), `duration_min`, `price_cents` (snapshots), `occupies` bool |
+| `appointment_segment` | `organization_id`, `appointment_id`, `service_id`, `staff_user_id`, `resource_id` (nullable), `starts_at`, `ends_at`, `block_ends_at` (`ends_at + buffer_after_min`, or `ends_at` when the buffer is dropped for a same-employee back-to-back segment (see availability.md); the API always stores `blockEnd` from the validated plan, never recomputes it), `duration_min`, `price_cents` (snapshots), `occupies` bool |
 
 ### No double booking (raw SQL migration)
 

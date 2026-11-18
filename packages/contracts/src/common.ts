@@ -15,7 +15,13 @@ export type LocalizedText = z.infer<typeof LocalizedTextSchema>;
 export const MoneyCentsSchema = z.number().int().nonnegative();
 export type MoneyCents = z.infer<typeof MoneyCentsSchema>;
 
-export const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const IsoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((s) => {
+    const d = new Date(`${s}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  }, "Invalid date");
 export type IsoDate = z.infer<typeof IsoDateSchema>;
 
 export const IsoInstantSchema = z.string().datetime({ offset: true });

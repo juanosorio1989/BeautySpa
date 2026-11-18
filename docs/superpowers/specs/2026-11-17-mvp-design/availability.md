@@ -18,8 +18,10 @@ findSlots({
   now,
 }) -> Slot[]
 
-Slot = { startsAt, endsAt, segments: [{ serviceId, employeeId, resourceId?, startsAt, endsAt, blockEndsAt, durationMin, priceCents }] }
+Slot = { start, end, segments: [{ serviceId, employeeId, resourceId, start, end, blockEnd, durationMin, priceCents }] }
 ```
+
+The engine works in epoch milliseconds (`start`/`end`/`blockEnd`); the API converts at its edge to the contracts' ISO fields (`startsAt`/`endsAt`/`blockEndsAt`).
 
 Max 4 services per request **(call)**.
 

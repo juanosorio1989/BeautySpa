@@ -17,6 +17,8 @@ pnpm --filter @beautyspa/api db:seed
 pnpm dev
 ```
 
+The API scripts (`dev`, `start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
+
 The compose init script creates `beautyspa` and `beautyspa_test` only on an empty volume.
 If your volume predates it (no `beautyspa_test`), run `docker compose down -v && docker compose up -d`.
 This deletes all local dev data.

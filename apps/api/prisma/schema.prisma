@@ -169,6 +169,7 @@ model LocationHours {
   /// 0 = Sunday ... 6 = Saturday.
   weekday    Int      @db.SmallInt
   opens      DateTime @db.Time(0)
+  /// An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".
   closes     DateTime @db.Time(0)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -328,6 +329,7 @@ model WorkingHours {
   /// 0 = Sunday ... 6 = Saturday.
   weekday        Int      @db.SmallInt
   startTime      DateTime @map("start_time") @db.Time(0)
+  /// An end time of 00:00 that is not after the start means 24:00 (end of day). Overnight shifts are not supported. Repositories must map it to the engine's "24:00".
   endTime        DateTime @map("end_time") @db.Time(0)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -582,7 +584,9 @@ model AppointmentSegment {
   resourceId     String?  @map("resource_id") @db.Uuid
   startsAt       DateTime @map("starts_at") @db.Timestamptz(3)
   endsAt         DateTime @map("ends_at") @db.Timestamptz(3)
-  /// ends_at + buffer_after_min.
+  /// `ends_at + buffer_after_min`, or `ends_at` when the buffer is dropped for a same-employee
+  /// back-to-back segment (see availability.md); the API always stores `blockEnd` from the
+  /// validated plan, never recomputes it.
   blockEndsAt    DateTime @map("block_ends_at") @db.Timestamptz(3)
   /// Snapshot at booking time.
   durationMin    Int      @map("duration_min")
