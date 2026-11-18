@@ -65,8 +65,9 @@ export class OtpService {
       } catch (err) {
         // Provider errors carry only a status by contract; never log the phone or the code.
         this.logger.warn(`OTP start over ${channel} failed: ${err instanceof Error ? err.message : "unknown error"}`);
-        // Only an unavailable channel (typed, or any untyped error) falls back to the next one.
-        if (err instanceof OtpInvalidRecipientError) throw phoneError(INVALID_US);
+        // A 400 on WhatsApp may be a channel-config error (e.g. Twilio 60223, no sender), not a bad number:
+        // it falls back like an unavailable channel. Only a 400 from SMS is a bad-number answer.
+        if (err instanceof OtpInvalidRecipientError && channel === "sms") throw phoneError(INVALID_US);
         if (err instanceof OtpProviderRateLimitedError) throw rateLimited();
       }
     }

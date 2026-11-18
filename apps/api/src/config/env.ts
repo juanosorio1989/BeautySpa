@@ -28,17 +28,19 @@ function isIpOrCidr(v: string): boolean {
   if (family === 0) return false;
   if (prefix === undefined) return true;
   if (!/^\d{1,3}$/.test(prefix)) return false;
-  return Number(prefix) <= (family === 4 ? 32 : 128);
+  // A /0 prefix matches every address: same as trusting everything.
+  const bits = Number(prefix);
+  return bits >= 1 && bits <= (family === 4 ? 32 : 128);
 }
 
 /**
- * Express `trust proxy`: `"false"` → false, a positive integer → hop count,
+ * Express `trust proxy`: `"false"` (or blank) → false, a positive integer → hop count,
  * else a comma-separated list of IPs/CIDRs. `"true"` is rejected: it trusts the
  * client-controlled left-most `X-Forwarded-For` entry and defeats per-IP limits.
  */
 const trustProxy = z.string().transform((v, ctx): false | number | string[] => {
   const s = v.trim();
-  if (s === "false") return false;
+  if (s === "false" || s === "") return false;
   if (/^\d+$/.test(s)) {
     const n = Number(s);
     if (n >= 1 && Number.isSafeInteger(n)) return n;

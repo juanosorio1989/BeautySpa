@@ -247,11 +247,29 @@ describe("customer phone OTP channel fallback", () => {
     ctx = undefined;
   });
 
-  it("an invalid recipient on whatsapp is 400 VALIDATION_FAILED on phone and never tries sms", async () => {
+  it("an invalid recipient on whatsapp (channel config error) falls back to sms", async () => {
     const channels: string[] = [];
     const c = await withProvider({
       start: async (_phone, channel) => {
         channels.push(channel);
+        if (channel === "whatsapp") throw new OtpInvalidRecipientError("start: 400");
+      },
+      check: async () => false,
+    });
+    const res = await start(c);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ channel: "sms" });
+    expect(channels).toEqual(["whatsapp", "sms"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("an invalid recipient on sms is 400 VALIDATION_FAILED on phone", async () => {
+    const channels: string[] = [];
+    const c = await withProvider({
+      start: async (_phone, channel) => {
+        channels.push(channel);
+        if (channel === "whatsapp") throw new OtpProviderUnavailableError("whatsapp: 503");
         throw new OtpInvalidRecipientError("start: 400");
       },
       check: async () => false,
@@ -260,7 +278,7 @@ describe("customer phone OTP channel fallback", () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("VALIDATION_FAILED");
     expect(res.body.errors[0].path).toBe("phone");
-    expect(channels).toEqual(["whatsapp"]);
+    expect(channels).toEqual(["whatsapp", "sms"]);
     await c.close();
     ctx = undefined;
   });
@@ -295,6 +313,22 @@ describe("customer phone OTP channel fallback", () => {
       .send({ phone: NEW_PHONE, code: "123456" });
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("RATE_LIMITED");
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("verify answers 503 when the provider check is unavailable", async () => {
+    const c = await withProvider({
+      start: async () => undefined,
+      check: async () => {
+        throw new OtpProviderUnavailableError("check: 503");
+      },
+    });
+    const res = await request(c.app.getHttpServer())
+      .post("/v1/auth/otp/verify")
+      .set("x-token-transport", "body")
+      .send({ phone: NEW_PHONE, code: "123456" });
+    expect(res.status).toBe(503);
     await c.close();
     ctx = undefined;
   });

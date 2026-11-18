@@ -52,7 +52,11 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, TRUST_PROXY: "10.0.0.0/8,127.0.0.1" }).TRUST_PROXY).toEqual(["10.0.0.0/8", "127.0.0.1"]);
   });
 
-  it.each(["true", "0", "-1", "1.5", "loopback", "10.0.0.0/8,", "not-an-ip"])(
+  it.each(["", "  "])("TRUST_PROXY blank %j is false", (value) => {
+    expect(loadEnv({ ...base, TRUST_PROXY: value }).TRUST_PROXY).toBe(false);
+  });
+
+  it.each(["true", "0", "-1", "1.5", "loopback", "10.0.0.0/8,", "not-an-ip", "0.0.0.0/0", "::/0", "10.0.0.0/8, 0.0.0.0/0"])(
     "TRUST_PROXY %j is rejected and named",
     (value) => {
       expect(() => loadEnv({ ...base, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);

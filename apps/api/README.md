@@ -83,9 +83,10 @@ Policies sit on the handler or the controller (handler wins), metadata key `auth
 - US only: a phone not starting with `+1`, or not NANP-shaped (`/^\+1[2-9]\d{2}[2-9]\d{6}$/`), is 400
   `VALIDATION_FAILED` with `errors: [{ path: "phone" }]`. Non-US NANP ranges are left to Twilio Geo Permissions
   and Fraud Guard.
-- `start` tries WhatsApp and falls back to SMS only when WhatsApp is unavailable (`OtpProviderUnavailableError` or
-  any untyped error); both unavailable → 503. `OtpInvalidRecipientError` → 400 `VALIDATION_FAILED` on `phone` and
-  `OtpProviderRateLimitedError` → 429 `RATE_LIMITED`, neither tries SMS. On `verify`, a provider rate limit is 429
+- `start` tries WhatsApp and falls back to SMS when WhatsApp is unavailable (`OtpProviderUnavailableError` or
+  any untyped error) or answers `OtpInvalidRecipientError` (a WhatsApp 400 can be a channel-config error such as
+  Twilio 60223); both failing → 503. `OtpInvalidRecipientError` from SMS → 400 `VALIDATION_FAILED` on `phone`.
+  `OtpProviderRateLimitedError` → 429 `RATE_LIMITED` on either channel, no fallback. On `verify`, a provider rate limit is 429
   and any other provider failure 503.
 - `verify`: a wrong code is 400 `OTP_INVALID`. A correct code upserts the customer on `(organization_id,
   phone_e164)`: new rows get `locale` = request `locale` or the organization's `default_locale`, `created_via =
