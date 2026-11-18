@@ -4,7 +4,11 @@
 
 - OWASP Top 10 baseline; `helmet` headers; strict CORS allowlist (web origin
   only); Zod validation on every input; Prisma parameterized queries only.
-- Rate limiting (Redis, `@nestjs/throttler` with Redis store):
+- Rate limiting (`RateLimitService`, Redis keys `rl:<scope>:<sha256 prefix of
+  phone/email/IP>`, 429 `RATE_LIMITED`). Rate limiting is an in-house Redis
+  fixed-window limiter instead of @nestjs/throttler: the limits are per
+  phone/email as well as per IP, which the throttler's single tracker does not
+  model.
   - OTP start: 3 per phone per 10 min, 10 per IP per hour; Twilio Verify fraud
     guard on; block premium/international ranges outside US by default.
   - OTP verify: 5 attempts per code.
@@ -12,7 +16,9 @@
   - Staff login: 5 per email per 15 min, then lockout window.
 - Twilio webhooks verify the `X-Twilio-Signature`.
 - Secrets only in env vars (`.env` gitignored, `.env.example` committed with
-  placeholders); a script generates local secrets (JWT keys, encryption key).
+  placeholders); `pnpm --filter @beautyspa/api secrets:gen` generates local
+  secrets (Ed25519 JWT key, 32-byte encryption key) into `.env`, printing key
+  names only. Config errors name the invalid keys, never their values.
 - Audit log for every appointment create/move/cancel/status change, customer
   edits, catalog/staff/settings changes, and logins.
 

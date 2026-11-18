@@ -9,6 +9,7 @@ import { ProblemSchema } from "@beautyspa/contracts";
 import { HealthModule } from "../src/health/health.module.js";
 import { configureApp } from "../src/bootstrap.js";
 import { loadEnv } from "../src/config/env.js";
+import { testEnv } from "./support/test-env.js";
 
 class EchoDto extends createZodDto(z.object({ name: z.string() })) {}
 
@@ -33,12 +34,7 @@ class EchoController {
 @Module({ imports: [HealthModule], controllers: [EchoController] })
 class TestModule {}
 
-const env = loadEnv({
-  NODE_ENV: "test",
-  DATABASE_URL: "postgresql://u:p@localhost:5432/db",
-  REDIS_URL: "redis://localhost:6379",
-  WEB_ORIGIN: "http://localhost:3000",
-});
+const env = testEnv();
 
 describe("api skeleton", () => {
   let app: INestApplication;
