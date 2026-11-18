@@ -62,7 +62,15 @@ Max 4 services per request **(call)**.
      `block_ends_at - starts_at` of the employee's busy segments starting that
      day, ascending; counted from the input busy list only, not from segments
      of the plan being built), then by id. Resources are tried by name. Branches
-     that are already resource-infeasible (minimal blocks) are pruned early. A
+     that are already infeasible are pruned early using a sound lower bound of
+     each placed block (the buffer is kept unless it can still be dropped).
+   - **Symmetry reduction (call)**: at each depth only one candidate per
+     equivalence class is tried: employees with the same level terms
+     (duration, price) and identical free intervals for the day, not already
+     used in the plan. The representative is the first in the ordering above.
+   - **Node budget (call)**: at most `MAX_NODES_PER_START = 5000` search nodes
+     per start time and shape; beyond it that start yields no plan. This can
+     hide a valid slot only in pathological schedules. A
      parallel block needs distinct employees; a sequential plan may reuse one.
 5. **Employee choice for "ANY"** **(call)**: among free qualified employees, pick
    the one with the fewest booked minutes that day; ties by stable id order.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ana, ANA_ID, at, bea, BEA_ID, carla, CARLA_ID, chair1, CHAIR_1_ID, chair2, CHAIR_2_ID, dani, DANI_ID,
-  gel, GEL_ID, haircut, HAIRCUT_ID, location, makeEmployee, mani, MANI_ID, MON, pedi, PEDI_ID,
+  gel, GEL_ID, haircut, HAIRCUT_ID, location, makeEmployee, makeResource, mani, MANI_ID, MON, pedi, PEDI_ID,
 } from "../test/fixtures";
 import { AvailabilityError } from "./errors";
 import { findSlots } from "./find-slots";
@@ -204,5 +204,30 @@ describe("findSlots", () => {
     // fully sequential (4 parallelizable, 2 techs): every segment picks ana while she is free
     const seq = findSlots(base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(MANI_ID)], { busy: [busy(BEA_ID, null, "09:00", "10:00")] }));
     expect(seq[0]!.segments.every((x) => x.employeeId === ANA_ID)).toBe(true);
+  });
+  const windowed = (emps: number, chairCount: number) => {
+    const employees = Array.from({ length: emps }, (_, i) =>
+      makeEmployee(ana, { id: `00000000-0000-4000-8000-0000000002${String(i).padStart(2, "0")}` }),
+    );
+    const resources = Array.from({ length: chairCount }, (_, i) =>
+      makeResource(chair1, { id: `00000000-0000-4000-8000-0000000003${String(i).padStart(2, "0")}`, name: `chair-${i}` }),
+    );
+    const busy = resources.flatMap((r) =>
+      [["12:00", "12:15"], ["15:15", "15:30"], ["18:30", "23:59"]].map(([a, b]) => busyOf(r.id, a!, b!)),
+    );
+    const t0 = Date.now();
+    const s = findSlots(base([c(PEDI_ID), c(PEDI_ID), c(PEDI_ID), c(PEDI_ID)], { mode: "STAFF", employees, resources, busy }));
+    return { s, ms: Date.now() - t0 };
+  };
+  const busyOf = (resourceId: string, from: string, to: string): BusySegment => busy("x", resourceId, from, to);
+  it("P1. buffer-only infeasibility stays fast (20 employees, 1 chair)", () => {
+    const { s, ms } = windowed(20, 1);
+    expect(s).toEqual([]);
+    expect(ms).toBeLessThan(200);
+  });
+  it("P2. buffer-only infeasibility stays fast (8 employees, 3 chairs)", () => {
+    const { s, ms } = windowed(8, 3);
+    expect(s).toEqual([]);
+    expect(ms).toBeLessThan(200);
   });
 });

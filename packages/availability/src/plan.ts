@@ -89,6 +89,8 @@ export interface Draft {
 }
 
 export const MAX_CHOICES = 4;
+/** Safety net: search nodes per start time and shape; beyond it that start yields no plan. */
+export const MAX_NODES_PER_START = 5000;
 
 /**
  * Buffer blocks the employee/resource after a segment, except when the same employee starts
@@ -141,12 +143,13 @@ export function assignResources(
   p: Prepared,
   drafts: Draft[],
   lowerBound: boolean,
+  lbBlocks?: Ms[],
 ): { ids: (string | null)[]; blocks: Ms[] } | null {
   const ids: (string | null)[] = drafts.map(() => null);
-  const minRange = (i: number): Interval => ({ start: drafts[i]!.start, end: drafts[i]!.end });
+  const minRange = (i: number): Interval => ({ start: drafts[i]!.start, end: lbBlocks?.[i] ?? drafts[i]!.end });
   const rec = (i: number): { ids: (string | null)[]; blocks: Ms[] } | null => {
     if (i === drafts.length) {
-      if (lowerBound) return { ids: [...ids], blocks: drafts.map((d) => d.end) };
+      if (lowerBound) return { ids: [...ids], blocks: drafts.map((d, j) => lbBlocks?.[j] ?? d.end) };
       const blocks = blockEnds(drafts, ids);
       return employeesFit(p, drafts, blocks) && resourcesFit(p, drafts, blocks, ids) ? { ids: [...ids], blocks } : null;
     }
@@ -174,6 +177,7 @@ export function planAt(
   candidates: EmployeeInput[][],
   t: Ms,
   shape: Shape,
+  maxNodes: number = MAX_NODES_PER_START,
 ): PlannedSegment[] | null {
   const n = services.length;
   const parallelIdx = services.map((s, i) => (s.parallelizable ? i : -1)).filter((i) => i >= 0);
@@ -200,8 +204,21 @@ export function planAt(
     }));
   };
 
+  let nodes = 0;
+  const freeKey = (e: EmployeeInput): string => JSON.stringify(p.employeeFree.get(e.id) ?? []);
+
+  /** Sound lower bound of each placed segment's block: keep the buffer unless it can still be dropped. */
+  const lowerBlocks = (placed: Draft[], nextCursor: Ms, unplacedParallel: boolean, maxParallelEnd: Ms): Ms[] =>
+    placed.map((d) => {
+      const dropPossible =
+        placed.some((o) => o !== d && o.employee.id === d.employee.id && o.start === d.end) ||
+        (placed.length < n && (d.end === nextCursor || (unplacedParallel && d.end >= maxParallelEnd)));
+      return dropPossible ? d.end : d.end + d.service.bufferAfterMin * MINUTE;
+    });
+
   const rec = (k: number, cursor: Ms): PlannedSegment[] | null => {
     if (k === n) return finish();
+    const seen = new Set<string>();
     const idx = order[k]!;
     const service = services[idx]!;
     const inBlock = shape === "parallel" && service.parallelizable;
@@ -211,19 +228,28 @@ export function planAt(
       const end = start + durationMin * MINUTE;
       if (!covers(p.employeeFree.get(employee.id) ?? [], { start, end })) continue;
       if (drafts.some((d) => d !== undefined && d.employee.id === employee.id && overlaps({ start, end }, d))) continue;
+      // Symmetry: employees with equal terms and free time are interchangeable unless already in the plan.
+      const used = drafts.some((d) => d !== undefined && d.employee.id === employee.id);
+      const key = used ? `id:${employee.id}` : `${durationMin}|${priceCents}|${freeKey(employee)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (++nodes > maxNodes) return null;
       drafts[idx] = { employee, service, start, end, durationMin, priceCents };
-      // Prune: placed segments must already be resource-feasible with minimal blocks.
       const placed = drafts.filter((d): d is Draft => d !== undefined);
-      if (assignResources(p, placed, true) === null) {
-        drafts[idx] = undefined;
-        continue;
-      }
       // Parallel block ends when its last member is placed: next cursor is the max end so far.
       const nextCursor = inBlock
         ? k + 1 < n && !(services[order[k + 1]!]!.parallelizable)
-          ? Math.max(...drafts.filter((d): d is Draft => d !== undefined).map((d) => d.end))
+          ? Math.max(...placed.map((d) => d.end))
           : cursor
         : end;
+      const unplacedParallel = shape === "parallel" && order.slice(k + 1).some((i) => services[i]!.parallelizable);
+      const maxParallelEnd = Math.max(...placed.filter((d) => d.service.parallelizable).map((d) => d.end), 0);
+      const lb = lowerBlocks(placed, nextCursor, unplacedParallel, maxParallelEnd);
+      // Prune: placed segments must be employee- and resource-feasible with the lower-bound blocks.
+      if (!employeesFit(p, placed, lb) || assignResources(p, placed, true, lb) === null) {
+        drafts[idx] = undefined;
+        continue;
+      }
       const found = rec(k + 1, nextCursor);
       if (found) return found;
       drafts[idx] = undefined;

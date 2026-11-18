@@ -56,6 +56,7 @@ export function validatePlan(ctx: Context, choices: ServiceChoice[], segments: P
   if (segments.some((s) => s.end > dayEnd)) return fail("MALFORMED_PLAN");
   if (!shapeOk(drafts, t)) return fail("MALFORMED_PLAN");
 
+  // Rejection order: resource presence is checked before availability of the employee/resource times.
   const resourceIds = segments.map((sg) => sg.resourceId ?? null);
   const needs = drafts.map((d) => d.service.resourceTypeId !== null);
   if (needs.some((x, i) => x && resourceIds[i] === null)) return fail("RESOURCE_UNAVAILABLE");
