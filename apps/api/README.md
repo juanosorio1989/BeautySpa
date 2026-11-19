@@ -198,6 +198,6 @@ If you edit an already-applied migration locally, reset the test database by han
 ## Catalog (`src/catalog/`)
 
 `CatalogModule` holds the OWNER-only catalog CRUD (`@StaffAuth("OWNER")`, every query filtered by `principal.org`, every write audited in the same transaction):
-`/v1/staff/categories`, `/v1/staff/levels`, `/v1/staff/resource-types` (`GET`, `POST`, `GET|PATCH|DELETE /:id`) and `/v1/staff/resources` (`GET ?locationId`, `POST`, `GET|PATCH /:id`; no DELETE, deactivate with `active: false`).
+`/v1/staff/categories`, `/v1/staff/levels`, `/v1/staff/resource-types` (`GET`, `POST`, `GET|PATCH|DELETE /:id`) and `/v1/staff/resources` (`GET ?locationId`, `POST`, `GET|PATCH /:id`; no DELETE, deactivate with `active: false`) and `/v1/staff/services` (`GET ?active=true|false&categoryId`, `POST`, `GET|PATCH /:id`; no DELETE, deactivate with `active: false`; a PATCH with `levelPrices` replaces all rows).
 Lists sort by `sort, name.en` (categories), `rank` (levels), `name.en` (resource types), `name` (resources). Deleting a resource type still used by a service or resource answers 409 `CONFLICT`; a resource with an unknown `resourceTypeId` answers 400 on that path. A missing or other-org `:id` is 404, a non-UUID 400.
-Tests: `test/integration/catalog/simple-crud.int.test.ts`.
+Tests: `test/integration/catalog/simple-crud.int.test.ts`, `test/integration/catalog/services.int.test.ts`.

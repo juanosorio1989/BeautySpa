@@ -81,9 +81,9 @@ describe("services with level prices", () => {
     expect(priced.status).toBe(200);
     expect(priced.body.priceCents).toBe(4500);
     expect(priced.body.levelPrices).toHaveLength(1);
-    const audit = await ctx.prisma.auditLog.findFirst({ where: { action: "service.update", entityId: id }, orderBy: { at: "desc" } });
+    const audits = await ctx.prisma.auditLog.findMany({ where: { action: "service.update", entityId: id } });
+    const audit = audits.find((a) => (a.after as { priceCents: number }).priceCents === 4500);
     expect((audit?.before as { priceCents: number }).priceCents).toBe(3500);
-    expect((audit?.after as { priceCents: number }).priceCents).toBe(4500);
 
     const replaced = await api("patch", `/staff/services/${id}`).send({
       levelPrices: [{ levelId: senior, durationMin: 40, priceCents: 5000 }],
