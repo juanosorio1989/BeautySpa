@@ -26,6 +26,9 @@ importers:
       '@beautyspa/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@beautyspa/datetime':
+        specifier: workspace:*
+        version: link:../../packages/datetime
       '@nestjs/common':
         specifier: ^11.0.0
         version: 11.2.10(reflect-metadata@0.2.2)(rxjs@7.8.2)
