@@ -76,6 +76,14 @@ export class StaffLinksService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
+  /** Spends every unused invite and password-reset link of `staffId` (access or email changed). */
+  async endPendingLinks(staffId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? this.prisma).staffAuthToken.updateMany({
+      where: { staffUserId: staffId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+  }
+
   /** Stores a new link for `staffId` (superseding unused ones of `purpose`) and returns its URL. */
   async issue(staffId: string, purpose: StaffTokenPurpose, tx?: Prisma.TransactionClient): Promise<string> {
     const db = tx ?? this.prisma;

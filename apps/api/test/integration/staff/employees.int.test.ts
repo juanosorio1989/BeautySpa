@@ -2,12 +2,16 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { sha256Hex } from "../../../src/auth/crypto/tokens.js";
 import { RefreshTokenService } from "../../../src/auth/refresh-token.service.js";
+import { StaffLinksService } from "../../../src/auth/staff/staff-links.service.js";
 import { ConsoleMailer } from "../../../src/mail/console.mailer.js";
 import { MAILER } from "../../../src/mail/mailer.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import { seedFixture, staffSession, type Fixture } from "../helpers.js";
 
 const BODY = { "x-token-transport": "body" };
+const NEW_PASSWORD = "a-long-password-1";
+/** The `token` query parameter of a link. */
+const tokenOf = (link: string) => new URL(link).searchParams.get("token")!;
 
 describe("employees CRUD", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -141,6 +145,72 @@ describe("employees CRUD", () => {
     expect(audit?.after).toMatchObject({ active: false });
   });
 
+  it.each([{ role: "RECEPTION" }, { email: "new@x.dev" }, { canLogin: false }])(
+    "PATCH %o revokes the member's refresh tokens",
+    async (patch) => {
+      const token = await liveRefreshToken(f.staffA);
+      const res = await api("patch", `/staff/employees/${f.staffA}`).send(patch);
+      expect(res.status).toBe(200);
+      expect((await tokenRow(token))!.revokedAt).not.toBeNull();
+    },
+  );
+
+  it("PATCH canLogin: false spends a pending invite, which then cannot turn login back on", async () => {
+    const link = await ctx.app.get(StaffLinksService).issue(f.staffA, "INVITE");
+    await ctx.prisma.staffUser.update({ where: { id: f.staffA }, data: { canLogin: true } });
+    expect((await api("patch", `/staff/employees/${f.staffA}`).send({ canLogin: false })).status).toBe(200);
+    const accept = await request(ctx.app.getHttpServer())
+      .post("/v1/auth/staff/invite/accept")
+      .set(BODY)
+      .send({ token: tokenOf(link), password: NEW_PASSWORD });
+    expect(accept.status).toBe(400);
+    expect(accept.body.code).toBe("LINK_INVALID");
+    const row = await ctx.prisma.staffUser.findUniqueOrThrow({ where: { id: f.staffA } });
+    expect(row).toMatchObject({ canLogin: false, passwordHash: null });
+  });
+
+  it("PATCH email spends the invite and reset links sent to the old address", async () => {
+    const links = ctx.app.get(StaffLinksService);
+    const invite = await links.issue(f.staffA, "INVITE");
+    const reset = await links.issue(f.staffA, "PASSWORD_RESET");
+    expect((await api("patch", `/staff/employees/${f.staffA}`).send({ email: "moved@test.dev" })).status).toBe(200);
+    const post = (path: string, token: string) =>
+      request(ctx.app.getHttpServer())
+        .post(`/v1/auth/staff/${path}`)
+        .set(BODY)
+        .send({ token: tokenOf(token), password: NEW_PASSWORD });
+    const a = await post("invite/accept", invite);
+    expect(a.status).toBe(400);
+    expect(a.body.code).toBe("LINK_INVALID");
+    const b = await post("password/reset", reset);
+    expect(b.status).toBe(400);
+    expect(b.body.code).toBe("LINK_INVALID");
+    expect((await ctx.prisma.staffUser.findUniqueOrThrow({ where: { id: f.staffA } })).passwordHash).toBeNull();
+  });
+
+  it("PATCH email to one already in use is 409", async () => {
+    const res = await api("patch", `/staff/employees/${f.staffA}`).send({ email: "b@test.dev" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("CONFLICT");
+  });
+
+  it("rejects another org's profile.levelId with 400 on that path", async () => {
+    const other = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
+    const lvl = await ctx.prisma.level.create({ data: { organizationId: other.id, name: { en: "X", es: "X" }, rank: 1 } });
+    const res = await api("post", "/staff/employees").send(stylist({ profile: { displayName: "Maria", levelId: lvl.id } }));
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].path).toBe("profile.levelId");
+  });
+
+  it("POST without locationIds in an org with several locations is 400 on locationIds", async () => {
+    await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} },
+    });
+    const res = await api("post", "/staff/employees").send(stylist());
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].path).toBe("locationIds");
+  });
+
   it("PATCH locale only keeps the member's refresh tokens", async () => {
     const token = await liveRefreshToken(f.staffA);
     const res = await api("patch", `/staff/employees/${f.staffA}`).send({ locale: "es" });
@@ -185,6 +255,8 @@ describe("employees CRUD", () => {
     expect(role.body.code).toBe("FORBIDDEN");
     const active = await api("patch", `/staff/employees/${owner.id}`).send({ active: false });
     expect(active.status).toBe(403);
+    const canLogin = await api("patch", `/staff/employees/${owner.id}`).send({ canLogin: false });
+    expect(canLogin.status).toBe(403);
     const locale = await api("patch", `/staff/employees/${owner.id}`).send({ locale: "es" });
     expect(locale.status).toBe(200);
     expect(locale.body).toMatchObject({ role: "OWNER", locale: "es", active: true });

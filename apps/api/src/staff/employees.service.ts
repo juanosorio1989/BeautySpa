@@ -35,8 +35,10 @@ function invalidState(path: string, message: string): BadRequestException {
 
 /**
  * Staff members ("employees": OWNER, RECEPTION and EMPLOYEE). There is no hard
- * delete: deactivate with `active: false`. Changing another member's role,
- * email or access revokes their refresh tokens in the same transaction.
+ * delete: deactivate with `active: false`. Changing a member's role or email
+ * (your own email included), or turning `active`/`canLogin` off, revokes their
+ * refresh tokens and spends their pending invite/reset links in the same
+ * transaction.
  */
 @Injectable()
 export class EmployeesService {
@@ -74,7 +76,7 @@ export class EmployeesService {
   async create(principal: AccessClaims, input: EmployeeCreate, ip: string | null): Promise<Employee> {
     const dto = await this.mapUnique(() =>
       this.prisma.$transaction(async (tx) => {
-        const locationIds = input.locationIds ?? [(await this.locations.resolve(principal.org, undefined, tx)).id];
+        const locationIds = input.locationIds ?? [await this.defaultLocationId(tx, principal.org)];
         await this.locations.assertInOrg(principal.org, locationIds, "locationIds", tx);
         await this.assertRefs(tx, principal.org, input.profile, input.serviceIds);
         const row = await tx.staffUser.create({
@@ -162,7 +164,11 @@ export class EmployeesService {
           (patch.email !== undefined && patch.email !== current.email) ||
           (patch.active === false && current.active) ||
           (patch.canLogin === false && current.canLogin);
-        if (endsSessions) await this.refreshTokens.revokeAllFor({ type: "STAFF", id }, tx);
+        if (endsSessions) {
+          // Pending invite/reset links would otherwise restore access or reach the old address.
+          await this.refreshTokens.revokeAllFor({ type: "STAFF", id }, tx);
+          await this.links.endPendingLinks(id, tx);
+        }
 
         const after = this.toDto(row);
         await recordStaffAudit(this.audit, tx, principal, "staff_user", "update", id, before, after, ip);
@@ -205,6 +211,14 @@ export class EmployeesService {
       levelId: p.levelId,
       bookableOnline: p.bookableOnline,
     };
+  }
+
+  /** The only location of the organization; 400 on `locationIds` when there are several. */
+  private async defaultLocationId(tx: Prisma.TransactionClient, orgId: string): Promise<string> {
+    if ((await tx.location.count({ where: { organizationId: orgId } })) > 1) {
+      throw invalidRef("locationIds", "locationIds is required when there are several locations");
+    }
+    return (await this.locations.resolve(orgId, undefined, tx)).id;
   }
 
   /** 400 on the first `profile.levelId` / `serviceIds.<i>` that is not a row of the organization. */

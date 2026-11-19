@@ -86,16 +86,25 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
   `PATCH { active: false }`. Categories, levels, resource types, time off and
   closures can be deleted; a delete blocked by a foreign key answers 409.
 - **Locations**: `POST` without `locationIds` assigns the only location (400 on
-  `locationId` when there are several). `PATCH locationIds` replaces them and
+  `locationIds` when there are several). `PATCH locationIds` replaces them and
   deletes the member's working hours and location-bound time off at removed
   locations.
 - **Reads** are OWNER and RECEPTION (reception books for a professional);
   writes are OWNER. `POST { sendInvite: true }` emails the invite after commit.
+  If that email fails, the member exists and the response is 5xx; recover with
+  `POST /staff/employees/:id/invite` (retrying the `POST` gives 409).
 - **Self-protection**: an OWNER cannot change their own `role`, `active` or
   `canLogin` (403 `FORBIDDEN`), so the salon never loses its last owner by
-  accident. Changing a member's `role` or `email`, or setting `active` or
-  `canLogin` to false, revokes all their refresh tokens in the same
-  transaction.
+  accident.
+- **Revocation**: changing any member's `role` or `email` (your own email
+  included: you sign in again with the new address), or setting `active` or
+  `canLogin` to false, in the same transaction revokes all their refresh
+  tokens and spends their unused invite and password-reset links (a link sent
+  to an old address, or one that would turn login back on, stops working).
+- **Accepted limitation**: access tokens stay valid for up to 15 minutes after
+  revocation (`role`/`active` are not re-checked per request), so two OWNERs
+  acting concurrently could leave no active owner; self-protection only
+  prevents doing it to yourself.
 
 ## Webhooks
 
