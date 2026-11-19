@@ -71,7 +71,9 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | POST, PATCH | `/staff/employees`, `/staff/employees/:id` (no DELETE: `PATCH { active: false }`) | OWNER |
 | CRUD | `/staff/employees/:id/working-hours`; POST `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
 | CRUD | `/staff/time-off` | OWNER, RECEPTION; EMPLOYEE: read own |
-| GET/PATCH | `/staff/settings` | OWNER |
+| GET/PATCH | `/staff/settings?locationId=` — location profile, `settings` (merged by key), `hours` (replaced as a set) | OWNER |
+| GET | `/staff/closures?from=&to=&locationId=` | all staff |
+| POST, PATCH, DELETE | `/staff/closures`, `/staff/closures/:id` | OWNER |
 | GET | `/staff/audit?entity=&id=` | OWNER |
 
 ### Employees
