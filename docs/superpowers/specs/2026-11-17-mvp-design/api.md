@@ -24,11 +24,13 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 
 ## Public (no auth)
 
+`locationId` may be omitted only in an organization with a single location (else 400 on `locationId`).
+
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/public/locations` | name, address, hours, phone (one in the MVP) |
-| GET | `/public/services` | active, online-bookable, by category, both languages |
-| GET | `/public/employees` | bookable profiles + services they do |
+| GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`) |
+| GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
+| GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
 | GET | `/availability` | `locationId?`, `services[]=id:employeeId|ANY&date=YYYY-MM-DD` (or `from`/`to`), `excludeAppointmentId?` (authenticated owner of it, or staff) → `Slot[]` |
 | POST | `/holds` | `{ segments }` from a slot → `{ holdId, expiresAt }`. Rate-limited per IP. |
 
@@ -74,7 +76,7 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | GET/PATCH | `/staff/settings?locationId=` — location profile, `settings` (merged by key), `hours` (replaced as a set) | OWNER |
 | GET | `/staff/closures?from=&to=&locationId=` | all staff |
 | POST, PATCH, DELETE | `/staff/closures`, `/staff/closures/:id` | OWNER |
-| GET | `/staff/audit?entity=&id=` | OWNER |
+| GET | `/staff/audit?entity=&id=&cursor=&limit=` | OWNER — `{ items, nextCursor }`, newest first (`id desc`); `nextCursor` is the last item id when a page is full (`limit`, default 50, max 100), else null |
 
 ### Settings
 
