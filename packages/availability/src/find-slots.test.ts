@@ -258,7 +258,7 @@ describe("findSlots", () => {
     );
     expect(seq[0]!.segments.every((x) => x.employeeId === ANA_ID)).toBe(true);
   });
-  // Wall-clock guard against losing the search pruning; generous budget because CI runners are shared and slow; local runs take ~20 ms.
+  // Wall-clock guard against losing the symmetry pruning (the lower-bound prune is not covered by these tests); generous budget because CI runners are shared and slow; local runs take ~20 ms.
   const windowed = (emps: number, chairCount: number) => {
     const employees = Array.from({ length: emps }, (_, i) =>
       makeEmployee(ana, { id: `00000000-0000-4000-8000-0000000002${String(i).padStart(2, "0")}` }),
