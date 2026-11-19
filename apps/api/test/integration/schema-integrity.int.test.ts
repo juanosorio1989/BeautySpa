@@ -70,3 +70,80 @@ describe("tenancy and flexible columns", () => {
     expect(row.entityId).toContain(":");
   });
 });
+
+describe("schedule checks", () => {
+  const time = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
+  const workingHours = (weekday: number, start: string, end: string) =>
+    prisma.workingHours.create({
+      data: {
+        organizationId: f.orgId,
+        staffUserId: f.staffA,
+        locationId: f.locationId,
+        weekday,
+        startTime: time(start),
+        endTime: time(end),
+      },
+    });
+
+  it("names all eight constraints", async () => {
+    const rows = await prisma.$queryRaw<{ conname: string }[]>`
+      SELECT conname::text FROM pg_constraint
+      WHERE contype = 'c' AND conname IN (
+        'working_hours_weekday', 'working_hours_time_order',
+        'location_hours_weekday', 'location_hours_time_order',
+        'time_off_time_order', 'location_closure_time_order',
+        'service_amounts', 'service_level_price_amounts')
+      ORDER BY conname`;
+    expect(rows.map((r) => r.conname)).toEqual([
+      "location_closure_time_order",
+      "location_hours_time_order",
+      "location_hours_weekday",
+      "service_amounts",
+      "service_level_price_amounts",
+      "time_off_time_order",
+      "working_hours_time_order",
+      "working_hours_weekday",
+    ]);
+  });
+
+  it("rejects working_hours weekday 7 (23514)", async () => {
+    expect(await rejectionCode(workingHours(7, "09:00", "17:00"))).toBe("23514");
+  });
+
+  it("rejects working_hours ending before they start (23514)", async () => {
+    expect(await rejectionCode(workingHours(1, "10:00", "09:00"))).toBe("23514");
+  });
+
+  it("accepts working_hours ending at midnight (end 00:00 = 24:00)", async () => {
+    const row = await workingHours(1, "18:00", "00:00");
+    expect(row.endTime.toISOString()).toBe("1970-01-01T00:00:00.000Z");
+  });
+
+  it("rejects location_hours closing before opening (23514)", async () => {
+    const code = await rejectionCode(
+      prisma.locationHours.create({
+        data: { locationId: f.locationId, weekday: 1, opens: time("12:00"), closes: time("11:00") },
+      }),
+    );
+    expect(code).toBe("23514");
+  });
+
+  it("rejects time_off with starts_at = ends_at (23514)", async () => {
+    const at = new Date("2026-12-01T10:00:00.000Z");
+    const code = await rejectionCode(
+      prisma.timeOff.create({
+        data: { organizationId: f.orgId, staffUserId: f.staffA, startsAt: at, endsAt: at, kind: "VACATION" },
+      }),
+    );
+    expect(code).toBe("23514");
+  });
+
+  it("rejects a service with duration_min 0 (23514)", async () => {
+    const code = await rejectionCode(
+      prisma.service.create({
+        data: { organizationId: f.orgId, name: { en: "X", es: "X" }, durationMin: 0, priceCents: 1000 },
+      }),
+    );
+    expect(code).toBe("23514");
+  });
+});

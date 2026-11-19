@@ -110,6 +110,36 @@ ALTER TABLE appointment_segment
   shadow is a separate `<test db>_shadow` database (created on first use, or
   `SHADOW_DATABASE_URL`), never the integration-test database itself.
 
+## Schedule, range and amount checks (raw SQL migration)
+
+Migration `*_schedule_checks` (hand-written; Prisma does not model `CHECK`
+constraints and the drift check ignores them). A violation is SQLSTATE `23514`;
+the API validates first, so a `23514` means a bug or a direct write.
+
+| Constraint | Table | Rule |
+|---|---|---|
+| `working_hours_weekday` | `working_hours` | `weekday BETWEEN 0 AND 6` |
+| `working_hours_time_order` | `working_hours` | `start_time < end_time OR end_time = '00:00'` |
+| `location_hours_weekday` | `location_hours` | `weekday BETWEEN 0 AND 6` |
+| `location_hours_time_order` | `location_hours` | `opens < closes OR closes = '00:00'` |
+| `time_off_time_order` | `time_off` | `starts_at < ends_at` |
+| `location_closure_time_order` | `location_closure` | `starts_at < ends_at` |
+| `service_amounts` | `service` | `duration_min > 0 AND buffer_after_min >= 0 AND price_cents >= 0` |
+| `service_level_price_amounts` | `service_level_price` | `duration_min > 0 AND price_cents >= 0` |
+
+**Wall times in the API.** Hours are `"HH:MM"` local wall time; an end may be
+`"24:00"` (end of day). `time` cannot hold 24:00, so it is stored as `00:00`
+and read back as `"24:00"` (`apps/api/src/common/wall-time.ts`:
+`wallToTime`, `timeToWall(t, "end")`, `dayHoursFromRows`). `"00:00"` as an API
+end is rejected (end must be after start), so a stored end of `00:00` always
+means 24:00.
+
+**Database error mapping.** `apps/api/src/common/db-errors.ts` holds `pgCode`
+(SQLSTATE from a Prisma error, also re-exported by the integration test
+helpers), `isUniqueViolation` (`P2002` / `23505`) and `isForeignKeyViolation`
+(`P2003` / `23503`, answered as 409 `CONFLICT` on blocked deletes). Plan 04
+adds the `23P01` → `SLOT_TAKEN` mapping there.
+
 ## Notifications and audit
 
 | Table | Key columns |
