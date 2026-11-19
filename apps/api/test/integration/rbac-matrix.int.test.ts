@@ -10,14 +10,14 @@ const ALL: Role[] = ["OWNER", "RECEPTION", "EMPLOYEE"];
 
 /**
  * Every route added by plan 03 (catalog, staff, schedules, public, audit):
- * [method, path, allowed roles, selfScoped]. `selfScoped` routes let an allowed role in at
- * the guard but may still answer 403 from the service (EMPLOYEE: own data only), so only
- * the denied roles and the missing token are asserted for them.
+ * [method, path, allowed roles, selfScoped roles]. A selfScoped role is let in by the guard but
+ * may still get 403 from the service (EMPLOYEE: own data only), so it is not asserted
+ * against the placeholder id; a separate test calls with its own id.
  */
 const ID = randomUUID();
 const OWNER_ONLY: Role[] = ["OWNER"];
 const OWNER_RECEPTION: Role[] = ["OWNER", "RECEPTION"];
-const crud = (base: string, opts: { del: boolean }): [Method, string, Role[], boolean?][] => [
+const crud = (base: string, opts: { del: boolean }): [Method, string, Role[], Role[]?][] => [
   ["get", base, OWNER_ONLY],
   ["post", base, OWNER_ONLY],
   ["get", `${base}/${ID}`, OWNER_ONLY],
@@ -25,7 +25,7 @@ const crud = (base: string, opts: { del: boolean }): [Method, string, Role[], bo
   ...(opts.del ? ([["delete", `${base}/${ID}`, OWNER_ONLY]] as [Method, string, Role[]][]) : []),
 ];
 
-const MATRIX: [Method, string, Role[], boolean?][] = [
+const MATRIX: [Method, string, Role[], Role[]?][] = [
   ...crud("/staff/categories", { del: true }),
   ...crud("/staff/levels", { del: true }),
   ...crud("/staff/resource-types", { del: true }),
@@ -37,7 +37,7 @@ const MATRIX: [Method, string, Role[], boolean?][] = [
   ["patch", `/staff/employees/${ID}`, OWNER_ONLY],
   ["post", `/staff/employees/${ID}/invite`, OWNER_ONLY],
   ["post", `/staff/employees/${ID}/reset-2fa`, OWNER_ONLY],
-  ["get", `/staff/employees/${ID}/working-hours`, ALL, true],
+  ["get", `/staff/employees/${ID}/working-hours`, ALL, ["EMPLOYEE"]],
   ["put", `/staff/employees/${ID}/working-hours`, OWNER_ONLY],
   ["get", "/staff/time-off", ALL],
   ["post", "/staff/time-off", OWNER_RECEPTION],
@@ -61,13 +61,18 @@ const PUBLIC: [Method, string][] = [
 describe("RBAC matrix (plan 03 routes)", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
   const tokens = {} as Record<Role, string>;
+  const ids = {} as Record<Role, string>;
 
   beforeAll(async () => {
     ctx = await createIntegrationApp();
     await resetState(ctx.prisma, ctx.redis);
     resetTenancyCache(ctx.app);
     const f = await seedFixture(ctx.prisma);
-    for (const role of ALL) tokens[role] = (await staffSession(ctx.app, ctx.prisma, f, role)).token;
+    for (const role of ALL) {
+      const session = await staffSession(ctx.app, ctx.prisma, f, role);
+      tokens[role] = session.token;
+      ids[role] = session.id;
+    }
   });
   afterAll(async () => {
     await ctx.close();
@@ -89,18 +94,18 @@ describe("RBAC matrix (plan 03 routes)", () => {
         it(`answers 403 to ${role}`, async () => {
           expect((await call(method, path, tokens[role])).status).toBe(403);
         });
-      } else if (!selfScoped) {
+      } else if (!selfScoped?.includes(role)) {
         it(`lets ${role} past the guard`, async () => {
           const status = (await call(method, path, tokens[role])).status;
           expect([401, 403]).not.toContain(status);
         });
       }
     }
-    if (selfScoped) {
-      it("lets OWNER past the guard", async () => {
-        expect([401, 403]).not.toContain((await call(method, path, tokens.OWNER)).status);
-      });
-    }
+  });
+
+  it("lets an EMPLOYEE read their own working hours", async () => {
+    const res = await call("get", `/staff/employees/${ids.EMPLOYEE}/working-hours`, tokens.EMPLOYEE);
+    expect([401, 403]).not.toContain(res.status);
   });
 
   it.each(PUBLIC)("%s %s needs no token", async (method, path) => {

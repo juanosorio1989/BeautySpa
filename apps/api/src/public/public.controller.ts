@@ -6,12 +6,9 @@ import {
   PublicEmployeeSchema,
   PublicLocationSchema,
   PublicServicesResponseSchema,
-  type Category,
   type PublicEmployee,
   type PublicLocation,
-  type PublicService,
   type PublicServicesResponse,
-  type LocalizedText,
 } from "@beautyspa/contracts";
 import { Public } from "../auth/decorators.js";
 import { dayHoursFromRows } from "../common/wall-time.js";
@@ -56,11 +53,7 @@ export class PublicController {
       .sort((a, b) => byText(a.name, b.name));
   }
 
-  /**
-   * A service is listed when it is active and online-bookable, at least one listed
-   * employee does it, and (if it needs a resource type) the location has an active
-   * resource of that type.
-   */
+  /** Listing rules live in `PublicCatalogService.listedServices`. */
   @Public()
   @Get("services")
   @ApiQuery({ name: "locationId", required: false })
@@ -69,55 +62,7 @@ export class PublicController {
     const orgId = await this.tenancy.getOrgId();
     const location = await this.locations.resolve(orgId, locationId);
     const employees = await this.catalog.bookableEmployees(orgId, location.id);
-
-    const [services, resources] = await Promise.all([
-      this.prisma.service.findMany({
-        where: { organizationId: orgId, active: true, onlineBookable: true },
-        include: { levelPrices: true },
-      }),
-      this.prisma.resource.findMany({
-        where: { organizationId: orgId, locationId: location.id, active: true },
-        select: { resourceTypeId: true },
-      }),
-    ]);
-    const typesAvailable = new Set(resources.map((r) => r.resourceTypeId));
-
-    const listed: PublicService[] = [];
-    for (const s of services) {
-      if (s.resourceTypeId !== null && !typesAvailable.has(s.resourceTypeId)) continue;
-      const prices = s.levelPrices;
-      const candidates = employees
-        .filter((e) => e.serviceIds.includes(s.id))
-        .map((e) => prices.find((p) => p.levelId === e.level?.id)?.priceCents ?? s.priceCents);
-      if (candidates.length === 0) continue;
-      listed.push({
-        id: s.id,
-        categoryId: s.categoryId,
-        name: s.name as LocalizedText,
-        description: s.description as LocalizedText | null,
-        durationMin: s.durationMin,
-        priceCents: s.priceCents,
-        fromPriceCents: Math.min(...candidates),
-        parallelizable: s.parallelizable,
-      });
-    }
-
-    const usedCategoryIds = [...new Set(listed.map((s) => s.categoryId).filter((id): id is string => id !== null))];
-    const categoryRows = usedCategoryIds.length
-      ? await this.prisma.serviceCategory.findMany({ where: { organizationId: orgId, id: { in: usedCategoryIds } } })
-      : [];
-    const categories: Category[] = categoryRows
-      .map((c) => ({ id: c.id, name: c.name as LocalizedText, sort: c.sort }))
-      .sort((a, b) => a.sort - b.sort || byText(a.name.en, b.name.en));
-    const sortOf = new Map(categories.map((c) => [c.id, c.sort]));
-    const rank = (s: PublicService) => (s.categoryId ? (sortOf.get(s.categoryId) ?? Infinity) : Infinity);
-
-    listed.sort((a, b) => {
-      const ra = rank(a);
-      const rb = rank(b);
-      return ra === rb ? byText(a.name.en, b.name.en) : ra < rb ? -1 : 1;
-    });
-    return { categories, services: listed };
+    return this.catalog.listedServices(orgId, location.id, employees);
   }
 
   @Public()
@@ -127,10 +72,8 @@ export class PublicController {
   async listEmployees(@Query("locationId", OptionalIdPipe) locationId?: string): Promise<PublicEmployee[]> {
     const orgId = await this.tenancy.getOrgId();
     const location = await this.locations.resolve(orgId, locationId);
-    const [employees, listedIds] = await Promise.all([
-      this.catalog.bookableEmployees(orgId, location.id),
-      this.listServices(location.id).then((r) => new Set(r.services.map((s) => s.id))),
-    ]);
+    const employees = await this.catalog.bookableEmployees(orgId, location.id);
+    const listedIds = new Set((await this.catalog.listedServices(orgId, location.id, employees)).services.map((x) => x.id));
     return employees
       .map((e) => ({
         id: e.id,

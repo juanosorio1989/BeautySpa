@@ -127,6 +127,10 @@ describe("public catalog reads", () => {
     expect(res.body[1].hours).toEqual([{ weekday: 1, start: "09:00", end: "24:00" }]);
   });
 
+  it.each(["/public/services", "/public/employees"])("rejects a non-UUID locationId on %s with 400", async (path) => {
+    expect((await get(`${path}?locationId=nope`)).status).toBe(400);
+  });
+
   it("requires locationId when the organization has several locations", async () => {
     await ctx.prisma.location.create({ data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} } });
     expect((await get("/public/services")).status).toBe(400);

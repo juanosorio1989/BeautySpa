@@ -69,6 +69,7 @@ describe("GET /staff/audit", () => {
 
   it("rejects an invalid limit with 400 and RECEPTION/EMPLOYEE with 403", async () => {
     expect((await audit("?limit=0")).status).toBe(400);
+    expect((await audit("?cursor=not-a-uuid")).status).toBe(400);
     const reception = await staffSession(ctx.app, ctx.prisma, f, "RECEPTION");
     expect((await audit("", reception.token)).status).toBe(403);
     const employee = await staffSession(ctx.app, ctx.prisma, f, "EMPLOYEE");
