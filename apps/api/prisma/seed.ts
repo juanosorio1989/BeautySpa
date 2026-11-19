@@ -578,7 +578,7 @@ export async function seed(
     await book("Rosa Díaz", "brow wax", "15:00", [
       { service: "Brow wax", staff: "Sofía Méndez" },
     ]);
-  });
+  }, { timeout: 30_000 });
 
   const inOrg = { organizationId: orgId };
   const [

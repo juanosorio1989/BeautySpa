@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req } from "@nestjs/common";
-import { ApiCreatedResponse, ApiOkResponse } from "@nestjs/swagger";
+import { ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse } from "@nestjs/swagger";
 import type { Request } from "express";
 import { createZodDto } from "nestjs-zod";
 import {
@@ -54,6 +54,7 @@ export class TimeOffController {
   @StaffAuth("OWNER", "RECEPTION")
   @Delete(":id")
   @HttpCode(204)
+  @ApiNoContentResponse()
   remove(@Principal() p: AccessClaims, @Param("id", IdPipe) id: string, @Req() req: Request): Promise<void> {
     return this.timeOff.remove(p, id, requestMeta(req).ip);
   }

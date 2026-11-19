@@ -72,6 +72,11 @@ export class ServiceCatalogService {
 
   update(principal: AccessClaims, id: string, patch: ServiceUpdate, ip: string | null): Promise<Service> {
     return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM service
+        WHERE id = ${id}::uuid AND organization_id = ${principal.org}::uuid
+        FOR UPDATE`;
+      if (locked.length === 0) throw notFound("Service");
       const current = await tx.service.findFirst({ where: { id, organizationId: principal.org }, include });
       if (!current) throw notFound("Service");
       await this.assertRefs(tx, principal.org, patch);

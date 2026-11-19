@@ -71,8 +71,10 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | CRUD | `/staff/services`, `/staff/categories`, `/staff/levels`, `/staff/resources`, `/staff/resource-types` | OWNER |
 | GET | `/staff/employees?active=&locationId=`, `/staff/employees/:id` | OWNER, RECEPTION |
 | POST, PATCH | `/staff/employees`, `/staff/employees/:id` (no DELETE: `PATCH { active: false }`) | OWNER |
-| CRUD | `/staff/employees/:id/working-hours`; POST `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
-| CRUD | `/staff/time-off` | OWNER, RECEPTION; EMPLOYEE: read own |
+| GET | `/staff/employees/:id/working-hours?locationId=` | OWNER, RECEPTION; EMPLOYEE: own |
+| PUT | same path, body `{ days: [{ weekday, start, end }] }` replaces the set | OWNER |
+| POST | `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
+| CRUD | `/staff/time-off` (`?locationId` also returns rows with no location, i.e. all locations) | OWNER, RECEPTION; EMPLOYEE: read own |
 | GET/PATCH | `/staff/settings?locationId=` — location profile, `settings` (merged by key), `hours` (replaced as a set) | OWNER |
 | GET | `/staff/closures?from=&to=&locationId=` | all staff |
 | POST, PATCH, DELETE | `/staff/closures`, `/staff/closures/:id` | OWNER |
@@ -104,6 +106,8 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
   people who perform services; `serviceIds` require a profile, and
   `PATCH { profile: null }` also removes all services. `canLogin` requires an
   email. A duplicate email answers 409 `CONFLICT`.
+- `profile` in a PATCH replaces the profile as a whole; omitted fields take
+  their defaults (send the full profile to change one field).
 - **No hard delete** for services, resources and staff (they have history):
   `PATCH { active: false }`. Categories, levels, resource types, time off and
   closures can be deleted; a delete blocked by a foreign key answers 409.

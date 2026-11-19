@@ -115,6 +115,17 @@ describe("employees CRUD", () => {
     expect(await ctx.prisma.staffUser.count({ where: { organizationId: f.orgId } })).toBe(3);
   });
 
+  it("PATCH profile replaces the profile as a whole: omitted fields take their defaults", async () => {
+    const lvl = await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 1 } });
+    const created = await api("post", "/staff/employees").send(
+      stylist({ profile: { displayName: "Maria", levelId: lvl.id, bookableOnline: false } }),
+    );
+    expect(created.status).toBe(201);
+    const res = await api("patch", `/staff/employees/${created.body.id}`).send({ profile: { displayName: "New" } });
+    expect(res.status).toBe(200);
+    expect(res.body.profile).toMatchObject({ displayName: "New", levelId: null, bookableOnline: true });
+  });
+
   it("PATCH profile: null removes the profile and its services", async () => {
     const created = await api("post", "/staff/employees").send(stylist());
     const res = await api("patch", `/staff/employees/${created.body.id}`).send({ profile: null });
