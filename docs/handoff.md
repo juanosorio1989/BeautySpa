@@ -1,6 +1,6 @@
 # Handoff
 
-Updated: 2026-11-18
+Updated: 2026-11-18 (end of day)
 
 ## Done
 
@@ -22,7 +22,8 @@ Updated: 2026-11-18
 
 ## Next
 
-1. Write plan 04 (booking API) in `docs/superpowers/plans/2026-11-17-mvp/`, then execute it subagent-driven.
+1. Plan 04 (booking API) is written: `docs/superpowers/plans/2026-11-17-mvp/04-booking.md`, on branch `feat/mvp-04-booking` (not pushed). Waiting for the owner's review of the plan (routing table and design calls 1-13).
+2. After approval: execute it subagent-driven from Task 1; the ledger goes in `.superpowers/sdd/04-booking/progress.md`.
 
 ## Carried into later plans
 
@@ -41,4 +42,4 @@ Updated: 2026-11-18
 
 ## Open questions
 
-- None.
+- Owner review of plan 04 design calls, especially: reschedule/move deletes the old segments (spec said `occupies = false`); hold sweeper in-process until plan 05; walk-in window; account-deletion details.
