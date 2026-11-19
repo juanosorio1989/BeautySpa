@@ -194,3 +194,10 @@ The booking exclusion constraints are raw SQL in `prisma/migrations/*_booking_co
 `test:int` applies pending migrations to `DATABASE_URL_TEST` (database name must contain `test` as a `_`-separated word, e.g. `beautyspa_test`, and differ from `DATABASE_URL`) and truncates all tables before each test. `REDIS_URL_TEST` must not be DB 0 or the `REDIS_URL` database: tests `FLUSHDB` it. The drift check refuses a shadow database whose name lacks `shadow`/`test` or that equals `DATABASE_URL`.
 If you edit an already-applied migration locally, reset the test database by hand:
 `DATABASE_URL=$DATABASE_URL_TEST pnpm exec prisma migrate reset`.
+
+## Catalog (`src/catalog/`)
+
+`CatalogModule` holds the OWNER-only catalog CRUD (`@StaffAuth("OWNER")`, every query filtered by `principal.org`, every write audited in the same transaction):
+`/v1/staff/categories`, `/v1/staff/levels`, `/v1/staff/resource-types` (`GET`, `POST`, `GET|PATCH|DELETE /:id`) and `/v1/staff/resources` (`GET ?locationId`, `POST`, `GET|PATCH /:id`; no DELETE, deactivate with `active: false`).
+Lists sort by `sort, name.en` (categories), `rank` (levels), `name.en` (resource types), `name` (resources). Deleting a resource type still used by a service or resource answers 409 `CONFLICT`; a resource with an unknown `resourceTypeId` answers 400 on that path. A missing or other-org `:id` is 404, a non-UUID 400.
+Tests: `test/integration/catalog/simple-crud.int.test.ts`.
