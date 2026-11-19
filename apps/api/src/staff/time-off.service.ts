@@ -118,7 +118,11 @@ export class TimeOffService {
   }
 
   /** A non-null location must be one of the member's locations (400 on `locationId`). */
-  private async assertLocation(tx: Prisma.TransactionClient, staffId: string, locationId: string | null): Promise<void> {
+  private async assertLocation(
+    tx: Prisma.TransactionClient,
+    staffId: string,
+    locationId: string | null,
+  ): Promise<void> {
     if (locationId === null) return;
     const link = await tx.staffLocation.findFirst({
       where: { staffUserId: staffId, locationId },
@@ -139,4 +143,3 @@ function toDto(r: TimeOffRow): TimeOff {
     note: r.note,
   };
 }
-

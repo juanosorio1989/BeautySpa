@@ -11,11 +11,14 @@ describe("testRedisUrl", () => {
     expect(() => testRedisUrl()).toThrow(/REDIS_URL_TEST is required/);
   });
 
-  it.each(["redis://localhost:6379", "redis://localhost:6379/", "redis://localhost:6379/0"])("refuses DB 0 (%s)", (url) => {
-    vi.stubEnv("REDIS_URL_TEST", url);
-    vi.stubEnv("REDIS_URL", "redis://localhost:6379/5");
-    expect(() => testRedisUrl()).toThrow(/DB index 0/);
-  });
+  it.each(["redis://localhost:6379", "redis://localhost:6379/", "redis://localhost:6379/0"])(
+    "refuses DB 0 (%s)",
+    (url) => {
+      vi.stubEnv("REDIS_URL_TEST", url);
+      vi.stubEnv("REDIS_URL", "redis://localhost:6379/5");
+      expect(() => testRedisUrl()).toThrow(/DB index 0/);
+    },
+  );
 
   it("refuses the REDIS_URL database", () => {
     vi.stubEnv("REDIS_URL_TEST", "redis://localhost:6379/2");

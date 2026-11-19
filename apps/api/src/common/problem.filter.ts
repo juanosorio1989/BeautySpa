@@ -40,7 +40,8 @@ export class ProblemFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();
     const problem = this.toProblem(exception);
-    if (problem.status >= 500) this.logger.error(exception instanceof Error ? (exception.stack ?? exception.message) : String(exception));
+    if (problem.status >= 500)
+      this.logger.error(exception instanceof Error ? (exception.stack ?? exception.message) : String(exception));
     res.status(problem.status).type("application/problem+json").send(JSON.stringify(problem));
   }
 
@@ -53,7 +54,8 @@ export class ProblemFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
-      const parsedCode = typeof body === "object" && body !== null ? ErrorCode.safeParse((body as { code?: unknown }).code) : undefined;
+      const parsedCode =
+        typeof body === "object" && body !== null ? ErrorCode.safeParse((body as { code?: unknown }).code) : undefined;
       const code = parsedCode?.success ? parsedCode.data : codeForStatus(status);
       const detail = typeof body === "string" ? body : (body as { message?: unknown }).message;
       const errors = status < 500 ? fieldErrors(body) : undefined;

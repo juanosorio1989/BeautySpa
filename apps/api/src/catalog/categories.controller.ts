@@ -14,7 +14,6 @@ import { IdPipe } from "../common/id-pipe.js";
 import { requestMeta } from "../auth/request-meta.js";
 import { CategoriesService } from "./categories.service.js";
 
-
 class CategoryInputDto extends createZodDto(CategoryInputSchema) {}
 class CategoryUpdateDto extends createZodDto(CategoryUpdateSchema) {}
 class CategoryDto extends createZodDto(CategorySchema) {}

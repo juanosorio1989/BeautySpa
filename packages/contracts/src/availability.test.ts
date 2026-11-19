@@ -8,9 +8,9 @@ describe("AvailabilityQuerySchema", () => {
   it("rejects empty services", () =>
     expect(AvailabilityQuerySchema.safeParse({ services: [], date: "2026-12-07" }).success).toBe(false));
   it("rejects 5 services", () =>
-    expect(
-      AvailabilityQuerySchema.safeParse({ services: Array(5).fill(choice), date: "2026-12-07" }).success,
-    ).toBe(false));
+    expect(AvailabilityQuerySchema.safeParse({ services: Array(5).fill(choice), date: "2026-12-07" }).success).toBe(
+      false,
+    ));
   it("accepts ANY employee", () =>
     expect(
       AvailabilityQuerySchema.safeParse({

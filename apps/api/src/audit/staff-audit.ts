@@ -18,7 +18,17 @@ export function recordStaffAudit(
   ip: string | null,
 ): Promise<void> {
   return audit.record(
-    { orgId: principal.org, actorType: "STAFF", actorId: principal.sub, action: `${entity}.${op}`, entity, entityId, before, after, ip },
+    {
+      orgId: principal.org,
+      actorType: "STAFF",
+      actorId: principal.sub,
+      action: `${entity}.${op}`,
+      entity,
+      entityId,
+      before,
+      after,
+      ip,
+    },
     tx,
   );
 }

@@ -1,6 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma, type Service as ServiceRow, type ServiceLevelPrice } from "@prisma/client";
-import type { AccessClaims, LevelPrice, LocalizedText, Service, ServiceInput, ServiceUpdate } from "@beautyspa/contracts";
+import type {
+  AccessClaims,
+  LevelPrice,
+  LocalizedText,
+  Service,
+  ServiceInput,
+  ServiceUpdate,
+} from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
 import { recordStaffAudit } from "../audit/staff-audit.js";
 import { invalidRef, notFound } from "../common/http-errors.js";
@@ -115,11 +122,17 @@ export class ServiceCatalogService {
     refs: { categoryId?: string | null; resourceTypeId?: string | null; levelPrices?: LevelPrice[] },
   ): Promise<void> {
     if (refs.categoryId) {
-      const found = await tx.serviceCategory.findFirst({ where: { id: refs.categoryId, organizationId: orgId }, select: { id: true } });
+      const found = await tx.serviceCategory.findFirst({
+        where: { id: refs.categoryId, organizationId: orgId },
+        select: { id: true },
+      });
       if (!found) throw invalidRef("categoryId", "Unknown category");
     }
     if (refs.resourceTypeId) {
-      const found = await tx.resourceType.findFirst({ where: { id: refs.resourceTypeId, organizationId: orgId }, select: { id: true } });
+      const found = await tx.resourceType.findFirst({
+        where: { id: refs.resourceTypeId, organizationId: orgId },
+        select: { id: true },
+      });
       if (!found) throw invalidRef("resourceTypeId", "Unknown resource type");
     }
     const levelPrices = refs.levelPrices ?? [];

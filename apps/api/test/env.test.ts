@@ -38,7 +38,7 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, COOKIE_SECURE: "true" }).COOKIE_SECURE).toBe(true);
   });
 
-  it("TRUST_PROXY \"false\" is false", () => {
+  it('TRUST_PROXY "false" is false', () => {
     expect(loadEnv({ ...base, TRUST_PROXY: "false" }).TRUST_PROXY).toBe(false);
   });
 
@@ -56,12 +56,20 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, TRUST_PROXY: value }).TRUST_PROXY).toBe(false);
   });
 
-  it.each(["true", "0", "-1", "1.5", "loopback", "10.0.0.0/8,", "not-an-ip", "0.0.0.0/0", "::/0", "10.0.0.0/8, 0.0.0.0/0"])(
-    "TRUST_PROXY %j is rejected and named",
-    (value) => {
-      expect(() => loadEnv({ ...base, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
-    },
-  );
+  it.each([
+    "true",
+    "0",
+    "-1",
+    "1.5",
+    "loopback",
+    "10.0.0.0/8,",
+    "not-an-ip",
+    "0.0.0.0/0",
+    "::/0",
+    "10.0.0.0/8, 0.0.0.0/0",
+  ])("TRUST_PROXY %j is rejected and named", (value) => {
+    expect(() => loadEnv({ ...base, TRUST_PROXY: value })).toThrow(/TRUST_PROXY/);
+  });
 
   it("production with default providers names OTP_PROVIDER and EMAIL_PROVIDER", () => {
     const msg = errorOf(() => loadEnv({ ...base, NODE_ENV: "production" }));

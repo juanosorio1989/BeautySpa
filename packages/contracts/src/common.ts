@@ -45,11 +45,13 @@ export const WeekHoursSchema = z
   .array(DayHoursSchema)
   .max(50)
   .superRefine((days, ctx) => {
-    const order = days.map((_, i) => i).sort((a, b) => {
-      const x = days[a]!;
-      const y = days[b]!;
-      return x.weekday - y.weekday || (x.start < y.start ? -1 : x.start > y.start ? 1 : 0);
-    });
+    const order = days
+      .map((_, i) => i)
+      .sort((a, b) => {
+        const x = days[a]!;
+        const y = days[b]!;
+        return x.weekday - y.weekday || (x.start < y.start ? -1 : x.start > y.start ? 1 : 0);
+      });
     let prev: DayHours | undefined;
     for (const i of order) {
       const cur = days[i]!;

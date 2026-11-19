@@ -5,10 +5,7 @@ import type { AccessClaims, StaffRole } from "@beautyspa/contracts";
 /** Metadata key read by `AccessGuard`. A route without it is denied (403). */
 export const AUTH_POLICY = "auth:policy";
 
-export type AuthPolicy =
-  | { kind: "public" }
-  | { kind: "customer" }
-  | { kind: "staff"; roles: readonly StaffRole[] };
+export type AuthPolicy = { kind: "public" } | { kind: "customer" } | { kind: "staff"; roles: readonly StaffRole[] };
 
 /** A request that passed `AccessGuard` with a token. */
 export type AuthedRequest = Request & { principal?: AccessClaims };

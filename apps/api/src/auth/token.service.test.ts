@@ -90,7 +90,9 @@ describe("TokenService access tokens", () => {
   });
 
   it("verifyAccess rejects claims that fail AccessClaimsSchema", async () => {
-    await expect401(service.verifyAccess(await signRaw({ sub: "x", org: staffClaims.org, typ: "staff", role: "OWNER" })));
+    await expect401(
+      service.verifyAccess(await signRaw({ sub: "x", org: staffClaims.org, typ: "staff", role: "OWNER" })),
+    );
   });
 });
 
@@ -124,6 +126,11 @@ describe("TokenService MFA tokens", () => {
   });
 
   it("an MFA-audience token with typ other than mfa is rejected", async () => {
-    await expect401(service.verifyMfa(await signRaw({ sub: staffId, org: orgId, typ: "staff", purpose: "verify" }, "beautyspa-mfa"), "verify"));
+    await expect401(
+      service.verifyMfa(
+        await signRaw({ sub: staffId, org: orgId, typ: "staff", purpose: "verify" }, "beautyspa-mfa"),
+        "verify",
+      ),
+    );
   });
 });

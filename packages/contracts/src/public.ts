@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { CategorySchema, LevelSchema } from "./catalog";
-import { DayHoursSchema, IdSchema, LocalizedTextSchema, MoneyCentsSchema, PhoneE164Schema, TimezoneSchema } from "./common";
+import {
+  DayHoursSchema,
+  IdSchema,
+  LocalizedTextSchema,
+  MoneyCentsSchema,
+  PhoneE164Schema,
+  TimezoneSchema,
+} from "./common";
 
 export const PublicLocationSchema = z.object({
   id: IdSchema,

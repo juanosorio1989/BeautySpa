@@ -14,7 +14,6 @@ import { IdPipe } from "../common/id-pipe.js";
 import { requestMeta } from "../auth/request-meta.js";
 import { ResourceTypesService } from "./resource-types.service.js";
 
-
 class ResourceTypeInputDto extends createZodDto(ResourceTypeInputSchema) {}
 class ResourceTypeUpdateDto extends createZodDto(ResourceTypeUpdateSchema) {}
 class ResourceTypeDto extends createZodDto(ResourceTypeSchema) {}

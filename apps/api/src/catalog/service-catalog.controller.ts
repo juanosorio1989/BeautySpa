@@ -38,7 +38,10 @@ export class ServiceCatalogController {
     @Query("active", ActivePipe) active?: "true" | "false",
     @Query("categoryId", OptionalIdPipe) categoryId?: string,
   ): Promise<Service[]> {
-    return this.services.list(p.org, { ...(active !== undefined ? { active: active === "true" } : {}), ...(categoryId !== undefined ? { categoryId } : {}) });
+    return this.services.list(p.org, {
+      ...(active !== undefined ? { active: active === "true" } : {}),
+      ...(categoryId !== undefined ? { categoryId } : {}),
+    });
   }
 
   @StaffAuth("OWNER")

@@ -155,9 +155,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
   async function doRefresh(): Promise<TokenResult> {
     try {
       const headers: Record<string, string> =
-        transport === "body"
-          ? { [AUTH_HEADERS.tokenTransport]: "body" }
-          : { [AUTH_HEADERS.csrf]: "1" };
+        transport === "body" ? { [AUTH_HEADERS.tokenTransport]: "body" } : { [AUTH_HEADERS.csrf]: "1" };
       const body =
         transport === "body" ? { refreshToken: (await tokenStore.getRefreshToken()) ?? undefined } : undefined;
       const t = await send(

@@ -33,8 +33,16 @@ describe("services with level prices", () => {
     f = await seedFixture(ctx.prisma);
     owner = await staffSession(ctx.app, ctx.prisma, f, "OWNER");
     // Created in reverse rank order so sorting by rank is observable.
-    senior = (await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 2 } })).id;
-    junior = (await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "Junior", es: "Junior" }, rank: 1 } })).id;
+    senior = (
+      await ctx.prisma.level.create({
+        data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 2 },
+      })
+    ).id;
+    junior = (
+      await ctx.prisma.level.create({
+        data: { organizationId: f.orgId, name: { en: "Junior", es: "Junior" }, rank: 1 },
+      })
+    ).id;
   });
 
   it("creates with two level prices and returns them sorted by level rank", async () => {
@@ -98,9 +106,13 @@ describe("services with level prices", () => {
 
   it("rejects unknown or other-org references with 400 on the field path", async () => {
     const other = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
-    const cat = await ctx.prisma.serviceCategory.create({ data: { organizationId: other.id, name: { en: "X", es: "X" } } });
+    const cat = await ctx.prisma.serviceCategory.create({
+      data: { organizationId: other.id, name: { en: "X", es: "X" } },
+    });
     const rt = await ctx.prisma.resourceType.create({ data: { organizationId: other.id, name: { en: "X", es: "X" } } });
-    const lvl = await ctx.prisma.level.create({ data: { organizationId: other.id, name: { en: "X", es: "X" }, rank: 1 } });
+    const lvl = await ctx.prisma.level.create({
+      data: { organizationId: other.id, name: { en: "X", es: "X" }, rank: 1 },
+    });
 
     const a = await api("post", "/staff/services").send(body({ categoryId: cat.id }));
     expect(a.status).toBe(400);
@@ -127,8 +139,12 @@ describe("services with level prices", () => {
   });
 
   it("lists by category sort (uncategorized last) then name.en, and filters by active and categoryId", async () => {
-    const c1 = await ctx.prisma.serviceCategory.create({ data: { organizationId: f.orgId, name: { en: "Hands", es: "Manos" }, sort: 2 } });
-    const c0 = await ctx.prisma.serviceCategory.create({ data: { organizationId: f.orgId, name: { en: "Face", es: "Cara" }, sort: 1 } });
+    const c1 = await ctx.prisma.serviceCategory.create({
+      data: { organizationId: f.orgId, name: { en: "Hands", es: "Manos" }, sort: 2 },
+    });
+    const c0 = await ctx.prisma.serviceCategory.create({
+      data: { organizationId: f.orgId, name: { en: "Face", es: "Cara" }, sort: 1 },
+    });
     const mk = (en: string, categoryId: string | null, active = true) =>
       api("post", "/staff/services").send(body({ name: { en, es: en }, categoryId, active }));
     await mk("Zed", c0.id);
@@ -155,7 +171,9 @@ describe("services with level prices", () => {
 
   it("answers 404 for an unknown or other-org id, 400 for a non-UUID and has no DELETE", async () => {
     expect((await api("get", "/staff/services/00000000-0000-4000-8000-000000000000")).status).toBe(404);
-    expect((await api("patch", "/staff/services/00000000-0000-4000-8000-000000000000").send({ priceCents: 1 })).status).toBe(404);
+    expect(
+      (await api("patch", "/staff/services/00000000-0000-4000-8000-000000000000").send({ priceCents: 1 })).status,
+    ).toBe(404);
     expect((await api("get", "/staff/services/nope")).status).toBe(400);
     expect((await api("delete", `/staff/services/${f.serviceId}`)).status).toBe(404);
   });

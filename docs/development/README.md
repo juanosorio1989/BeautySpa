@@ -72,6 +72,7 @@ Customers and appointments are demo data: never run it against a real database. 
 | Command | What it does |
 |---|---|
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` | static checks and unit tests (no database) |
+| `pnpm format` / `pnpm format:check` | Prettier (`printWidth` 120); Markdown, the lockfile and migrations are ignored |
 | `pnpm build` | build all packages |
 | `pnpm --filter @beautyspa/api db:deploy` | apply migrations to `DATABASE_URL` |
 | `pnpm --filter @beautyspa/api test:int` | integration tests against `DATABASE_URL_TEST` and `REDIS_URL_TEST` |
@@ -85,6 +86,6 @@ API and database details: [apps/api/README.md](../../apps/api/README.md).
 
 `.github/workflows/ci.yml` runs on pushes to `main` and on pull requests:
 
-- `checks`: install with `--frozen-lockfile`, then lint, typecheck, unit tests, build.
+- `checks`: install with `--frozen-lockfile`, then `format:check`, lint, typecheck, unit tests, build.
 - `integration`: Postgres 16 and Redis 7 services, creates `beautyspa_test`, builds the API,
   `db:deploy`, `test:int`, `db:drift`.

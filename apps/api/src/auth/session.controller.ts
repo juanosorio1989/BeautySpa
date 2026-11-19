@@ -2,7 +2,12 @@ import { Body, Controller, HttpCode, Post, Req, Res } from "@nestjs/common";
 import { ApiBody, ApiNoContentResponse, ApiOkResponse } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { createZodDto } from "nestjs-zod";
-import { LogoutRequestSchema, RefreshRequestSchema, TokenResponseSchema, type TokenResponse } from "@beautyspa/contracts";
+import {
+  LogoutRequestSchema,
+  RefreshRequestSchema,
+  TokenResponseSchema,
+  type TokenResponse,
+} from "@beautyspa/contracts";
 import { Public } from "./decorators.js";
 import { SessionService } from "./session.service.js";
 

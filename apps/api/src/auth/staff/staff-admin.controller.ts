@@ -17,11 +17,7 @@ export class StaffAdminController {
   @Post(":id/invite")
   @HttpCode(204)
   @ApiNoContentResponse()
-  async invite(
-    @Param("id", IdPipe) id: string,
-    @Principal() owner: AccessClaims,
-    @Req() req: Request,
-  ): Promise<void> {
+  async invite(@Param("id", IdPipe) id: string, @Principal() owner: AccessClaims, @Req() req: Request): Promise<void> {
     await this.links.inviteByOwner(owner, id, requestMeta(req).ip);
   }
 

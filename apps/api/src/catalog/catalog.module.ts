@@ -13,7 +13,13 @@ import { ResourcesService } from "./resources.service.js";
 
 @Module({
   imports: [AuditModule],
-  controllers: [CategoriesController, LevelsController, ResourceTypesController, ResourcesController, ServiceCatalogController],
+  controllers: [
+    CategoriesController,
+    LevelsController,
+    ResourceTypesController,
+    ResourcesController,
+    ServiceCatalogController,
+  ],
   providers: [CategoriesService, LevelsService, ResourceTypesService, ResourcesService, ServiceCatalogService],
   exports: [CategoriesService, LevelsService, ResourceTypesService, ResourcesService, ServiceCatalogService],
 })

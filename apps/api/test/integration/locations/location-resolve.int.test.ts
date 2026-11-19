@@ -97,14 +97,20 @@ describe("LocationService", () => {
 
   describe("assertInOrg", () => {
     it("accepts ids of the organization (and an empty list)", async () => {
-      await expect(locations().assertInOrg(f.orgId, [f.locationId, f.locationId], "locationIds")).resolves.toBeUndefined();
+      await expect(
+        locations().assertInOrg(f.orgId, [f.locationId, f.locationId], "locationIds"),
+      ).resolves.toBeUndefined();
       await expect(locations().assertInOrg(f.orgId, [], "locationIds")).resolves.toBeUndefined();
     });
 
     it("answers 400 on the first unknown index", async () => {
       const other = await otherOrgLocation();
       const err = await thrown(() =>
-        locations().assertInOrg(f.orgId, [f.locationId, other.id, "0194b2a0-0000-7000-8000-0000000000ff"], "locationIds"),
+        locations().assertInOrg(
+          f.orgId,
+          [f.locationId, other.id, "0194b2a0-0000-7000-8000-0000000000ff"],
+          "locationIds",
+        ),
       );
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as BadRequestException).getResponse()).toEqual({

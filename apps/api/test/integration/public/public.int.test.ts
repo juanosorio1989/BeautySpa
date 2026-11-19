@@ -36,9 +36,19 @@ describe("public catalog reads", () => {
     await resetState(ctx.prisma, ctx.redis);
     resetTenancyCache(ctx.app);
     f = await seedFixture(ctx.prisma);
-    junior = (await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "Junior", es: "Junior" }, rank: 1 } })).id;
-    senior = (await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 2 } })).id;
-    await ctx.prisma.serviceLevelPrice.create({ data: { serviceId: f.serviceId, levelId: senior, durationMin: 60, priceCents: 5500 } });
+    junior = (
+      await ctx.prisma.level.create({
+        data: { organizationId: f.orgId, name: { en: "Junior", es: "Junior" }, rank: 1 },
+      })
+    ).id;
+    senior = (
+      await ctx.prisma.level.create({
+        data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 2 },
+      })
+    ).id;
+    await ctx.prisma.serviceLevelPrice.create({
+      data: { serviceId: f.serviceId, levelId: senior, durationMin: 60, priceCents: 5500 },
+    });
     juniorStaff = await staff("Zoe", junior, [f.serviceId]);
     seniorStaff = await staff("Ana", senior, [f.serviceId]);
   });
@@ -57,15 +67,22 @@ describe("public catalog reads", () => {
   });
 
   it("returns only categories that have a listed service", async () => {
-    const used = await ctx.prisma.serviceCategory.create({ data: { organizationId: f.orgId, name: { en: "Feet", es: "Pies" }, sort: 1 } });
-    await ctx.prisma.serviceCategory.create({ data: { organizationId: f.orgId, name: { en: "Empty", es: "Vacia" }, sort: 0 } });
+    const used = await ctx.prisma.serviceCategory.create({
+      data: { organizationId: f.orgId, name: { en: "Feet", es: "Pies" }, sort: 1 },
+    });
+    await ctx.prisma.serviceCategory.create({
+      data: { organizationId: f.orgId, name: { en: "Empty", es: "Vacia" }, sort: 0 },
+    });
     await ctx.prisma.service.update({ where: { id: f.serviceId }, data: { categoryId: used.id } });
     const res = await get("/public/services");
     expect(res.body.categories).toEqual([{ id: used.id, name: { en: "Feet", es: "Pies" }, sort: 1 }]);
   });
 
   it("hides a service whose only qualified employee is deactivated", async () => {
-    await ctx.prisma.staffUser.updateMany({ where: { id: { in: [juniorStaff, seniorStaff] } }, data: { active: false } });
+    await ctx.prisma.staffUser.updateMany({
+      where: { id: { in: [juniorStaff, seniorStaff] } },
+      data: { active: false },
+    });
     expect(await serviceIds()).toEqual([]);
   });
 
@@ -76,24 +93,41 @@ describe("public catalog reads", () => {
     expect(await serviceIds()).toEqual([]);
   });
 
-  it.each(["Pedicure chair", "Treatment cabin"])("hides a service needing a %s resource type with no active resource", async (name) => {
-    const type = await ctx.prisma.resourceType.create({ data: { organizationId: f.orgId, name: { en: name, es: name } } });
-    const svc = await ctx.prisma.service.create({
-      data: { organizationId: f.orgId, name: { en: "Needs room", es: "Necesita sala" }, durationMin: 30, priceCents: 3000, resourceTypeId: type.id },
-    });
-    await ctx.prisma.employeeService.create({ data: { staffUserId: seniorStaff, serviceId: svc.id } });
-    const res = await ctx.prisma.resource.create({
-      data: { organizationId: f.orgId, locationId: f.locationId, resourceTypeId: type.id, name: "R1" },
-    });
-    expect(await serviceIds()).toContain(svc.id);
-    await ctx.prisma.resource.update({ where: { id: res.id }, data: { active: false } });
-    expect(await serviceIds()).not.toContain(svc.id);
-    expect(await serviceIds()).toContain(f.serviceId);
-  });
+  it.each(["Pedicure chair", "Treatment cabin"])(
+    "hides a service needing a %s resource type with no active resource",
+    async (name) => {
+      const type = await ctx.prisma.resourceType.create({
+        data: { organizationId: f.orgId, name: { en: name, es: name } },
+      });
+      const svc = await ctx.prisma.service.create({
+        data: {
+          organizationId: f.orgId,
+          name: { en: "Needs room", es: "Necesita sala" },
+          durationMin: 30,
+          priceCents: 3000,
+          resourceTypeId: type.id,
+        },
+      });
+      await ctx.prisma.employeeService.create({ data: { staffUserId: seniorStaff, serviceId: svc.id } });
+      const res = await ctx.prisma.resource.create({
+        data: { organizationId: f.orgId, locationId: f.locationId, resourceTypeId: type.id, name: "R1" },
+      });
+      expect(await serviceIds()).toContain(svc.id);
+      await ctx.prisma.resource.update({ where: { id: res.id }, data: { active: false } });
+      expect(await serviceIds()).not.toContain(svc.id);
+      expect(await serviceIds()).toContain(f.serviceId);
+    },
+  );
 
   it("lists bookable employees sorted by displayName with their listed services only", async () => {
     const hidden = await ctx.prisma.service.create({
-      data: { organizationId: f.orgId, name: { en: "Hidden", es: "Oculto" }, durationMin: 30, priceCents: 1000, onlineBookable: false },
+      data: {
+        organizationId: f.orgId,
+        name: { en: "Hidden", es: "Oculto" },
+        durationMin: 30,
+        priceCents: 1000,
+        onlineBookable: false,
+      },
     });
     await ctx.prisma.employeeService.create({ data: { staffUserId: seniorStaff, serviceId: hidden.id } });
     const res = await get("/public/employees");
@@ -112,7 +146,9 @@ describe("public catalog reads", () => {
   });
 
   it("lists locations sorted by name with hours, a midnight close as 24:00, no token needed", async () => {
-    await ctx.prisma.location.create({ data: { organizationId: f.orgId, name: "Aaa", timezone: "America/New_York", settings: {} } });
+    await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Aaa", timezone: "America/New_York", settings: {} },
+    });
     await ctx.prisma.locationHours.create({
       data: {
         locationId: f.locationId,
@@ -132,7 +168,9 @@ describe("public catalog reads", () => {
   });
 
   it("requires locationId when the organization has several locations", async () => {
-    await ctx.prisma.location.create({ data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} } });
+    await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} },
+    });
     expect((await get("/public/services")).status).toBe(400);
     expect((await get(`/public/services?locationId=${f.locationId}`)).status).toBe(200);
     expect((await get(`/public/employees?locationId=${f.locationId}`)).status).toBe(200);

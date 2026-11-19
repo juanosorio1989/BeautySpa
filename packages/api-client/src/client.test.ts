@@ -74,7 +74,12 @@ describe("auth methods", () => {
 
   it("cookie logout sends csrf + include and no body", async () => {
     const { calls, fetch } = fake([{ status: 204 }]);
-    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: createCookieTokenStore(), transport: "cookie" });
+    const api = createApiClient({
+      baseUrl: "http://x",
+      fetch,
+      tokenStore: createCookieTokenStore(),
+      transport: "cookie",
+    });
     await api.auth.logout();
     const init = calls[0]!.init;
     expect(calls[0]!.url).toBe("http://x/v1/auth/logout");
@@ -165,7 +170,12 @@ describe("request", () => {
 
   it("maps a 409 problem and a non-problem 502", async () => {
     const { fetch } = fake([problem(409, "SLOT_TAKEN"), { status: 502, raw: "<html>bad gateway</html>" }]);
-    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: new MemoryTokenStore(), transport: "cookie" });
+    const api = createApiClient({
+      baseUrl: "http://x",
+      fetch,
+      tokenStore: new MemoryTokenStore(),
+      transport: "cookie",
+    });
     const e1 = await api.request({ method: "POST", path: "/x", body: {}, schema: null }).catch((e: unknown) => e);
     expect((e1 as ApiError).problem.code).toBe("SLOT_TAKEN");
     const e2 = await api.request({ method: "GET", path: "/x", schema: Me }).catch((e: unknown) => e);
@@ -175,7 +185,12 @@ describe("request", () => {
 
   it("rejects when a 200 body fails the schema", async () => {
     const { fetch } = fake([{ status: 200, body: { nope: 1 } }]);
-    const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: new MemoryTokenStore(), transport: "cookie" });
+    const api = createApiClient({
+      baseUrl: "http://x",
+      fetch,
+      tokenStore: new MemoryTokenStore(),
+      transport: "cookie",
+    });
     await expect(api.request({ method: "GET", path: "/me", schema: Me })).rejects.toBeInstanceOf(z.ZodError);
   });
 
@@ -239,7 +254,9 @@ describe("request", () => {
   });
 
   it("a 503 on refresh does not expire the session", async () => {
-    const { fetch } = fake((c) => (c.url.endsWith("/auth/refresh") ? problem(503, "INTERNAL") : problem(401, "UNAUTHENTICATED")));
+    const { fetch } = fake((c) =>
+      c.url.endsWith("/auth/refresh") ? problem(503, "INTERNAL") : problem(401, "UNAUTHENTICATED"),
+    );
     const store = new MemoryTokenStore();
     store.setAccessToken("old");
     await store.setRefreshToken("r");
@@ -324,7 +341,7 @@ describe("refreshLock", () => {
         : problem(401, "UNAUTHENTICATED");
     });
     let lockCalls = 0;
-    const refreshLock = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    const refreshLock = async <T>(fn: () => Promise<T>): Promise<T> => {
       lockCalls++;
       events.push("lock");
       try {
@@ -353,7 +370,7 @@ describe("refreshLock", () => {
   it("a session-ending refresh inside the lock still clears the store and rejects", async () => {
     const { fetch } = fake(() => problem(401, "UNAUTHENTICATED"));
     let lockCalls = 0;
-    const refreshLock = <T,>(fn: () => Promise<T>): Promise<T> => {
+    const refreshLock = <T>(fn: () => Promise<T>): Promise<T> => {
       lockCalls++;
       return fn();
     };

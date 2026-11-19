@@ -54,7 +54,9 @@ describe("TimeOff", () => {
     ).toBe(true);
   });
   it("query rejects from > to", () => {
-    expect(TimeOffQuerySchema.safeParse({ from: "2026-02-01T00:00:00Z", to: "2026-01-01T00:00:00Z" }).success).toBe(false);
+    expect(TimeOffQuerySchema.safeParse({ from: "2026-02-01T00:00:00Z", to: "2026-01-01T00:00:00Z" }).success).toBe(
+      false,
+    );
   });
 });
 

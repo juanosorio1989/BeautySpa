@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ClosureQuerySchema, DEFAULT_LOCATION_SETTINGS, LocationSettingsSchema, StaffSettingsPatchSchema } from "./settings";
+import {
+  ClosureQuerySchema,
+  DEFAULT_LOCATION_SETTINGS,
+  LocationSettingsSchema,
+  StaffSettingsPatchSchema,
+} from "./settings";
 
 describe("LocationSettingsSchema", () => {
   it("validates slot interval and hold minutes", () => {
@@ -15,6 +20,8 @@ describe("StaffSettingsPatchSchema / ClosureQuerySchema", () => {
     expect(StaffSettingsPatchSchema.safeParse({ settings: { holdMinutes: 10 } }).success).toBe(true);
   });
   it("rejects from > to", () => {
-    expect(ClosureQuerySchema.safeParse({ from: "2026-02-01T00:00:00Z", to: "2026-01-01T00:00:00Z" }).success).toBe(false);
+    expect(ClosureQuerySchema.safeParse({ from: "2026-02-01T00:00:00Z", to: "2026-01-01T00:00:00Z" }).success).toBe(
+      false,
+    );
   });
 });

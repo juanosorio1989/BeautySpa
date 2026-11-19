@@ -131,7 +131,10 @@ export class OtpService {
   }
 
   private async defaultLocale(orgId: string): Promise<string> {
-    const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { defaultLocale: true } });
+    const org = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: orgId },
+      select: { defaultLocale: true },
+    });
     return org.defaultLocale;
   }
 }

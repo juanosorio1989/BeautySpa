@@ -26,7 +26,9 @@ export class LevelsService {
 
   create(principal: AccessClaims, input: LevelInput, ip: string | null): Promise<Level> {
     return this.prisma.$transaction(async (tx) => {
-      const row = await tx.level.create({ data: { organizationId: principal.org, name: input.name, rank: input.rank } });
+      const row = await tx.level.create({
+        data: { organizationId: principal.org, name: input.name, rank: input.rank },
+      });
       const dto = this.toDto(row);
       await recordStaffAudit(this.audit, tx, principal, "level", "create", dto.id, null, dto, ip);
       return dto;

@@ -16,12 +16,13 @@ Updated: 2026-11-18
   - OWNER CRUD for categories, levels, resource types, resources, services with per-level prices; employees (profile, services, locations, invite, deactivate; role/email/access changes revoke refresh tokens and spend pending invite/reset links); working hours (replace per location) and time off; location settings, hours and closures; audit log read.
   - Public reads `/v1/public/locations|services|employees`; RBAC matrix test over every route; schedule/amount `CHECK` migration; shared helpers (`IdPipe`, `recordStaffAudit`, `assertInstantRange`, wall-time, db-errors, `LocationService`).
   - Business scope widened: the spa also offers facials, massages and body treatments in a limited number of treatment cabins (a resource type like pedicure chairs). Seed: 5 categories, 20 services, 3 chairs + 2 cabins, 5 employees.
+- Chore — Prettier applied repo-wide (`printWidth` 120, matching existing code; Markdown excluded because table padding hurts readability) and `pnpm format:check` added to CI (branch `chore/prettier`).
+- CI flakiness fixed on the same branch: ESLint ignores tsup's temporary `*.bundled_*.mjs` config (it raced the package build, ENOENT), and the availability P1/P2 perf tests warm up first and allow 1000 ms (GitHub runners took 207-227 ms vs ~20 ms locally).
 - Frontend mockups approved: https://claude.ai/artifact/3zfpH45c9UxwhiMPDWGjNi (base for plans 06/07).
 
 ## Next
 
-1. Chore PR: run Prettier across the repo and add `format:check` to lint/CI (formatting only; ~79 files).
-2. Write plan 04 (booking API) in `docs/superpowers/plans/2026-11-17-mvp/`, then execute it subagent-driven.
+1. Write plan 04 (booking API) in `docs/superpowers/plans/2026-11-17-mvp/`, then execute it subagent-driven.
 
 ## Carried into later plans
 
@@ -35,7 +36,8 @@ Updated: 2026-11-18
 - Plan 06 (web): use `api-client` with `createCookieTokenStore()` and `refreshLock: (fn) => navigator.locks.request("bs-refresh", fn)` so two tabs never refresh at once (a concurrent refresh is treated as token reuse and logs the user out). Decide whether one browser may hold a customer and a staff session at the same time (both use cookie `bs_refresh`). Pages `/[locale]/staff/invite?token=` and `/[locale]/staff/reset?token=`.
 - Before any deploy: set `TRUST_PROXY=1` behind Railway/Fly (never `true`, which is now rejected); `OTP_PROVIDER=twilio`, `EMAIL_PROVIDER=resend`; configure Twilio Geo Permissions / Fraud Guard.
 - Deferred minors from plan 02 reviews (non-blocking): Redis client has no `error` listener; `secrets.ts` ignores `export KEY=` forms; `base32Decode` accepts impossible lengths; `Encryptor` has no AAD and one key id (add a key ring when rotating); forgot-password and login audit timing differences; logout racing a refresh can log a false `auth.refresh_reuse`; `RateLimitService.peek` unused; CLI boot failure prints a stack; a few missing tests (listed in the PR description).
-- Earlier deferred minors: eslint platform rule misses subpath imports; Postgres healthcheck `-h localhost`; mailpit image unpinned; no `.prettierignore`; no `engines.node`; `check-drift.sh` compares raw URLs; RFC 7807 titles from enum names.
+- Unexplained, seen once locally: `contracts#typecheck` failed inside `pnpm turbo run lint typecheck test build` right after the Prettier run (tsc does not read the tsup temp `.mjs`; maybe a mislabelled lint failure). Also: no availability test fails if the lower-bound prune in `plan.ts` is disabled — add one when touching the engine.
+- Earlier deferred minors: eslint platform rule misses subpath imports; Postgres healthcheck `-h localhost`; mailpit image unpinned; no `engines.node`; `check-drift.sh` compares raw URLs; RFC 7807 titles from enum names.
 
 ## Open questions
 
