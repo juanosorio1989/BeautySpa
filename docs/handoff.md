@@ -16,7 +16,7 @@ Updated: 2026-11-18
   - OWNER CRUD for categories, levels, resource types, resources, services with per-level prices; employees (profile, services, locations, invite, deactivate; role/email/access changes revoke refresh tokens and spend pending invite/reset links); working hours (replace per location) and time off; location settings, hours and closures; audit log read.
   - Public reads `/v1/public/locations|services|employees`; RBAC matrix test over every route; schedule/amount `CHECK` migration; shared helpers (`IdPipe`, `recordStaffAudit`, `assertInstantRange`, wall-time, db-errors, `LocationService`).
   - Business scope widened: the spa also offers facials, massages and body treatments in a limited number of treatment cabins (a resource type like pedicure chairs). Seed: 5 categories, 20 services, 3 chairs + 2 cabins, 5 employees.
-- Chore — Prettier applied repo-wide (`printWidth` 120, matching existing code; Markdown excluded because table padding hurts readability) and `pnpm format:check` added to CI (branch `chore/prettier`).
+- Chore — Prettier applied repo-wide (`printWidth` 120, matching existing code; Markdown excluded because table padding hurts readability) and `pnpm format:check` added to CI (PR #4, merged).
 - CI flakiness fixed on the same branch: ESLint ignores tsup's temporary `*.bundled_*.mjs` config (it raced the package build, ENOENT), and the availability P1/P2 perf tests warm up first and allow 1000 ms (GitHub runners took 207-227 ms vs ~20 ms locally).
 - Frontend mockups approved: https://claude.ai/artifact/3zfpH45c9UxwhiMPDWGjNi (base for plans 06/07).
 
