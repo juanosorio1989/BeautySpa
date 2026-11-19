@@ -76,6 +76,24 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | POST, PATCH, DELETE | `/staff/closures`, `/staff/closures/:id` | OWNER |
 | GET | `/staff/audit?entity=&id=` | OWNER |
 
+### Settings
+
+- `GET|PATCH /staff/settings?locationId=` (OWNER) answer `StaffSettings`:
+  `location { id, name, address, phone, timezone }`, `settings` and
+  `hours [{ weekday, start, end }]`.
+- `settings` keys (defaults): `slotIntervalMin` 5, 10, 15, 20, 30 or 60 (15);
+  `holdMinutes` 1-30 (5); `cancelWindowHours` 0-168 (24); `bookingHorizonDays`
+  1-365 (60); `minLeadMinutes` 0-1440 (60). A stored key that is missing or
+  invalid reads as its default.
+- `PATCH` merges `settings` by key (only given keys change), replaces `hours`
+  as a set (overlapping shifts on a weekday are 400 on `hours.<i>`) and
+  updates `name`, `address`, `phone`, `timezone`. An empty body is 400.
+- Wall times are "HH:MM"; an end may be "24:00" (stored as 00:00). `weekday`
+  is 0 (Sunday) to 6.
+- `locationId` may be omitted only in an organization with a single location
+  (else 400 on `locationId`); another org's location is 404. Closures follow
+  the same rule.
+
 ### Employees
 
 - **Every staff member is an "employee"**: `/staff/employees` lists OWNER,

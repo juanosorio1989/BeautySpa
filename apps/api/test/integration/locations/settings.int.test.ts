@@ -76,6 +76,25 @@ describe("location settings", () => {
     expect((await api("patch", `/staff/settings?locationId=${loc.id}`).send({ name: "X" })).status).toBe(404);
   });
 
+  it("rejects overlapping hours, EMPLOYEE reads and a missing locationId with several locations", async () => {
+    const overlap = await api("patch", "/staff/settings").send({
+      hours: [
+        { weekday: 0, start: "09:00", end: "13:00" },
+        { weekday: 0, start: "12:00", end: "15:00" },
+      ],
+    });
+    expect(overlap.status).toBe(400);
+    expect(overlap.body.errors[0].path).toBe("hours.1");
+    const emp = await staffSession(ctx.app, ctx.prisma, f, "EMPLOYEE");
+    expect((await api("get", "/staff/settings", emp.token)).status).toBe(403);
+    await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "UTC", settings: {} },
+    });
+    const res = await api("get", "/staff/settings");
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].path).toBe("locationId");
+  });
+
   it("readLocationSettings falls back per invalid key", () => {
     expect(readLocationSettings({})).toEqual(DEFAULT_LOCATION_SETTINGS);
     expect(readLocationSettings({ holdMinutes: 10, slotIntervalMin: 7, bogus: 1 })).toEqual({

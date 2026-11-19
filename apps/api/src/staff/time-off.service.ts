@@ -1,9 +1,6 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import type { Prisma, TimeOff as TimeOffRow } from "@prisma/client";
-import { z } from "zod";
 import {
-  IsoInstantSchema,
-  refineInstantRange,
   type AccessClaims,
   type TimeOff,
   type TimeOffInput,
@@ -13,11 +10,8 @@ import {
 import { AuditService } from "../audit/audit.service.js";
 import { recordStaffAudit } from "../audit/staff-audit.js";
 import { invalidRef, notFound } from "../common/http-errors.js";
+import { assertInstantRange } from "../common/instant-range.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-
-const RangeSchema = z
-  .object({ startsAt: IsoInstantSchema, endsAt: IsoInstantSchema })
-  .superRefine(refineInstantRange);
 
 /** Vacation and blocked time of staff members; overlapping rows are allowed. */
 @Injectable()
@@ -96,8 +90,7 @@ export class TimeOffService {
         kind: patch.kind ?? current.kind,
         note: patch.note !== undefined ? patch.note : current.note,
       };
-      const range = RangeSchema.safeParse(merged);
-      if (!range.success) throw invalidRef("endsAt", range.error.issues[0]?.message ?? "Invalid range");
+      assertInstantRange(merged);
       if (patch.locationId !== undefined) await this.assertLocation(tx, current.staffUserId, merged.locationId);
       const row = await tx.timeOff.update({
         where: { id },

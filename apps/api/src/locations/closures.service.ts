@@ -1,9 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { LocationClosure as ClosureRow } from "@prisma/client";
-import { z } from "zod";
 import {
-  IsoInstantSchema,
-  refineInstantRange,
   type AccessClaims,
   type Closure,
   type ClosureInput,
@@ -12,13 +9,10 @@ import {
 } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
 import { recordStaffAudit } from "../audit/staff-audit.js";
-import { invalidRef, notFound } from "../common/http-errors.js";
+import { notFound } from "../common/http-errors.js";
+import { assertInstantRange } from "../common/instant-range.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
-
-const RangeSchema = z
-  .object({ startsAt: IsoInstantSchema, endsAt: IsoInstantSchema })
-  .superRefine(refineInstantRange);
 
 /** Dates on which a location is closed; rows hang off the location, so the org check goes through it. */
 @Injectable()
@@ -75,8 +69,7 @@ export class ClosuresService {
         endsAt: patch.endsAt ?? before.endsAt,
         reason: patch.reason !== undefined ? patch.reason : current.reason,
       };
-      const range = RangeSchema.safeParse(merged);
-      if (!range.success) throw invalidRef("endsAt", range.error.issues[0]?.message ?? "Invalid range");
+      assertInstantRange(merged);
       const row = await tx.locationClosure.update({
         where: { id },
         data: { startsAt: new Date(merged.startsAt), endsAt: new Date(merged.endsAt), reason: merged.reason },

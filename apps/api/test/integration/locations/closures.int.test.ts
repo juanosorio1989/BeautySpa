@@ -77,4 +77,13 @@ describe("location closures", () => {
     expect((await api("post", "/staff/closures").send(body({ locationId: loc.id }))).status).toBe(404);
     expect(await ctx.prisma.locationClosure.count()).toBe(1);
   });
+
+  it("requires locationId when the organization has several locations", async () => {
+    await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "UTC", settings: {} },
+    });
+    const res = await api("get", `/staff/closures?${win}`);
+    expect(res.status).toBe(400);
+    expect(res.body.errors[0].path).toBe("locationId");
+  });
 });
