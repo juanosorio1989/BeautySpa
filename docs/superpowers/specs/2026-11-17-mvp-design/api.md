@@ -67,10 +67,35 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — move / change segments |
 | POST | `/staff/appointments/:id/status` | check-in, complete, no-show, cancel (EMPLOYEE: own, check-in/complete only) |
 | CRUD | `/staff/services`, `/staff/categories`, `/staff/levels`, `/staff/resources`, `/staff/resource-types` | OWNER |
-| CRUD | `/staff/employees`, `/staff/employees/:id/working-hours`; POST `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
+| GET | `/staff/employees?active=&locationId=`, `/staff/employees/:id` | OWNER, RECEPTION |
+| POST, PATCH | `/staff/employees`, `/staff/employees/:id` (no DELETE: `PATCH { active: false }`) | OWNER |
+| CRUD | `/staff/employees/:id/working-hours`; POST `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
 | CRUD | `/staff/time-off` | OWNER, RECEPTION; EMPLOYEE: read own |
 | GET/PATCH | `/staff/settings` | OWNER |
 | GET | `/staff/audit?entity=&id=` | OWNER |
+
+### Employees
+
+- **Every staff member is an "employee"**: `/staff/employees` lists OWNER,
+  RECEPTION and EMPLOYEE rows (active first, then display name or email).
+  `profile` (display name, bio, photo, level, bookable online) exists only for
+  people who perform services; `serviceIds` require a profile, and
+  `PATCH { profile: null }` also removes all services. `canLogin` requires an
+  email. A duplicate email answers 409 `CONFLICT`.
+- **No hard delete** for services, resources and staff (they have history):
+  `PATCH { active: false }`. Categories, levels, resource types, time off and
+  closures can be deleted; a delete blocked by a foreign key answers 409.
+- **Locations**: `POST` without `locationIds` assigns the only location (400 on
+  `locationId` when there are several). `PATCH locationIds` replaces them and
+  deletes the member's working hours and location-bound time off at removed
+  locations.
+- **Reads** are OWNER and RECEPTION (reception books for a professional);
+  writes are OWNER. `POST { sendInvite: true }` emails the invite after commit.
+- **Self-protection**: an OWNER cannot change their own `role`, `active` or
+  `canLogin` (403 `FORBIDDEN`), so the salon never loses its last owner by
+  accident. Changing a member's `role` or `email`, or setting `active` or
+  `canLogin` to false, revokes all their refresh tokens in the same
+  transaction.
 
 ## Webhooks
 
@@ -81,7 +106,7 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 
 | Capability | OWNER | RECEPTION | EMPLOYEE | CUSTOMER |
 |---|---|---|---|---|
-| Catalog, employees, settings | ✓ | – | – | – |
+| Catalog, employees, settings | ✓ | read employees | – | – |
 | All appointments, customers | ✓ | ✓ | own | own |
 | Customer private notes | ✓ | ✓ | own appointments | – |
 | Audit log | ✓ | – | – | – |
