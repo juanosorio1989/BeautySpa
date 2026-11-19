@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import type { Prisma, ServiceCategory } from "@prisma/client";
+import type { ServiceCategory } from "@prisma/client";
 import type { AccessClaims, Category, CategoryInput, CategoryUpdate, LocalizedText } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
+import { recordStaffAudit } from "../audit/staff-audit.js";
 import { notFound } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 
@@ -14,7 +15,7 @@ export class CategoriesService {
 
   async list(orgId: string): Promise<Category[]> {
     const rows = await this.prisma.serviceCategory.findMany({ where: { organizationId: orgId } });
-    return rows.map((r) => this.toDto(r)).sort((a, b) => a.sort - b.sort || a.name.en.localeCompare(b.name.en));
+    return rows.map((r) => this.toDto(r)).sort((a, b) => a.sort - b.sort || a.name.en.localeCompare(b.name.en, "en"));
   }
 
   async get(orgId: string, id: string): Promise<Category> {
@@ -29,7 +30,7 @@ export class CategoriesService {
         data: { organizationId: principal.org, name: input.name, sort: input.sort },
       });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "create", dto.id, null, dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "service_category", "create", dto.id, null, dto, ip);
       return dto;
     });
   }
@@ -46,7 +47,7 @@ export class CategoriesService {
         },
       });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "update", id, this.toDto(current), dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "service_category", "update", id, this.toDto(current), dto, ip);
       return dto;
     });
   }
@@ -56,23 +57,8 @@ export class CategoriesService {
       const current = await tx.serviceCategory.findFirst({ where: { id, organizationId: principal.org } });
       if (!current) throw notFound("Category");
       await tx.serviceCategory.delete({ where: { id } });
-      await this.record(tx, principal, "delete", id, this.toDto(current), null, ip);
+      await recordStaffAudit(this.audit, tx, principal, "service_category", "delete", id, this.toDto(current), null, ip);
     });
-  }
-
-  private record(
-    tx: Prisma.TransactionClient,
-    p: AccessClaims,
-    op: "create" | "update" | "delete",
-    id: string,
-    before: Category | null,
-    after: Category | null,
-    ip: string | null,
-  ): Promise<void> {
-    return this.audit.record(
-      { orgId: p.org, actorType: "STAFF", actorId: p.sub, action: `service_category.${op}`, entity: "service_category", entityId: id, before, after, ip },
-      tx,
-    );
   }
 
   private toDto(row: ServiceCategory): Category {

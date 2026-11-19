@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { Prisma, Resource as ResourceRow } from "@prisma/client";
 import type { AccessClaims, Resource, ResourceInput, ResourceUpdate } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
+import { recordStaffAudit } from "../audit/staff-audit.js";
 import { invalidRef, notFound } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
@@ -34,7 +35,7 @@ export class ResourcesService {
       await this.assertResourceType(tx, principal.org, input.resourceTypeId);
       const row = await tx.resource.create({
         data: {
-          organizationId: principal.org,
+          organizationId: location.organizationId,
           locationId: location.id,
           resourceTypeId: input.resourceTypeId,
           name: input.name,
@@ -42,7 +43,7 @@ export class ResourcesService {
         },
       });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "create", dto.id, null, dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "resource", "create", dto.id, null, dto, ip);
       return dto;
     });
   }
@@ -61,7 +62,7 @@ export class ResourcesService {
         },
       });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "update", id, this.toDto(current), dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "resource", "update", id, this.toDto(current), dto, ip);
       return dto;
     });
   }
@@ -69,21 +70,6 @@ export class ResourcesService {
   private async assertResourceType(tx: Prisma.TransactionClient, orgId: string, id: string): Promise<void> {
     const found = await tx.resourceType.findFirst({ where: { id, organizationId: orgId }, select: { id: true } });
     if (!found) throw invalidRef("resourceTypeId", "Unknown resource type");
-  }
-
-  private record(
-    tx: Prisma.TransactionClient,
-    p: AccessClaims,
-    op: "create" | "update",
-    id: string,
-    before: Resource | null,
-    after: Resource | null,
-    ip: string | null,
-  ): Promise<void> {
-    return this.audit.record(
-      { orgId: p.org, actorType: "STAFF", actorId: p.sub, action: `resource.${op}`, entity: "resource", entityId: id, before, after, ip },
-      tx,
-    );
   }
 
   private toDto(row: ResourceRow): Resource {

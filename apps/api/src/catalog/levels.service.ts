@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import type { Level as LevelRow, Prisma } from "@prisma/client";
+import type { Level as LevelRow } from "@prisma/client";
 import type { AccessClaims, Level, LevelInput, LevelUpdate, LocalizedText } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
+import { recordStaffAudit } from "../audit/staff-audit.js";
 import { notFound } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 
@@ -27,7 +28,7 @@ export class LevelsService {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.level.create({ data: { organizationId: principal.org, name: input.name, rank: input.rank } });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "create", dto.id, null, dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "level", "create", dto.id, null, dto, ip);
       return dto;
     });
   }
@@ -44,7 +45,7 @@ export class LevelsService {
         },
       });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "update", id, this.toDto(current), dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "level", "update", id, this.toDto(current), dto, ip);
       return dto;
     });
   }
@@ -54,23 +55,8 @@ export class LevelsService {
       const current = await tx.level.findFirst({ where: { id, organizationId: principal.org } });
       if (!current) throw notFound("Level");
       await tx.level.delete({ where: { id } });
-      await this.record(tx, principal, "delete", id, this.toDto(current), null, ip);
+      await recordStaffAudit(this.audit, tx, principal, "level", "delete", id, this.toDto(current), null, ip);
     });
-  }
-
-  private record(
-    tx: Prisma.TransactionClient,
-    p: AccessClaims,
-    op: "create" | "update" | "delete",
-    id: string,
-    before: Level | null,
-    after: Level | null,
-    ip: string | null,
-  ): Promise<void> {
-    return this.audit.record(
-      { orgId: p.org, actorType: "STAFF", actorId: p.sub, action: `level.${op}`, entity: "level", entityId: id, before, after, ip },
-      tx,
-    );
   }
 
   private toDto(row: LevelRow): Level {

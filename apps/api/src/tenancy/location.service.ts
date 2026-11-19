@@ -18,8 +18,8 @@ export class LocationService {
     orgId: string,
     locationId?: string,
     db: Prisma.TransactionClient = this.prisma,
-  ): Promise<{ id: string; timezone: string }> {
-    const select = { id: true, timezone: true } as const;
+  ): Promise<{ id: string; organizationId: string; timezone: string }> {
+    const select = { id: true, organizationId: true, timezone: true } as const;
     if (locationId !== undefined) {
       const found = await db.location.findFirst({ where: { id: locationId, organizationId: orgId }, select });
       if (!found) throw notFound("Location");

@@ -11,10 +11,10 @@ import {
   type Resource,
 } from "@beautyspa/contracts";
 import { Principal, StaffAuth } from "../auth/decorators.js";
+import { IdPipe } from "../common/id-pipe.js";
 import { requestMeta } from "../auth/request-meta.js";
 import { ResourcesService } from "./resources.service.js";
 
-const IdPipe = new ZodValidationPipe(IdSchema);
 const OptionalIdPipe = new ZodValidationPipe(IdSchema.optional());
 
 class ResourceInputDto extends createZodDto(ResourceInputSchema) {}

@@ -1,13 +1,11 @@
 import { Controller, HttpCode, Param, Post, Req } from "@nestjs/common";
 import { ApiNoContentResponse } from "@nestjs/swagger";
 import type { Request } from "express";
-import { ZodValidationPipe } from "nestjs-zod";
-import { IdSchema, type AccessClaims } from "@beautyspa/contracts";
+import { type AccessClaims } from "@beautyspa/contracts";
+import { IdPipe } from "../../common/id-pipe.js";
 import { Principal, StaffAuth } from "../decorators.js";
 import { requestMeta } from "../request-meta.js";
 import { StaffLinksService } from "./staff-links.service.js";
-
-const IdPipe = new ZodValidationPipe(IdSchema);
 
 /** OWNER-only actions on other staff members' credentials. `:id` must be a UUID (400 otherwise). */
 @Controller("staff/employees")

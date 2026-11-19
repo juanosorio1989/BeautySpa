@@ -1,7 +1,6 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { TenancyService } from "../../../src/tenancy/tenancy.service.js";
-import { createIntegrationApp, resetState } from "../app.js";
+import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import { seedFixture, staffSession, type Fixture } from "../helpers.js";
 
 describe("catalog simple CRUD (categories, levels, resource types, resources)", () => {
@@ -20,8 +19,7 @@ describe("catalog simple CRUD (categories, levels, resource types, resources)", 
   });
   beforeEach(async () => {
     await resetState(ctx.prisma, ctx.redis);
-    // TenancyService caches the org id; the fixture org is recreated for every test.
-    (ctx.app.get(TenancyService) as unknown as { orgId?: string }).orgId = undefined;
+    resetTenancyCache(ctx.app);
     f = await seedFixture(ctx.prisma);
     owner = await staffSession(ctx.app, ctx.prisma, f, "OWNER");
   });

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { Prisma, ResourceType as ResourceTypeRow } from "@prisma/client";
+import type { ResourceType as ResourceTypeRow } from "@prisma/client";
 import type {
   AccessClaims,
   LocalizedText,
@@ -8,6 +8,7 @@ import type {
   ResourceTypeUpdate,
 } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
+import { recordStaffAudit } from "../audit/staff-audit.js";
 import { isForeignKeyViolation } from "../common/db-errors.js";
 import { inUse, notFound } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
@@ -21,7 +22,7 @@ export class ResourceTypesService {
 
   async list(orgId: string): Promise<ResourceType[]> {
     const rows = await this.prisma.resourceType.findMany({ where: { organizationId: orgId } });
-    return rows.map((r) => this.toDto(r)).sort((a, b) => a.name.en.localeCompare(b.name.en));
+    return rows.map((r) => this.toDto(r)).sort((a, b) => a.name.en.localeCompare(b.name.en, "en"));
   }
 
   async get(orgId: string, id: string): Promise<ResourceType> {
@@ -34,7 +35,7 @@ export class ResourceTypesService {
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.resourceType.create({ data: { organizationId: principal.org, name: input.name } });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "create", dto.id, null, dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "resource_type", "create", dto.id, null, dto, ip);
       return dto;
     });
   }
@@ -48,7 +49,7 @@ export class ResourceTypesService {
         data: { ...(patch.name !== undefined ? { name: patch.name } : {}) },
       });
       const dto = this.toDto(row);
-      await this.record(tx, principal, "update", id, this.toDto(current), dto, ip);
+      await recordStaffAudit(this.audit, tx, principal, "resource_type", "update", id, this.toDto(current), dto, ip);
       return dto;
     });
   }
@@ -59,27 +60,12 @@ export class ResourceTypesService {
         const current = await tx.resourceType.findFirst({ where: { id, organizationId: principal.org } });
         if (!current) throw notFound("Resource type");
         await tx.resourceType.delete({ where: { id } });
-        await this.record(tx, principal, "delete", id, this.toDto(current), null, ip);
+        await recordStaffAudit(this.audit, tx, principal, "resource_type", "delete", id, this.toDto(current), null, ip);
       });
     } catch (err) {
       if (isForeignKeyViolation(err)) throw inUse("Resource type");
       throw err;
     }
-  }
-
-  private record(
-    tx: Prisma.TransactionClient,
-    p: AccessClaims,
-    op: "create" | "update" | "delete",
-    id: string,
-    before: ResourceType | null,
-    after: ResourceType | null,
-    ip: string | null,
-  ): Promise<void> {
-    return this.audit.record(
-      { orgId: p.org, actorType: "STAFF", actorId: p.sub, action: `resource_type.${op}`, entity: "resource_type", entityId: id, before, after, ip },
-      tx,
-    );
   }
 
   private toDto(row: ResourceTypeRow): ResourceType {

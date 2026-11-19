@@ -44,12 +44,17 @@ describe("LocationService", () => {
 
   describe("resolve", () => {
     it("returns the only location when no id is given", async () => {
-      await expect(locations().resolve(f.orgId)).resolves.toEqual({ id: f.locationId, timezone: "America/New_York" });
+      await expect(locations().resolve(f.orgId)).resolves.toEqual({
+        id: f.locationId,
+        organizationId: f.orgId,
+        timezone: "America/New_York",
+      });
     });
 
     it("returns a given location of the organization", async () => {
       await expect(locations().resolve(f.orgId, f.locationId)).resolves.toEqual({
         id: f.locationId,
+        organizationId: f.orgId,
         timezone: "America/New_York",
       });
     });

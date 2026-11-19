@@ -1,9 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req } from "@nestjs/common";
 import { ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse } from "@nestjs/swagger";
 import type { Request } from "express";
-import { ZodValidationPipe, createZodDto } from "nestjs-zod";
+import { createZodDto } from "nestjs-zod";
 import {
-  IdSchema,
   CategoryInputSchema,
   CategoryUpdateSchema,
   CategorySchema,
@@ -11,10 +10,10 @@ import {
   type Category,
 } from "@beautyspa/contracts";
 import { Principal, StaffAuth } from "../auth/decorators.js";
+import { IdPipe } from "../common/id-pipe.js";
 import { requestMeta } from "../auth/request-meta.js";
 import { CategoriesService } from "./categories.service.js";
 
-const IdPipe = new ZodValidationPipe(IdSchema);
 
 class CategoryInputDto extends createZodDto(CategoryInputSchema) {}
 class CategoryUpdateDto extends createZodDto(CategoryUpdateSchema) {}
