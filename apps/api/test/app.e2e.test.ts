@@ -1,5 +1,15 @@
 import "reflect-metadata";
-import { BadRequestException, Body, ConflictException, Controller, Get, INestApplication, Module, Post, Req } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  ConflictException,
+  Controller,
+  Get,
+  INestApplication,
+  Module,
+  Post,
+  Req,
+} from "@nestjs/common";
 import type { Request } from "express";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
@@ -173,7 +183,9 @@ describe("api skeleton", () => {
       .set("Origin", "http://localhost:3000")
       .set("Access-Control-Request-Method", "POST")
       .set("Access-Control-Request-Headers", "x-token-transport,x-beautyspa-csrf");
-    const allowed = String(res.headers["access-control-allow-headers"] ?? "").toLowerCase().split(/\s*,\s*/);
+    const allowed = String(res.headers["access-control-allow-headers"] ?? "")
+      .toLowerCase()
+      .split(/\s*,\s*/);
     expect(allowed).toEqual(expect.arrayContaining(["authorization", "content-type", "x-beautyspa-csrf"]));
     expect(allowed).not.toContain("x-token-transport");
   });

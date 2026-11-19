@@ -62,8 +62,18 @@ describe("appointment_segment booking constraints", () => {
   });
 
   it("allows different employees on different resources at the same time", async () => {
-    await bookSegment(prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00", resourceId: f.resource1 });
-    await bookSegment(prisma, f, { staffUserId: f.staffB, startsAt: "10:00", endsAt: "11:00", resourceId: f.resource2 });
+    await bookSegment(prisma, f, {
+      staffUserId: f.staffA,
+      startsAt: "10:00",
+      endsAt: "11:00",
+      resourceId: f.resource1,
+    });
+    await bookSegment(prisma, f, {
+      staffUserId: f.staffB,
+      startsAt: "10:00",
+      endsAt: "11:00",
+      resourceId: f.resource2,
+    });
     expect(await prisma.appointmentSegment.count()).toBe(2);
   });
 
@@ -75,7 +85,12 @@ describe("appointment_segment booking constraints", () => {
       resourceId: f.resource1,
       occupies: false,
     });
-    await bookSegment(prisma, f, { staffUserId: f.staffB, startsAt: "10:30", endsAt: "11:30", resourceId: f.resource1 });
+    await bookSegment(prisma, f, {
+      staffUserId: f.staffB,
+      startsAt: "10:30",
+      endsAt: "11:30",
+      resourceId: f.resource1,
+    });
     expect(await prisma.appointmentSegment.count()).toBe(2);
   });
 

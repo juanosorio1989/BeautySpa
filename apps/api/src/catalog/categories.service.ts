@@ -57,7 +57,17 @@ export class CategoriesService {
       const current = await tx.serviceCategory.findFirst({ where: { id, organizationId: principal.org } });
       if (!current) throw notFound("Category");
       await tx.serviceCategory.delete({ where: { id } });
-      await recordStaffAudit(this.audit, tx, principal, "service_category", "delete", id, this.toDto(current), null, ip);
+      await recordStaffAudit(
+        this.audit,
+        tx,
+        principal,
+        "service_category",
+        "delete",
+        id,
+        this.toDto(current),
+        null,
+        ip,
+      );
     });
   }
 

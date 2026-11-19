@@ -70,9 +70,13 @@ export class WorkingHoursService {
           endTime: wallToTime(d.end),
         })),
       });
-      const result: WorkingHours = { employeeId: staffId, locationId: location.id, days: toDays(
-        days.map((d) => ({ weekday: d.weekday, startTime: wallToTime(d.start), endTime: wallToTime(d.end) })),
-      ) };
+      const result: WorkingHours = {
+        employeeId: staffId,
+        locationId: location.id,
+        days: toDays(
+          days.map((d) => ({ weekday: d.weekday, startTime: wallToTime(d.start), endTime: wallToTime(d.end) })),
+        ),
+      };
       await recordStaffAudit(
         this.audit,
         tx,

@@ -67,7 +67,9 @@ describe("time off", () => {
     expect(ok.body).toMatchObject({ kind: "BLOCK", note: "Course" });
     expect((await api("delete", `/staff/time-off/${created.body.id}`)).status).toBe(204);
     expect(await ctx.prisma.timeOff.count()).toBe(0);
-    const audit = await ctx.prisma.auditLog.findFirst({ where: { action: "time_off.delete", entityId: created.body.id } });
+    const audit = await ctx.prisma.auditLog.findFirst({
+      where: { action: "time_off.delete", entityId: created.body.id },
+    });
     expect(audit?.before).toMatchObject({ kind: "BLOCK" });
     expect((await api("delete", `/staff/time-off/${created.body.id}`)).status).toBe(404);
     expect((await api("delete", "/staff/time-off/nope")).status).toBe(400);

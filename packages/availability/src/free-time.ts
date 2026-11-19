@@ -1,14 +1,7 @@
 import { localDayBoundsUtc, wallTimeToUtc, weekdayOf } from "@beautyspa/datetime";
 import type { IsoDate } from "@beautyspa/datetime";
 import { intersect, normalize, subtract } from "./intervals";
-import type {
-  BusySegment,
-  EmployeeInput,
-  Interval,
-  LocationInput,
-  ResourceInput,
-  WeeklyHours,
-} from "./types";
+import type { BusySegment, EmployeeInput, Interval, LocationInput, ResourceInput, WeeklyHours } from "./types";
 
 /** Normalized UTC intervals for the weekday of `date` ("24:00" end allowed). */
 export function weeklyToUtc(hours: WeeklyHours[], date: IsoDate, timeZone: string): Interval[] {
@@ -32,16 +25,11 @@ export function employeeFreeTime(args: {
 }): Interval[] {
   const { employee, location, date, busy, ignoreHours } = args;
   const tz = location.timezone;
-  const busyRanges = busy
-    .filter((b) => b.employeeId === employee.id)
-    .map((b) => ({ start: b.start, end: b.blockEnd }));
+  const busyRanges = busy.filter((b) => b.employeeId === employee.id).map((b) => ({ start: b.start, end: b.blockEnd }));
   if (ignoreHours) {
     return subtract([localDayBoundsUtc(date, tz)], busyRanges);
   }
-  const base = intersect(
-    weeklyToUtc(employee.workingHours, date, tz),
-    weeklyToUtc(location.hours, date, tz),
-  );
+  const base = intersect(weeklyToUtc(employee.workingHours, date, tz), weeklyToUtc(location.hours, date, tz));
   return subtract(base, [...location.closures, ...employee.timeOff, ...busyRanges]);
 }
 
@@ -52,8 +40,6 @@ export function resourceFreeTime(args: {
   busy: BusySegment[];
 }): Interval[] {
   const { resource, location, date, busy } = args;
-  const busyRanges = busy
-    .filter((b) => b.resourceId === resource.id)
-    .map((b) => ({ start: b.start, end: b.blockEnd }));
+  const busyRanges = busy.filter((b) => b.resourceId === resource.id).map((b) => ({ start: b.start, end: b.blockEnd }));
   return subtract([localDayBoundsUtc(date, location.timezone)], busyRanges);
 }

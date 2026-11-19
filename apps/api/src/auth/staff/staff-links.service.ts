@@ -44,7 +44,8 @@ export const FORGOT_PER_EMAIL = [3, 3600] as const;
 const LINK_PATH: Record<StaffTokenPurpose, string> = { INVITE: "invite", PASSWORD_RESET: "reset" };
 
 /** One answer for unknown, used, expired, wrong-purpose and inactive-staff links. */
-const linkInvalid = () => new BadRequestException({ code: "LINK_INVALID", message: "This link is invalid or has expired" });
+const linkInvalid = () =>
+  new BadRequestException({ code: "LINK_INVALID", message: "This link is invalid or has expired" });
 const notFound = () => new NotFoundException({ code: "NOT_FOUND", message: "Staff member not found" });
 
 const toLocale = (value: string): Locale => {
@@ -146,7 +147,10 @@ export class StaffLinksService {
   async forgot(body: PasswordForgotRequest, ip: string | null): Promise<void> {
     await this.limitIp("forgot", ip);
     const email = body.email.trim().toLowerCase();
-    const perEmail = await this.rateLimit.consume(`pwforgot:email:${this.rateLimit.hashKeyPart(email)}`, ...FORGOT_PER_EMAIL);
+    const perEmail = await this.rateLimit.consume(
+      `pwforgot:email:${this.rateLimit.hashKeyPart(email)}`,
+      ...FORGOT_PER_EMAIL,
+    );
     if (!perEmail.allowed) return;
 
     const orgId = await this.tenancy.getOrgId();
@@ -200,7 +204,8 @@ export class StaffLinksService {
     if (!staff) throw notFound();
     if (!staff.email) throw new ConflictException({ code: "CONFLICT", message: "Staff member has no email" });
     if (!staff.active) throw new ConflictException({ code: "CONFLICT", message: "Staff member is inactive" });
-    if (staff.passwordHash) throw new ConflictException({ code: "CONFLICT", message: "Staff member already has a password" });
+    if (staff.passwordHash)
+      throw new ConflictException({ code: "CONFLICT", message: "Staff member already has a password" });
 
     const link = await this.prisma.$transaction(async (tx) => {
       const url = await this.issue(staff.id, "INVITE", tx);
@@ -224,7 +229,10 @@ export class StaffLinksService {
   /** OWNER clears another member's TOTP and recovery codes and ends their sessions (they enroll again at next login). */
   async reset2faByOwner(owner: AccessClaims, staffId: string, ip: string | null): Promise<void> {
     if (staffId === owner.sub) {
-      throw new ForbiddenException({ code: "FORBIDDEN", message: "Use your recovery codes or the CLI to reset your own 2FA" });
+      throw new ForbiddenException({
+        code: "FORBIDDEN",
+        message: "Use your recovery codes or the CLI to reset your own 2FA",
+      });
     }
     await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ totp_enrolled_at: Date | null }[]>`

@@ -2,7 +2,6 @@ import { TZDate } from "@date-fns/tz";
 import { _isoToNoonUtc, addDays, MINUTE } from "./dates";
 import type { IsoDate, WallTime, Weekday } from "./dates";
 
-
 /** Offset (UTC minus local, in minutes) of `timeZone` at `instant`. */
 function offsetMinutes(instant: number, timeZone: string): number {
   const offset = new TZDate(instant, timeZone).getTimezoneOffset();
@@ -36,10 +35,7 @@ export function wallTimeToUtc(date: IsoDate, time: WallTime, timeZone: string): 
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
-export function utcToWall(
-  instant: number,
-  timeZone: string,
-): { date: IsoDate; time: WallTime; weekday: Weekday } {
+export function utcToWall(instant: number, timeZone: string): { date: IsoDate; time: WallTime; weekday: Weekday } {
   offsetMinutes(instant, timeZone);
   const z = new TZDate(instant, timeZone);
   return {
@@ -60,4 +56,3 @@ export function localDayBoundsUtc(date: IsoDate, timeZone: string): { start: num
 export function todayIn(timeZone: string, now: number): IsoDate {
   return utcToWall(now, timeZone).date;
 }
-

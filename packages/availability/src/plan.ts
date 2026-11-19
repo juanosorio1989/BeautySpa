@@ -46,7 +46,10 @@ export function prepare(ctx: Context, date: IsoDate): Prepared {
 }
 
 /** Duration and price for a (service, employee) pair: level override, else defaults. */
-export function levelTerms(service: ServiceInput, employee: EmployeeInput): { durationMin: number; priceCents: number } {
+export function levelTerms(
+  service: ServiceInput,
+  employee: EmployeeInput,
+): { durationMin: number; priceCents: number } {
   const override = employee.levelId === null ? undefined : service.levelOverrides[employee.levelId];
   return override ?? { durationMin: service.durationMin, priceCents: service.priceCents };
 }
@@ -242,7 +245,7 @@ export function planAt(
       const placed = drafts.filter((d): d is Draft => d !== undefined);
       // Parallel block ends when its last member is placed: next cursor is the max end so far.
       const nextCursor = inBlock
-        ? k + 1 < n && !(services[order[k + 1]!]!.parallelizable)
+        ? k + 1 < n && !services[order[k + 1]!]!.parallelizable
           ? Math.max(...placed.map((d) => d.end))
           : cursor
         : end;

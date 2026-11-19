@@ -8,10 +8,12 @@ export default tseslint.config(...base, {
     "no-restricted-imports": [
       "error",
       {
-        paths: banned.filter((p) => !p.includes("*")).map((name) => ({
-          name,
-          message: "Platform-agnostic packages must not import framework or Node modules.",
-        })),
+        paths: banned
+          .filter((p) => !p.includes("*"))
+          .map((name) => ({
+            name,
+            message: "Platform-agnostic packages must not import framework or Node modules.",
+          })),
         patterns: banned.filter((p) => p.includes("*")),
       },
     ],

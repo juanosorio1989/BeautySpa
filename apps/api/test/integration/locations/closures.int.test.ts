@@ -55,7 +55,9 @@ describe("location closures", () => {
     expect(ok.body.reason).toBeNull();
     expect((await api("delete", `/staff/closures/${created.body.id}`)).status).toBe(204);
     expect(await ctx.prisma.locationClosure.count()).toBe(0);
-    const actions = (await ctx.prisma.auditLog.findMany({ where: { entityId: created.body.id } })).map((a) => a.action).sort();
+    const actions = (await ctx.prisma.auditLog.findMany({ where: { entityId: created.body.id } }))
+      .map((a) => a.action)
+      .sort();
     expect(actions).toEqual(["location_closure.create", "location_closure.delete", "location_closure.update"]);
     expect((await api("delete", `/staff/closures/${created.body.id}`)).status).toBe(404);
     expect((await api("delete", "/staff/closures/nope")).status).toBe(400);
@@ -68,7 +70,11 @@ describe("location closures", () => {
       data: { organizationId: other.id, name: "Foreign", timezone: "UTC", settings: {} },
     });
     const foreign = await ctx.prisma.locationClosure.create({
-      data: { locationId: loc.id, startsAt: new Date("2027-03-10T09:00:00Z"), endsAt: new Date("2027-03-11T09:00:00Z") },
+      data: {
+        locationId: loc.id,
+        startsAt: new Date("2027-03-10T09:00:00Z"),
+        endsAt: new Date("2027-03-11T09:00:00Z"),
+      },
     });
     expect((await api("get", `/staff/closures?${win}`)).body).toEqual([]);
     expect((await api("get", `/staff/closures?${win}&locationId=${loc.id}`)).status).toBe(404);

@@ -22,20 +22,33 @@ describe("history foreign keys are restrictive", () => {
 
   it("refuses to delete a customer that has consent history (23503)", async () => {
     await prisma.notificationConsent.create({
-      data: { organizationId: f.orgId, customerId: f.customerId, channel: "WHATSAPP", granted: true, source: "BOOKING_FORM" },
+      data: {
+        organizationId: f.orgId,
+        customerId: f.customerId,
+        channel: "WHATSAPP",
+        granted: true,
+        source: "BOOKING_FORM",
+      },
     });
     const code = await rejectionCode(prisma.$executeRaw`DELETE FROM customer WHERE id = ${f.customerId}::uuid`);
     expect(code).toBe("23503");
   });
 
   it("refuses to delete a resource referenced by a segment (23503)", async () => {
-    await bookSegment(prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00", resourceId: f.resource1 });
+    await bookSegment(prisma, f, {
+      staffUserId: f.staffA,
+      startsAt: "10:00",
+      endsAt: "11:00",
+      resourceId: f.resource1,
+    });
     const code = await rejectionCode(prisma.$executeRaw`DELETE FROM resource WHERE id = ${f.resource1}::uuid`);
     expect(code).toBe("23503");
   });
 
   it("refuses to delete a resource type used by a service (23503)", async () => {
-    const code = await rejectionCode(prisma.$executeRaw`DELETE FROM resource_type WHERE id = ${f.resourceTypeId}::uuid`);
+    const code = await rejectionCode(
+      prisma.$executeRaw`DELETE FROM resource_type WHERE id = ${f.resourceTypeId}::uuid`,
+    );
     expect(code).toBe("23503");
   });
 });
@@ -65,7 +78,13 @@ describe("tenancy and flexible columns", () => {
 
   it("accepts a non-UUID audit entity_id", async () => {
     const row = await prisma.auditLog.create({
-      data: { organizationId: f.orgId, actorType: "SYSTEM", action: "employee_service.add", entity: "employee_service", entityId: `${f.staffA}:${f.serviceId}` },
+      data: {
+        organizationId: f.orgId,
+        actorType: "SYSTEM",
+        action: "employee_service.add",
+        entity: "employee_service",
+        entityId: `${f.staffA}:${f.serviceId}`,
+      },
     });
     expect(row.entityId).toContain(":");
   });

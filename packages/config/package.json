@@ -9,7 +9,10 @@
     "./tsconfig.node.json": "./tsconfig.node.json",
     "./eslint.base.mjs": "./eslint.base.mjs",
     "./eslint.platform.mjs": "./eslint.platform.mjs",
-    "./vitest.preset": { "types": "./vitest.preset.d.mts", "default": "./vitest.preset.mjs" }
+    "./vitest.preset": {
+      "types": "./vitest.preset.d.mts",
+      "default": "./vitest.preset.mjs"
+    }
   },
   "dependencies": {
     "@eslint/js": "^9.12.0",

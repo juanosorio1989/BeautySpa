@@ -1,12 +1,6 @@
 import { wallTimeToUtc } from "@beautyspa/datetime";
 import type { IsoDate, WallTime, Weekday } from "@beautyspa/datetime";
-import type {
-  EmployeeInput,
-  LocationInput,
-  ResourceInput,
-  ServiceInput,
-  WeeklyHours,
-} from "../src/types";
+import type { EmployeeInput, LocationInput, ResourceInput, ServiceInput, WeeklyHours } from "../src/types";
 
 export const NY = "America/New_York";
 export const MON: IsoDate = "2026-12-07";
@@ -46,20 +40,43 @@ export const makeService = (base: ServiceInput, o: Partial<ServiceInput> = {}): 
   ...o,
 });
 export const mani: ServiceInput = {
-  id: MANI_ID, durationMin: 30, bufferAfterMin: 10, priceCents: 2500, parallelizable: true,
-  resourceTypeId: null, onlineBookable: true, levelOverrides: {},
+  id: MANI_ID,
+  durationMin: 30,
+  bufferAfterMin: 10,
+  priceCents: 2500,
+  parallelizable: true,
+  resourceTypeId: null,
+  onlineBookable: true,
+  levelOverrides: {},
 };
 export const pedi: ServiceInput = {
-  id: PEDI_ID, durationMin: 45, bufferAfterMin: 15, priceCents: 4000, parallelizable: true,
-  resourceTypeId: CHAIR, onlineBookable: true, levelOverrides: {},
+  id: PEDI_ID,
+  durationMin: 45,
+  bufferAfterMin: 15,
+  priceCents: 4000,
+  parallelizable: true,
+  resourceTypeId: CHAIR,
+  onlineBookable: true,
+  levelOverrides: {},
 };
 export const gel: ServiceInput = {
-  id: GEL_ID, durationMin: 15, bufferAfterMin: 0, priceCents: 1500, parallelizable: true,
-  resourceTypeId: null, onlineBookable: true, levelOverrides: {},
+  id: GEL_ID,
+  durationMin: 15,
+  bufferAfterMin: 0,
+  priceCents: 1500,
+  parallelizable: true,
+  resourceTypeId: null,
+  onlineBookable: true,
+  levelOverrides: {},
 };
 export const haircut: ServiceInput = {
-  id: HAIRCUT_ID, durationMin: 60, bufferAfterMin: 0, priceCents: 5000, parallelizable: false,
-  resourceTypeId: null, onlineBookable: true,
+  id: HAIRCUT_ID,
+  durationMin: 60,
+  bufferAfterMin: 0,
+  priceCents: 5000,
+  parallelizable: false,
+  resourceTypeId: null,
+  onlineBookable: true,
   levelOverrides: { [SENIOR]: { durationMin: 45, priceCents: 7000 } },
 };
 
@@ -68,7 +85,12 @@ export const makeEmployee = (base: EmployeeInput, o: Partial<EmployeeInput> = {}
   ...o,
 });
 const baseEmployee = (id: string, levelId: string, serviceIds: string[]): EmployeeInput => ({
-  id, levelId, serviceIds, workingHours: everyDay("09:00", "19:00"), timeOff: [], bookableOnline: true,
+  id,
+  levelId,
+  serviceIds,
+  workingHours: everyDay("09:00", "19:00"),
+  timeOff: [],
+  bookableOnline: true,
 });
 export const ana = baseEmployee(ANA_ID, JUNIOR, [MANI_ID, PEDI_ID, GEL_ID]);
 export const bea = baseEmployee(BEA_ID, JUNIOR, [MANI_ID, PEDI_ID, GEL_ID]);

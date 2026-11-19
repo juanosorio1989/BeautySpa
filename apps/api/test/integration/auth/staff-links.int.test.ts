@@ -33,8 +33,7 @@ describe("staff invite / password reset links and owner actions", () => {
     (await tokens().issueAccess({ sub: ownerId, typ: "staff", org: f.orgId, role: "OWNER" })).token;
   const asStaff = (path: string, token: string) =>
     request(server()).post(`/v1/staff/employees/${path}`).set("Authorization", `Bearer ${token}`).send({});
-  const auth = (path: string, body: object) =>
-    request(server()).post(`/v1/auth/staff/${path}`).set(BODY).send(body);
+  const auth = (path: string, body: object) => request(server()).post(`/v1/auth/staff/${path}`).set(BODY).send(body);
   const login = (email: string, password: string) => auth("login", { email, password });
 
   /** OWNER invites `staffId` and returns the link from the email. */
@@ -116,7 +115,11 @@ describe("staff invite / password reset links and owner actions", () => {
       expect(missing.status).toBe(404);
       expect(missing.body.code).toBe("NOT_FOUND");
 
-      const withPw = await createStaff(ctx.prisma, f, { email: "pw@salon.com", role: "EMPLOYEE", password: NEW_PASSWORD });
+      const withPw = await createStaff(ctx.prisma, f, {
+        email: "pw@salon.com",
+        role: "EMPLOYEE",
+        password: NEW_PASSWORD,
+      });
       const conflict = await asStaff(`${withPw.id}/invite`, await ownerToken());
       expect(conflict.status).toBe(409);
       expect(conflict.body.code).toBe("CONFLICT");
@@ -290,10 +293,13 @@ describe("staff invite / password reset links and owner actions", () => {
 
     it("reset sets the new password, revokes sessions and spends the link", async () => {
       const staff = await withPassword();
-      const refresh = await ctx.app.get(RefreshTokenService).create({ type: "STAFF", id: staff.id }, {
-        ip: null,
-        userAgent: null,
-      });
+      const refresh = await ctx.app.get(RefreshTokenService).create(
+        { type: "STAFF", id: staff.id },
+        {
+          ip: null,
+          userAgent: null,
+        },
+      );
       await auth("password/forgot", { email: "ana@salon.com" });
       const token = tokenOf(linkIn(mailer().sent[0]!.text));
 
@@ -302,7 +308,10 @@ describe("staff invite / password reset links and owner actions", () => {
 
       expect((await login("ana@salon.com", OWNER_PASSWORD)).status).toBe(401);
       expect((await login("ana@salon.com", NEW_PASSWORD)).status).toBe(200);
-      const refreshed = await request(server()).post("/v1/auth/refresh").set(BODY).send({ refreshToken: refresh.token });
+      const refreshed = await request(server())
+        .post("/v1/auth/refresh")
+        .set(BODY)
+        .send({ refreshToken: refresh.token });
       expect(refreshed.status).toBe(401);
       const live = await ctx.prisma.refreshToken.count({ where: { subjectId: staff.id, revokedAt: null } });
       expect(live).toBe(0);
@@ -340,17 +349,23 @@ describe("staff invite / password reset links and owner actions", () => {
         totpSecret: generateTotpSecret(),
       });
       await ctx.prisma.staffRecoveryCode.create({ data: { staffUserId: emp.id, codeHash: "h" } });
-      const refresh = await ctx.app.get(RefreshTokenService).create({ type: "STAFF", id: emp.id }, {
-        ip: null,
-        userAgent: null,
-      });
+      const refresh = await ctx.app.get(RefreshTokenService).create(
+        { type: "STAFF", id: emp.id },
+        {
+          ip: null,
+          userAgent: null,
+        },
+      );
       expect((await login("emp@salon.com", NEW_PASSWORD)).body.status).toBe("MFA_REQUIRED");
 
       const res = await asStaff(`${emp.id}/reset-2fa`, await ownerToken());
       expect(res.status).toBe(204);
 
       expect((await login("emp@salon.com", NEW_PASSWORD)).body.status).toBe("ENROLL_REQUIRED");
-      const refreshed = await request(server()).post("/v1/auth/refresh").set(BODY).send({ refreshToken: refresh.token });
+      const refreshed = await request(server())
+        .post("/v1/auth/refresh")
+        .set(BODY)
+        .send({ refreshToken: refresh.token });
       expect(refreshed.status).toBe(401);
       const row = await ctx.prisma.staffUser.findUniqueOrThrow({ where: { id: emp.id } });
       expect(row.totpSecretEnc).toBeNull();

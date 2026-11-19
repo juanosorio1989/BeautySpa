@@ -27,7 +27,9 @@ describe("catalog simple CRUD (categories, levels, resource types, resources)", 
   const otherOrg = async () => {
     const org = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
     const rt = await ctx.prisma.resourceType.create({ data: { organizationId: org.id, name: { en: "X", es: "X" } } });
-    const cat = await ctx.prisma.serviceCategory.create({ data: { organizationId: org.id, name: { en: "X", es: "X" } } });
+    const cat = await ctx.prisma.serviceCategory.create({
+      data: { organizationId: org.id, name: { en: "X", es: "X" } },
+    });
     return { org, rt, cat };
   };
 
@@ -53,18 +55,31 @@ describe("catalog simple CRUD (categories, levels, resource types, resources)", 
       expect(del.status).toBe(204);
       expect((await api("get", `/staff/categories/${b.body.id}`)).status).toBe(404);
 
-      const created = await ctx.prisma.auditLog.findFirst({ where: { action: "service_category.create", entityId: b.body.id } });
+      const created = await ctx.prisma.auditLog.findFirst({
+        where: { action: "service_category.create", entityId: b.body.id },
+      });
       expect((created?.after as { name: { en: string } }).name.en).toBe("Beta");
-      expect(created).toMatchObject({ actorType: "STAFF", actorId: owner.id, entity: "service_category", organizationId: f.orgId });
-      const deleted = await ctx.prisma.auditLog.findFirst({ where: { action: "service_category.delete", entityId: b.body.id } });
+      expect(created).toMatchObject({
+        actorType: "STAFF",
+        actorId: owner.id,
+        entity: "service_category",
+        organizationId: f.orgId,
+      });
+      const deleted = await ctx.prisma.auditLog.findFirst({
+        where: { action: "service_category.delete", entityId: b.body.id },
+      });
       expect(deleted?.before).toMatchObject({ id: b.body.id });
-      const updated = await ctx.prisma.auditLog.findFirst({ where: { action: "service_category.update", entityId: a.body.id } });
+      const updated = await ctx.prisma.auditLog.findFirst({
+        where: { action: "service_category.update", entityId: a.body.id },
+      });
       expect(updated?.before).toMatchObject({ sort: 0 });
       expect(updated?.after).toMatchObject({ sort: 5 });
     });
 
     it("deleting a category clears categoryId on its services", async () => {
-      const cat = await ctx.prisma.serviceCategory.create({ data: { organizationId: f.orgId, name: { en: "C", es: "C" } } });
+      const cat = await ctx.prisma.serviceCategory.create({
+        data: { organizationId: f.orgId, name: { en: "C", es: "C" } },
+      });
       await ctx.prisma.service.update({ where: { id: f.serviceId }, data: { categoryId: cat.id } });
       expect((await api("delete", `/staff/categories/${cat.id}`)).status).toBe(204);
       expect((await ctx.prisma.service.findUniqueOrThrow({ where: { id: f.serviceId } })).categoryId).toBeNull();
@@ -99,12 +114,18 @@ describe("catalog simple CRUD (categories, levels, resource types, resources)", 
     });
 
     it("deleting a level removes its prices and clears employee levels", async () => {
-      const level = await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "L", es: "L" }, rank: 1 } });
-      await ctx.prisma.serviceLevelPrice.create({ data: { serviceId: f.serviceId, levelId: level.id, durationMin: 30, priceCents: 100 } });
+      const level = await ctx.prisma.level.create({
+        data: { organizationId: f.orgId, name: { en: "L", es: "L" }, rank: 1 },
+      });
+      await ctx.prisma.serviceLevelPrice.create({
+        data: { serviceId: f.serviceId, levelId: level.id, durationMin: 30, priceCents: 100 },
+      });
       await ctx.prisma.employeeProfile.create({ data: { staffUserId: f.staffA, levelId: level.id, displayName: "A" } });
       expect((await api("delete", `/staff/levels/${level.id}`)).status).toBe(204);
       expect(await ctx.prisma.serviceLevelPrice.count({ where: { levelId: level.id } })).toBe(0);
-      expect((await ctx.prisma.employeeProfile.findUniqueOrThrow({ where: { staffUserId: f.staffA } })).levelId).toBeNull();
+      expect(
+        (await ctx.prisma.employeeProfile.findUniqueOrThrow({ where: { staffUserId: f.staffA } })).levelId,
+      ).toBeNull();
     });
   });
 
@@ -137,7 +158,12 @@ describe("catalog simple CRUD (categories, levels, resource types, resources)", 
     it("creates on the only location, updates and has no DELETE route", async () => {
       const created = await api("post", "/staff/resources").send({ resourceTypeId: f.resourceTypeId, name: "Chair 3" });
       expect(created.status).toBe(201);
-      expect(created.body).toMatchObject({ locationId: f.locationId, resourceTypeId: f.resourceTypeId, name: "Chair 3", active: true });
+      expect(created.body).toMatchObject({
+        locationId: f.locationId,
+        resourceTypeId: f.resourceTypeId,
+        name: "Chair 3",
+        active: true,
+      });
 
       const patched = await api("patch", `/staff/resources/${created.body.id}`).send({ active: false });
       expect(patched.status).toBe(200);
@@ -166,7 +192,11 @@ describe("catalog simple CRUD (categories, levels, resource types, resources)", 
       const loc = await ctx.prisma.location.create({
         data: { organizationId: o.org.id, name: "Elsewhere", timezone: "Europe/Madrid", settings: {} },
       });
-      const res = await api("post", "/staff/resources").send({ resourceTypeId: f.resourceTypeId, name: "X", locationId: loc.id });
+      const res = await api("post", "/staff/resources").send({
+        resourceTypeId: f.resourceTypeId,
+        name: "X",
+        locationId: loc.id,
+      });
       expect(res.status).toBe(404);
       expect((await api("get", "/staff/resources?locationId=nope")).status).toBe(400);
     });

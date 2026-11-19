@@ -18,7 +18,8 @@ type Result = { ok: true } | { ok: false; reason: PlanRejection };
 const fail = (reason: PlanRejection): Result => ({ ok: false, reason });
 
 export function validatePlan(ctx: Context, choices: ServiceChoice[], segments: PlannedSegment[]): Result {
-  if (choices.length === 0 || choices.length > MAX_CHOICES || choices.length !== segments.length) return fail("MALFORMED_PLAN");
+  if (choices.length === 0 || choices.length > MAX_CHOICES || choices.length !== segments.length)
+    return fail("MALFORMED_PLAN");
   const drafts: Draft[] = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]!;

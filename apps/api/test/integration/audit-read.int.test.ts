@@ -46,7 +46,13 @@ describe("GET /staff/audit", () => {
     expect(p1.status).toBe(200);
     expect(p1.body.items.map((i: { id: string }) => i.id)).toEqual(expected.slice(0, 2));
     expect(p1.body.nextCursor).toBe(expected[1]);
-    expect(p1.body.items[0]).toMatchObject({ action: "service_category.create", entity: "service_category", actorType: "STAFF", actorId: owner.id, before: null });
+    expect(p1.body.items[0]).toMatchObject({
+      action: "service_category.create",
+      entity: "service_category",
+      actorType: "STAFF",
+      actorId: owner.id,
+      before: null,
+    });
 
     const p2 = await audit(`?limit=2&cursor=${p1.body.nextCursor}`);
     expect(p2.body.items.map((i: { id: string }) => i.id)).toEqual([expected[2]]);
@@ -63,7 +69,9 @@ describe("GET /staff/audit", () => {
 
   it("does not show another organization's entries", async () => {
     const other = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
-    await ctx.prisma.auditLog.create({ data: { organizationId: other.id, actorType: "SYSTEM", action: "x.create", entity: "x" } });
+    await ctx.prisma.auditLog.create({
+      data: { organizationId: other.id, actorType: "SYSTEM", action: "x.create", entity: "x" },
+    });
     expect((await audit("")).body.items).toHaveLength(3);
   });
 

@@ -6,14 +6,7 @@ const nonEmpty = (o: object) => Object.keys(o).length > 0;
 const EMPTY = "Empty update";
 
 export const LocationSettingsSchema = z.object({
-  slotIntervalMin: z.union([
-    z.literal(5),
-    z.literal(10),
-    z.literal(15),
-    z.literal(20),
-    z.literal(30),
-    z.literal(60),
-  ]),
+  slotIntervalMin: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(20), z.literal(30), z.literal(60)]),
   holdMinutes: z.number().int().min(1).max(30),
   cancelWindowHours: z.number().int().min(0).max(168),
   bookingHorizonDays: z.number().int().min(1).max(365),

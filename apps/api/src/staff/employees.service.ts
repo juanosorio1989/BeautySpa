@@ -30,7 +30,11 @@ const emailTaken = () => new ConflictException({ code: "CONFLICT", message: "Ema
 
 /** 400 `VALIDATION_FAILED` for a rule on the resulting row (not a bad reference). */
 function invalidState(path: string, message: string): BadRequestException {
-  return new BadRequestException({ code: "VALIDATION_FAILED", message: "Validation failed", errors: [{ path, message }] });
+  return new BadRequestException({
+    code: "VALIDATION_FAILED",
+    message: "Validation failed",
+    errors: [{ path, message }],
+  });
 }
 
 /**
@@ -102,7 +106,10 @@ export class EmployeesService {
   }
 
   update(principal: AccessClaims, id: string, patch: EmployeeUpdate, ip: string | null): Promise<Employee> {
-    if (id === principal.sub && (patch.role !== undefined || patch.active !== undefined || patch.canLogin !== undefined)) {
+    if (
+      id === principal.sub &&
+      (patch.role !== undefined || patch.active !== undefined || patch.canLogin !== undefined)
+    ) {
       throw new ForbiddenException({ code: "FORBIDDEN", message: "You cannot change your own role or access" });
     }
     return this.mapUnique(() =>
@@ -134,17 +141,25 @@ export class EmployeesService {
             await tx.timeOff.deleteMany({ where: { staffUserId: id, locationId: { in: removed } } });
           }
           await tx.staffLocation.deleteMany({ where: { staffUserId: id } });
-          await tx.staffLocation.createMany({ data: patch.locationIds.map((locationId) => ({ staffUserId: id, locationId })) });
+          await tx.staffLocation.createMany({
+            data: patch.locationIds.map((locationId) => ({ staffUserId: id, locationId })),
+          });
         }
         if (patch.profile === null) {
           await tx.employeeProfile.deleteMany({ where: { staffUserId: id } });
         } else if (patch.profile !== undefined) {
           const data = this.profileData(patch.profile);
-          await tx.employeeProfile.upsert({ where: { staffUserId: id }, create: { staffUserId: id, ...data }, update: data });
+          await tx.employeeProfile.upsert({
+            where: { staffUserId: id },
+            create: { staffUserId: id, ...data },
+            update: data,
+          });
         }
         if (patch.serviceIds !== undefined || patch.profile === null) {
           await tx.employeeService.deleteMany({ where: { staffUserId: id } });
-          await tx.employeeService.createMany({ data: serviceIds.map((serviceId) => ({ staffUserId: id, serviceId })) });
+          await tx.employeeService.createMany({
+            data: serviceIds.map((serviceId) => ({ staffUserId: id, serviceId })),
+          });
         }
 
         const row = await tx.staffUser.update({
@@ -229,11 +244,17 @@ export class EmployeesService {
     serviceIds: string[],
   ): Promise<void> {
     if (profile?.levelId) {
-      const found = await tx.level.findFirst({ where: { id: profile.levelId, organizationId: orgId }, select: { id: true } });
+      const found = await tx.level.findFirst({
+        where: { id: profile.levelId, organizationId: orgId },
+        select: { id: true },
+      });
       if (!found) throw invalidRef("profile.levelId", "Unknown level");
     }
     if (serviceIds.length > 0) {
-      const rows = await tx.service.findMany({ where: { organizationId: orgId, id: { in: serviceIds } }, select: { id: true } });
+      const rows = await tx.service.findMany({
+        where: { organizationId: orgId, id: { in: serviceIds } },
+        select: { id: true },
+      });
       const known = new Set(rows.map((r) => r.id));
       const i = serviceIds.findIndex((s) => !known.has(s));
       if (i >= 0) throw invalidRef(`serviceIds.${i}`, "Unknown service");

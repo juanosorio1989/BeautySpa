@@ -59,12 +59,9 @@ describe("development seed", () => {
       include: { segments: true },
     });
     expect(maria.segments).toHaveLength(2);
-    for (const s of maria.segments)
-      expect(s.startsAt.toISOString()).toBe("2026-12-01T15:00:00.000Z");
+    for (const s of maria.segments) expect(s.startsAt.toISOString()).toBe("2026-12-01T15:00:00.000Z");
 
-    const res = await request(ctx.app.getHttpServer()).get(
-      "/v1/public/services",
-    );
+    const res = await request(ctx.app.getHttpServer()).get("/v1/public/services");
     expect(res.status).toBe(200);
     expect(res.body.services).toHaveLength(20);
   });

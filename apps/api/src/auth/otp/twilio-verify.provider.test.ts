@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { testEnv } from "../../../test/support/test-env.js";
-import {
-  OtpInvalidRecipientError,
-  OtpProviderRateLimitedError,
-  OtpProviderUnavailableError,
-} from "./otp-provider.js";
+import { OtpInvalidRecipientError, OtpProviderRateLimitedError, OtpProviderUnavailableError } from "./otp-provider.js";
 import { TwilioVerifyProvider } from "./twilio-verify.provider.js";
 
 const SID = "ACtest0000000000000000000000000000";
@@ -19,8 +15,8 @@ const env = testEnv({
 });
 
 function fakeFetch(status: number, body: unknown) {
-  return vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
-    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
+  return vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
+    async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
   );
 }
 
@@ -57,7 +53,9 @@ describe("TwilioVerifyProvider", () => {
   });
 
   it("start maps 429 to OtpProviderRateLimitedError", async () => {
-    const err = await new TwilioVerifyProvider(env, fakeFetch(429, {})).start("+13055550100", "sms", "en").catch((e: Error) => e);
+    const err = await new TwilioVerifyProvider(env, fakeFetch(429, {}))
+      .start("+13055550100", "sms", "en")
+      .catch((e: Error) => e);
     expect(err).toBeInstanceOf(OtpProviderRateLimitedError);
     expect((err as Error).message).toBe("Twilio Verify start failed: 429");
   });
@@ -74,7 +72,9 @@ describe("TwilioVerifyProvider", () => {
     const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
       throw new TypeError("fetch failed: secret-host-detail");
     });
-    const err = await new TwilioVerifyProvider(env, fetchFn).start("+13055550100", "whatsapp", "en").catch((e: Error) => e);
+    const err = await new TwilioVerifyProvider(env, fetchFn)
+      .start("+13055550100", "whatsapp", "en")
+      .catch((e: Error) => e);
     expect(err).toBeInstanceOf(OtpProviderUnavailableError);
     expect((err as Error).message).toBe("Twilio Verify start failed: network");
   });
@@ -83,7 +83,9 @@ describe("TwilioVerifyProvider", () => {
     const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => {
       throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
     });
-    const err = await new TwilioVerifyProvider(env, fetchFn).start("+13055550100", "whatsapp", "en").catch((e: Error) => e);
+    const err = await new TwilioVerifyProvider(env, fetchFn)
+      .start("+13055550100", "whatsapp", "en")
+      .catch((e: Error) => e);
     expect(err).toBeInstanceOf(OtpProviderUnavailableError);
     expect((err as Error).message).toBe("Twilio Verify start failed: timeout");
   });
@@ -118,13 +120,17 @@ describe("TwilioVerifyProvider", () => {
   });
 
   it("check maps 429 to OtpProviderRateLimitedError", async () => {
-    const err = await new TwilioVerifyProvider(env, fakeFetch(429, {})).check("+13055550100", "123456").catch((e: Error) => e);
+    const err = await new TwilioVerifyProvider(env, fakeFetch(429, {}))
+      .check("+13055550100", "123456")
+      .catch((e: Error) => e);
     expect(err).toBeInstanceOf(OtpProviderRateLimitedError);
     expect((err as Error).message).toBe("Twilio Verify check failed: 429");
   });
 
   it.each([400, 401, 500, 503])("check maps %i to OtpProviderUnavailableError", async (status) => {
-    const err = await new TwilioVerifyProvider(env, fakeFetch(status, {})).check("+13055550100", "123456").catch((e: Error) => e);
+    const err = await new TwilioVerifyProvider(env, fakeFetch(status, {}))
+      .check("+13055550100", "123456")
+      .catch((e: Error) => e);
     expect(err).toBeInstanceOf(OtpProviderUnavailableError);
     expect((err as Error).message).toBe(`Twilio Verify check failed: ${status}`);
   });
@@ -146,7 +152,9 @@ describe("TwilioVerifyProvider", () => {
 
   it("check throws on 500 without the response body or the token", async () => {
     const fetchFn = fakeFetch(500, { message: "body-secret-detail" });
-    const err = (await new TwilioVerifyProvider(env, fetchFn).check("+13055550100", "123456").catch((e: Error) => e)) as Error;
+    const err = (await new TwilioVerifyProvider(env, fetchFn)
+      .check("+13055550100", "123456")
+      .catch((e: Error) => e)) as Error;
     expect(err).toBeInstanceOf(Error);
     expect(err.message).not.toContain("body-secret-detail");
     expect(err.message).not.toContain(TOKEN);

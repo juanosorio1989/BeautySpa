@@ -10,13 +10,7 @@
  * Run: pnpm --filter @beautyspa/api db:seed (uses DATABASE_URL).
  */
 import { DEFAULT_LOCATION_SETTINGS } from "@beautyspa/contracts";
-import {
-  addDays,
-  todayIn,
-  wallTimeToUtc,
-  weekdayOf,
-  type IsoDate,
-} from "@beautyspa/datetime";
+import { addDays, todayIn, wallTimeToUtc, weekdayOf, type IsoDate } from "@beautyspa/datetime";
 import { PrismaClient } from "@prisma/client";
 
 const TZ = "America/New_York";
@@ -68,16 +62,7 @@ const s = (
 const SERVICES: ServiceDef[] = [
   s("Nails", "Classic manicure", "Manicura clásica", 30, 5, 2500, true),
   s("Nails", "Gel manicure", "Manicura en gel", 45, 5, 4000, true),
-  s(
-    "Nails",
-    "Classic pedicure",
-    "Pedicura clásica",
-    45,
-    10,
-    3500,
-    true,
-    "chair",
-  ),
+  s("Nails", "Classic pedicure", "Pedicura clásica", 45, 10, 3500, true, "chair"),
   s("Nails", "Spa pedicure", "Pedicura spa", 60, 10, 5000, true, "chair"),
   s("Nails", "Acrylic full set", "Juego completo acrílico", 75, 10, 6000),
   s("Nails", "Acrylic fill", "Relleno acrílico", 60, 10, 4500),
@@ -90,56 +75,11 @@ const SERVICES: ServiceDef[] = [
   s("Brows & lashes", "Brow wax", "Depilación de cejas", 15, 5, 1500),
   s("Brows & lashes", "Brow tint", "Tinte de cejas", 20, 5, 2000),
   s("Brows & lashes", "Lash lift", "Lifting de pestañas", 60, 10, 7000),
-  s(
-    "Facials",
-    "Deep cleansing facial",
-    "Limpieza facial profunda",
-    60,
-    10,
-    7000,
-    false,
-    "cabin",
-  ),
-  s(
-    "Facials",
-    "Hydrating facial",
-    "Facial hidratante",
-    60,
-    10,
-    8500,
-    false,
-    "cabin",
-  ),
-  s(
-    "Massages & body",
-    "Relaxing massage",
-    "Masaje relajante",
-    60,
-    10,
-    8000,
-    false,
-    "cabin",
-  ),
-  s(
-    "Massages & body",
-    "Deep tissue massage",
-    "Masaje de tejido profundo",
-    60,
-    10,
-    9500,
-    false,
-    "cabin",
-  ),
-  s(
-    "Massages & body",
-    "Body scrub",
-    "Exfoliación corporal",
-    45,
-    10,
-    6500,
-    false,
-    "cabin",
-  ),
+  s("Facials", "Deep cleansing facial", "Limpieza facial profunda", 60, 10, 7000, false, "cabin"),
+  s("Facials", "Hydrating facial", "Facial hidratante", 60, 10, 8500, false, "cabin"),
+  s("Massages & body", "Relaxing massage", "Masaje relajante", 60, 10, 8000, false, "cabin"),
+  s("Massages & body", "Deep tissue massage", "Masaje de tejido profundo", 60, 10, 9500, false, "cabin"),
+  s("Massages & body", "Body scrub", "Exfoliación corporal", 45, 10, 6500, false, "cabin"),
 ];
 
 const CATEGORIES: [string, string][] = [
@@ -211,10 +151,7 @@ const SHIFTS: [string, string][] = [
   ["14:00", "19:00"],
 ];
 
-export async function seed(
-  prisma: PrismaClient,
-  opts: { today?: IsoDate } = {},
-): Promise<SeedCounts> {
+export async function seed(prisma: PrismaClient, opts: { today?: IsoDate } = {}): Promise<SeedCounts> {
   const today = opts.today ?? todayIn(TZ, Date.now());
 
   const org = await prisma.organization.upsert({
@@ -224,361 +161,352 @@ export async function seed(
   });
   const orgId = org.id;
 
-  await prisma.$transaction(async (tx) => {
-    // Location and hours.
-    const locData = {
-      timezone: TZ,
-      address: "123 Main St, Queens, NY",
-      phone: "+17185550100",
-      settings: DEFAULT_LOCATION_SETTINGS,
-    };
-    const existingLoc = await tx.location.findFirst({
-      where: { organizationId: orgId, name: "Main" },
-    });
-    const location = existingLoc
-      ? await tx.location.update({
-          where: { id: existingLoc.id },
-          data: locData,
-        })
-      : await tx.location.create({
-          data: { organizationId: orgId, name: "Main", ...locData },
-        });
-    await tx.locationHours.deleteMany({ where: { locationId: location.id } });
-    await tx.locationHours.createMany({
-      data: OPEN_WEEKDAYS.map((weekday) => ({
-        locationId: location.id,
-        weekday,
-        opens: time("09:00"),
-        closes: time("19:00"),
-      })),
-    });
-
-    // Levels.
-    const existingLevels = await tx.level.findMany({
-      where: { organizationId: orgId },
-    });
-    const levels = new Map<string, string>();
-    for (const [rank, name] of [
-      [1, "Junior"],
-      [2, "Senior"],
-    ] as const) {
-      const found = existingLevels.find((l) => enOf(l.name) === name);
-      const row = found
-        ? await tx.level.update({
-            where: { id: found.id },
-            data: { name: t(name, name), rank },
-          })
-        : await tx.level.create({
-            data: { organizationId: orgId, name: t(name, name), rank },
-          });
-      levels.set(name, row.id);
-    }
-
-    // Resource types and resources.
-    const existingTypes = await tx.resourceType.findMany({
-      where: { organizationId: orgId },
-    });
-    const types = new Map<string, string>();
-    const typeDefs: [string, Text, string[]][] = [
-      [
-        "chair",
-        t("Pedicure chair", "Silla de pedicura"),
-        ["Chair 1", "Chair 2", "Chair 3"],
-      ],
-      [
-        "cabin",
-        t("Treatment cabin", "Cabina de tratamiento"),
-        ["Cabin 1", "Cabin 2"],
-      ],
-    ];
-    const resourceIds = new Map<string, string>();
-    for (const [key, name, resourceNames] of typeDefs) {
-      const found = existingTypes.find((x) => enOf(x.name) === name.en);
-      const row = found
-        ? await tx.resourceType.update({
-            where: { id: found.id },
-            data: { name },
-          })
-        : await tx.resourceType.create({
-            data: { organizationId: orgId, name },
-          });
-      types.set(key, row.id);
-      for (const rname of resourceNames) {
-        const existing = await tx.resource.findFirst({
-          where: {
-            organizationId: orgId,
-            locationId: location.id,
-            name: rname,
-          },
-        });
-        const r = existing
-          ? await tx.resource.update({
-              where: { id: existing.id },
-              data: { resourceTypeId: row.id, active: true },
-            })
-          : await tx.resource.create({
-              data: {
-                organizationId: orgId,
-                locationId: location.id,
-                resourceTypeId: row.id,
-                name: rname,
-              },
-            });
-        resourceIds.set(rname, r.id);
-      }
-    }
-
-    // Categories.
-    const existingCats = await tx.serviceCategory.findMany({
-      where: { organizationId: orgId },
-    });
-    const categories = new Map<string, string>();
-    for (const [i, [en, es]] of CATEGORIES.entries()) {
-      const found = existingCats.find((c) => enOf(c.name) === en);
-      const row = found
-        ? await tx.serviceCategory.update({
-            where: { id: found.id },
-            data: { name: t(en, es), sort: i + 1 },
-          })
-        : await tx.serviceCategory.create({
-            data: { organizationId: orgId, name: t(en, es), sort: i + 1 },
-          });
-      categories.set(en, row.id);
-    }
-
-    // Services and Senior level prices.
-    const existingServices = await tx.service.findMany({
-      where: { organizationId: orgId },
-    });
-    const services = new Map<string, { id: string; def: ServiceDef }>();
-    for (const def of SERVICES) {
-      const data = {
-        categoryId: categories.get(def.category)!,
-        name: t(def.en, def.es),
-        durationMin: def.min,
-        bufferAfterMin: def.buffer,
-        priceCents: def.cents,
-        parallelizable: def.parallel,
-        resourceTypeId: def.resource ? types.get(def.resource)! : null,
-        onlineBookable: true,
-        active: true,
+  await prisma.$transaction(
+    async (tx) => {
+      // Location and hours.
+      const locData = {
+        timezone: TZ,
+        address: "123 Main St, Queens, NY",
+        phone: "+17185550100",
+        settings: DEFAULT_LOCATION_SETTINGS,
       };
-      const found = existingServices.find((x) => enOf(x.name) === def.en);
-      const row = found
-        ? await tx.service.update({ where: { id: found.id }, data })
-        : await tx.service.create({ data: { organizationId: orgId, ...data } });
-      services.set(def.en, { id: row.id, def });
-    }
-    const seniorId = levels.get("Senior")!;
-    for (const [en, priceCents] of Object.entries(SENIOR_PRICES)) {
-      const { id: serviceId, def } = services.get(en)!;
-      await tx.serviceLevelPrice.upsert({
-        where: { serviceId_levelId: { serviceId, levelId: seniorId } },
-        update: { durationMin: def.min, priceCents },
-        create: {
-          serviceId,
-          levelId: seniorId,
-          durationMin: def.min,
-          priceCents,
-        },
+      const existingLoc = await tx.location.findFirst({
+        where: { organizationId: orgId, name: "Main" },
       });
-    }
-
-    // Employees, assignments and working hours.
-    const staffIds = new Map<string, string>();
-    for (const e of EMPLOYEES) {
-      const levelId = levels.get(e.level)!;
-      const base = {
-        role: "EMPLOYEE" as const,
-        canLogin: false,
-        locale: "es",
-        active: true,
-      };
-      const user = await tx.staffUser.upsert({
-        where: {
-          organizationId_email: { organizationId: orgId, email: e.email },
-        },
-        update: base,
-        create: { organizationId: orgId, email: e.email, ...base },
-      });
-      staffIds.set(e.name, user.id);
-      await tx.employeeProfile.upsert({
-        where: { staffUserId: user.id },
-        update: { displayName: e.name, levelId, bookableOnline: true },
-        create: {
-          staffUserId: user.id,
-          displayName: e.name,
-          levelId,
-          bookableOnline: true,
-        },
-      });
-      await tx.staffLocation.upsert({
-        where: {
-          staffUserId_locationId: {
-            staffUserId: user.id,
-            locationId: location.id,
-          },
-        },
-        update: {},
-        create: { staffUserId: user.id, locationId: location.id },
-      });
-      const assigned = SERVICES.filter(
-        (d) => e.categories.includes(d.category) || e.extra.includes(d.en),
-      );
-      await tx.employeeService.deleteMany({ where: { staffUserId: user.id } });
-      await tx.employeeService.createMany({
-        data: assigned.map((d) => ({
-          staffUserId: user.id,
-          serviceId: services.get(d.en)!.id,
+      const location = existingLoc
+        ? await tx.location.update({
+            where: { id: existingLoc.id },
+            data: locData,
+          })
+        : await tx.location.create({
+            data: { organizationId: orgId, name: "Main", ...locData },
+          });
+      await tx.locationHours.deleteMany({ where: { locationId: location.id } });
+      await tx.locationHours.createMany({
+        data: OPEN_WEEKDAYS.map((weekday) => ({
+          locationId: location.id,
+          weekday,
+          opens: time("09:00"),
+          closes: time("19:00"),
         })),
       });
-      await tx.workingHours.deleteMany({
-        where: { staffUserId: user.id, locationId: location.id },
-      });
-      await tx.workingHours.createMany({
-        data: WORK_WEEKDAYS.flatMap((weekday) =>
-          SHIFTS.map(([start, end]) => ({
-            organizationId: orgId,
-            staffUserId: user.id,
-            locationId: location.id,
-            weekday,
-            startTime: time(start),
-            endTime: time(end),
-          })),
-        ),
-      });
-    }
 
-    // Customers and consents.
-    const customerDefs: {
-      name: string;
-      phone: string;
-      locale: string;
-      whatsapp: boolean;
-    }[] = [
-      {
-        name: "María Gómez",
-        phone: "+17185550101",
-        locale: "es",
-        whatsapp: true,
-      },
-      {
-        name: "Jennifer Smith",
-        phone: "+17185550102",
-        locale: "en",
-        whatsapp: false,
-      },
-      {
-        name: "Rosa Díaz",
-        phone: "+17185550103",
-        locale: "es",
-        whatsapp: true,
-      },
-    ];
-    const customers = new Map<string, string>();
-    for (const c of customerDefs) {
-      const data = {
-        name: c.name,
-        locale: c.locale,
-        createdVia: "RECEPTION" as const,
-        phoneVerifiedAt: null,
-      };
-      const row = await tx.customer.upsert({
-        where: {
-          organizationId_phoneE164: {
-            organizationId: orgId,
-            phoneE164: c.phone,
-          },
-        },
-        update: data,
-        create: { organizationId: orgId, phoneE164: c.phone, ...data },
+      // Levels.
+      const existingLevels = await tx.level.findMany({
+        where: { organizationId: orgId },
       });
-      customers.set(c.name, row.id);
-      if (
-        c.whatsapp &&
-        (await tx.notificationConsent.count({
-          where: { customerId: row.id },
-        })) === 0
-      ) {
-        await tx.notificationConsent.create({
-          data: {
-            organizationId: orgId,
-            customerId: row.id,
-            channel: "WHATSAPP",
-            granted: true,
-            source: "RECEPTION",
-          },
-        });
+      const levels = new Map<string, string>();
+      for (const [rank, name] of [
+        [1, "Junior"],
+        [2, "Senior"],
+      ] as const) {
+        const found = existingLevels.find((l) => enOf(l.name) === name);
+        const row = found
+          ? await tx.level.update({
+              where: { id: found.id },
+              data: { name: t(name, name), rank },
+            })
+          : await tx.level.create({
+              data: { organizationId: orgId, name: t(name, name), rank },
+            });
+        levels.set(name, row.id);
       }
-    }
 
-    // Appointments: recreated every run.
-    await tx.appointment.deleteMany({
-      where: { organizationId: orgId, notes: { startsWith: SEED_NOTE } },
-    });
-    let day = today;
-    while (weekdayOf(day) < 2) day = addDays(day, 1);
-
-    const book = async (
-      customer: string,
-      note: string,
-      at: string,
-      items: {
-        service: string;
-        staff: string;
-        resource?: string;
-        priceCents?: number;
-      }[],
-    ) => {
-      const startsAt = new Date(wallTimeToUtc(day, at, TZ));
-      const appt = await tx.appointment.create({
-        data: {
-          organizationId: orgId,
-          locationId: location.id,
-          customerId: customers.get(customer)!,
-          status: "BOOKED",
-          source: "RECEPTION",
-          notes: `${SEED_NOTE} ${note}`,
-        },
+      // Resource types and resources.
+      const existingTypes = await tx.resourceType.findMany({
+        where: { organizationId: orgId },
       });
-      for (const item of items) {
-        const { id: serviceId, def } = services.get(item.service)!;
-        const endsAt = new Date(startsAt.getTime() + def.min * 60_000);
-        await tx.appointmentSegment.create({
-          data: {
-            organizationId: orgId,
-            appointmentId: appt.id,
+      const types = new Map<string, string>();
+      const typeDefs: [string, Text, string[]][] = [
+        ["chair", t("Pedicure chair", "Silla de pedicura"), ["Chair 1", "Chair 2", "Chair 3"]],
+        ["cabin", t("Treatment cabin", "Cabina de tratamiento"), ["Cabin 1", "Cabin 2"]],
+      ];
+      const resourceIds = new Map<string, string>();
+      for (const [key, name, resourceNames] of typeDefs) {
+        const found = existingTypes.find((x) => enOf(x.name) === name.en);
+        const row = found
+          ? await tx.resourceType.update({
+              where: { id: found.id },
+              data: { name },
+            })
+          : await tx.resourceType.create({
+              data: { organizationId: orgId, name },
+            });
+        types.set(key, row.id);
+        for (const rname of resourceNames) {
+          const existing = await tx.resource.findFirst({
+            where: {
+              organizationId: orgId,
+              locationId: location.id,
+              name: rname,
+            },
+          });
+          const r = existing
+            ? await tx.resource.update({
+                where: { id: existing.id },
+                data: { resourceTypeId: row.id, active: true },
+              })
+            : await tx.resource.create({
+                data: {
+                  organizationId: orgId,
+                  locationId: location.id,
+                  resourceTypeId: row.id,
+                  name: rname,
+                },
+              });
+          resourceIds.set(rname, r.id);
+        }
+      }
+
+      // Categories.
+      const existingCats = await tx.serviceCategory.findMany({
+        where: { organizationId: orgId },
+      });
+      const categories = new Map<string, string>();
+      for (const [i, [en, es]] of CATEGORIES.entries()) {
+        const found = existingCats.find((c) => enOf(c.name) === en);
+        const row = found
+          ? await tx.serviceCategory.update({
+              where: { id: found.id },
+              data: { name: t(en, es), sort: i + 1 },
+            })
+          : await tx.serviceCategory.create({
+              data: { organizationId: orgId, name: t(en, es), sort: i + 1 },
+            });
+        categories.set(en, row.id);
+      }
+
+      // Services and Senior level prices.
+      const existingServices = await tx.service.findMany({
+        where: { organizationId: orgId },
+      });
+      const services = new Map<string, { id: string; def: ServiceDef }>();
+      for (const def of SERVICES) {
+        const data = {
+          categoryId: categories.get(def.category)!,
+          name: t(def.en, def.es),
+          durationMin: def.min,
+          bufferAfterMin: def.buffer,
+          priceCents: def.cents,
+          parallelizable: def.parallel,
+          resourceTypeId: def.resource ? types.get(def.resource)! : null,
+          onlineBookable: true,
+          active: true,
+        };
+        const found = existingServices.find((x) => enOf(x.name) === def.en);
+        const row = found
+          ? await tx.service.update({ where: { id: found.id }, data })
+          : await tx.service.create({ data: { organizationId: orgId, ...data } });
+        services.set(def.en, { id: row.id, def });
+      }
+      const seniorId = levels.get("Senior")!;
+      for (const [en, priceCents] of Object.entries(SENIOR_PRICES)) {
+        const { id: serviceId, def } = services.get(en)!;
+        await tx.serviceLevelPrice.upsert({
+          where: { serviceId_levelId: { serviceId, levelId: seniorId } },
+          update: { durationMin: def.min, priceCents },
+          create: {
             serviceId,
-            staffUserId: staffIds.get(item.staff)!,
-            resourceId: item.resource ? resourceIds.get(item.resource)! : null,
-            startsAt,
-            endsAt,
-            blockEndsAt: new Date(endsAt.getTime() + def.buffer * 60_000),
+            levelId: seniorId,
             durationMin: def.min,
-            priceCents: item.priceCents ?? def.cents,
+            priceCents,
           },
         });
       }
-    };
-    await book("María Gómez", "manicure and pedicure in parallel", "10:00", [
-      { service: "Classic manicure", staff: "Ana Rivera" },
-      {
-        service: "Classic pedicure",
-        staff: "Carmen López",
-        resource: "Chair 1",
-      },
-    ]);
-    await book("Jennifer Smith", "haircut", "11:00", [
-      {
-        service: "Women's haircut",
-        staff: "Luis Ortega",
-        priceCents: SENIOR_PRICES["Women's haircut"],
-      },
-    ]);
-    await book("Rosa Díaz", "brow wax", "15:00", [
-      { service: "Brow wax", staff: "Sofía Méndez" },
-    ]);
-  }, { timeout: 30_000 });
+
+      // Employees, assignments and working hours.
+      const staffIds = new Map<string, string>();
+      for (const e of EMPLOYEES) {
+        const levelId = levels.get(e.level)!;
+        const base = {
+          role: "EMPLOYEE" as const,
+          canLogin: false,
+          locale: "es",
+          active: true,
+        };
+        const user = await tx.staffUser.upsert({
+          where: {
+            organizationId_email: { organizationId: orgId, email: e.email },
+          },
+          update: base,
+          create: { organizationId: orgId, email: e.email, ...base },
+        });
+        staffIds.set(e.name, user.id);
+        await tx.employeeProfile.upsert({
+          where: { staffUserId: user.id },
+          update: { displayName: e.name, levelId, bookableOnline: true },
+          create: {
+            staffUserId: user.id,
+            displayName: e.name,
+            levelId,
+            bookableOnline: true,
+          },
+        });
+        await tx.staffLocation.upsert({
+          where: {
+            staffUserId_locationId: {
+              staffUserId: user.id,
+              locationId: location.id,
+            },
+          },
+          update: {},
+          create: { staffUserId: user.id, locationId: location.id },
+        });
+        const assigned = SERVICES.filter((d) => e.categories.includes(d.category) || e.extra.includes(d.en));
+        await tx.employeeService.deleteMany({ where: { staffUserId: user.id } });
+        await tx.employeeService.createMany({
+          data: assigned.map((d) => ({
+            staffUserId: user.id,
+            serviceId: services.get(d.en)!.id,
+          })),
+        });
+        await tx.workingHours.deleteMany({
+          where: { staffUserId: user.id, locationId: location.id },
+        });
+        await tx.workingHours.createMany({
+          data: WORK_WEEKDAYS.flatMap((weekday) =>
+            SHIFTS.map(([start, end]) => ({
+              organizationId: orgId,
+              staffUserId: user.id,
+              locationId: location.id,
+              weekday,
+              startTime: time(start),
+              endTime: time(end),
+            })),
+          ),
+        });
+      }
+
+      // Customers and consents.
+      const customerDefs: {
+        name: string;
+        phone: string;
+        locale: string;
+        whatsapp: boolean;
+      }[] = [
+        {
+          name: "María Gómez",
+          phone: "+17185550101",
+          locale: "es",
+          whatsapp: true,
+        },
+        {
+          name: "Jennifer Smith",
+          phone: "+17185550102",
+          locale: "en",
+          whatsapp: false,
+        },
+        {
+          name: "Rosa Díaz",
+          phone: "+17185550103",
+          locale: "es",
+          whatsapp: true,
+        },
+      ];
+      const customers = new Map<string, string>();
+      for (const c of customerDefs) {
+        const data = {
+          name: c.name,
+          locale: c.locale,
+          createdVia: "RECEPTION" as const,
+          phoneVerifiedAt: null,
+        };
+        const row = await tx.customer.upsert({
+          where: {
+            organizationId_phoneE164: {
+              organizationId: orgId,
+              phoneE164: c.phone,
+            },
+          },
+          update: data,
+          create: { organizationId: orgId, phoneE164: c.phone, ...data },
+        });
+        customers.set(c.name, row.id);
+        if (
+          c.whatsapp &&
+          (await tx.notificationConsent.count({
+            where: { customerId: row.id },
+          })) === 0
+        ) {
+          await tx.notificationConsent.create({
+            data: {
+              organizationId: orgId,
+              customerId: row.id,
+              channel: "WHATSAPP",
+              granted: true,
+              source: "RECEPTION",
+            },
+          });
+        }
+      }
+
+      // Appointments: recreated every run.
+      await tx.appointment.deleteMany({
+        where: { organizationId: orgId, notes: { startsWith: SEED_NOTE } },
+      });
+      let day = today;
+      while (weekdayOf(day) < 2) day = addDays(day, 1);
+
+      const book = async (
+        customer: string,
+        note: string,
+        at: string,
+        items: {
+          service: string;
+          staff: string;
+          resource?: string;
+          priceCents?: number;
+        }[],
+      ) => {
+        const startsAt = new Date(wallTimeToUtc(day, at, TZ));
+        const appt = await tx.appointment.create({
+          data: {
+            organizationId: orgId,
+            locationId: location.id,
+            customerId: customers.get(customer)!,
+            status: "BOOKED",
+            source: "RECEPTION",
+            notes: `${SEED_NOTE} ${note}`,
+          },
+        });
+        for (const item of items) {
+          const { id: serviceId, def } = services.get(item.service)!;
+          const endsAt = new Date(startsAt.getTime() + def.min * 60_000);
+          await tx.appointmentSegment.create({
+            data: {
+              organizationId: orgId,
+              appointmentId: appt.id,
+              serviceId,
+              staffUserId: staffIds.get(item.staff)!,
+              resourceId: item.resource ? resourceIds.get(item.resource)! : null,
+              startsAt,
+              endsAt,
+              blockEndsAt: new Date(endsAt.getTime() + def.buffer * 60_000),
+              durationMin: def.min,
+              priceCents: item.priceCents ?? def.cents,
+            },
+          });
+        }
+      };
+      await book("María Gómez", "manicure and pedicure in parallel", "10:00", [
+        { service: "Classic manicure", staff: "Ana Rivera" },
+        {
+          service: "Classic pedicure",
+          staff: "Carmen López",
+          resource: "Chair 1",
+        },
+      ]);
+      await book("Jennifer Smith", "haircut", "11:00", [
+        {
+          service: "Women's haircut",
+          staff: "Luis Ortega",
+          priceCents: SENIOR_PRICES["Women's haircut"],
+        },
+      ]);
+      await book("Rosa Díaz", "brow wax", "15:00", [{ service: "Brow wax", staff: "Sofía Méndez" }]);
+    },
+    { timeout: 30_000 },
+  );
 
   const inOrg = { organizationId: orgId };
   const [
@@ -626,9 +554,7 @@ export async function seed(
 
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "Refusing to run the development seed with NODE_ENV=production",
-    );
+    throw new Error("Refusing to run the development seed with NODE_ENV=production");
   }
   const prisma = new PrismaClient();
   try {

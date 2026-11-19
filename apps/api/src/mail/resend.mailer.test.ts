@@ -7,8 +7,8 @@ const FROM = "BeautySpa <no-reply@example.com>";
 const env = testEnv({ EMAIL_PROVIDER: "resend", RESEND_API_KEY: KEY, EMAIL_FROM: FROM });
 
 function fakeFetch(status: number, body: unknown) {
-  return vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
-    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
+  return vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
+    async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } }),
   );
 }
 

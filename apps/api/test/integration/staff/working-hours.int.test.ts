@@ -11,7 +11,12 @@ describe("working hours", () => {
   const api = (method: "get" | "put", path: string, token = owner.token) =>
     request(ctx.app.getHttpServer())[method](`/v1${path}`).set("Authorization", `Bearer ${token}`);
   const url = (staffId: string, q = "") => `/staff/employees/${staffId}/working-hours${q}`;
-  const week = { days: [{ weekday: 2, start: "09:00", end: "13:00" }, { weekday: 2, start: "14:00", end: "24:00" }] };
+  const week = {
+    days: [
+      { weekday: 2, start: "09:00", end: "13:00" },
+      { weekday: 2, start: "14:00", end: "24:00" },
+    ],
+  };
 
   beforeAll(async () => {
     ctx = await createIntegrationApp();
@@ -55,7 +60,10 @@ describe("working hours", () => {
 
   it("rejects overlapping ranges, unassigned locations and malformed ids", async () => {
     const overlap = await api("put", url(f.staffA)).send({
-      days: [{ weekday: 1, start: "09:00", end: "12:00" }, { weekday: 1, start: "11:00", end: "13:00" }],
+      days: [
+        { weekday: 1, start: "09:00", end: "12:00" },
+        { weekday: 1, start: "11:00", end: "13:00" },
+      ],
     });
     expect(overlap.status).toBe(400);
     expect(overlap.body.errors[0].path).toBe("days.1");

@@ -29,8 +29,7 @@ describe("staff TOTP enroll, verify, recover", () => {
   let ctx: Ctx;
   let f: Fixture;
   const server = () => ctx.app.getHttpServer();
-  const post = (path: string, body: object) =>
-    request(server()).post(`/v1/auth/staff/${path}`).set(BODY).send(body);
+  const post = (path: string, body: object) => request(server()).post(`/v1/auth/staff/${path}`).set(BODY).send(body);
   const tokens = () => ctx.app.get(TokenService);
 
   beforeAll(async () => {
@@ -142,7 +141,12 @@ describe("staff TOTP enroll, verify, recover", () => {
   describe("verify", () => {
     it("current code → tokens with the staff role; replay is 400; the 6th attempt is 429", async () => {
       const secret = generateTotpSecret();
-      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "RECEPTION", password: PASSWORD, totpSecret: secret });
+      const staff = await createStaff(ctx.prisma, f, {
+        email: "ana@salon.com",
+        role: "RECEPTION",
+        password: PASSWORD,
+        totpSecret: secret,
+      });
       const mfaToken = await verifyToken(staff.id);
       const code = totpCode(secret, Date.now());
 
@@ -157,7 +161,8 @@ describe("staff TOTP enroll, verify, recover", () => {
       expect(replay.status).toBe(400);
       expect(replay.body.code).toBe("MFA_INVALID");
 
-      for (let i = 0; i < 3; i++) expect((await post("mfa/verify", { mfaToken, code: wrongCode(secret) })).status).toBe(400);
+      for (let i = 0; i < 3; i++)
+        expect((await post("mfa/verify", { mfaToken, code: wrongCode(secret) })).status).toBe(400);
       const limited = await post("mfa/verify", { mfaToken, code: nextStepCode(secret) });
       expect(limited.status).toBe(429);
       expect(limited.body.code).toBe("RATE_LIMITED");
@@ -165,16 +170,33 @@ describe("staff TOTP enroll, verify, recover", () => {
 
     it("an enroll token is 401 on verify", async () => {
       const secret = generateTotpSecret();
-      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD, totpSecret: secret });
-      const res = await post("mfa/verify", { mfaToken: await enrollToken(staff.id), code: totpCode(secret, Date.now()) });
+      const staff = await createStaff(ctx.prisma, f, {
+        email: "ana@salon.com",
+        role: "EMPLOYEE",
+        password: PASSWORD,
+        totpSecret: secret,
+      });
+      const res = await post("mfa/verify", {
+        mfaToken: await enrollToken(staff.id),
+        code: totpCode(secret, Date.now()),
+      });
       expect(res.status).toBe(401);
     });
 
     it("an expired mfaToken is 401", async () => {
       const secret = generateTotpSecret();
-      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD, totpSecret: secret });
+      const staff = await createStaff(ctx.prisma, f, {
+        email: "ana@salon.com",
+        role: "EMPLOYEE",
+        password: PASSWORD,
+        totpSecret: secret,
+      });
       const env = testEnv();
-      const key = createPrivateKey({ key: Buffer.from(env.JWT_PRIVATE_KEY_B64, "base64"), format: "der", type: "pkcs8" });
+      const key = createPrivateKey({
+        key: Buffer.from(env.JWT_PRIVATE_KEY_B64, "base64"),
+        format: "der",
+        type: "pkcs8",
+      });
       const now = Math.floor(Date.now() / 1000);
       const expired = await new SignJWT({ typ: "mfa", org: f.orgId, purpose: "verify" })
         .setProtectedHeader({ alg: "EdDSA", kid: env.JWT_KEY_ID })
@@ -191,7 +213,12 @@ describe("staff TOTP enroll, verify, recover", () => {
 
     it("a staff user deactivated after login is 401", async () => {
       const secret = generateTotpSecret();
-      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD, totpSecret: secret });
+      const staff = await createStaff(ctx.prisma, f, {
+        email: "ana@salon.com",
+        role: "EMPLOYEE",
+        password: PASSWORD,
+        totpSecret: secret,
+      });
       const mfaToken = await verifyToken(staff.id);
       await ctx.prisma.staffUser.update({ where: { id: staff.id }, data: { active: false } });
       const res = await post("mfa/verify", { mfaToken, code: totpCode(secret, Date.now()) });
@@ -202,7 +229,12 @@ describe("staff TOTP enroll, verify, recover", () => {
   describe("recover", () => {
     it("a recovery code clears TOTP, revokes sessions and hands out an enroll token; it cannot be reused", async () => {
       const secret = generateTotpSecret();
-      const staff = await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD, totpSecret: secret });
+      const staff = await createStaff(ctx.prisma, f, {
+        email: "ana@salon.com",
+        role: "EMPLOYEE",
+        password: PASSWORD,
+        totpSecret: secret,
+      });
       const codes = generateRecoveryCodes();
       await ctx.prisma.staffRecoveryCode.createMany({
         data: codes.map((c) => ({ staffUserId: staff.id, codeHash: hashRecoveryCode(c) })),
@@ -249,7 +281,10 @@ describe("staff TOTP enroll, verify, recover", () => {
         password: PASSWORD,
         totpSecret: generateTotpSecret(),
       });
-      const res = await post("mfa/recover", { mfaToken: await verifyToken(staff.id), recoveryCode: "aaaa-bbbb-cccc-dddd" });
+      const res = await post("mfa/recover", {
+        mfaToken: await verifyToken(staff.id),
+        recoveryCode: "aaaa-bbbb-cccc-dddd",
+      });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("MFA_INVALID");
     });
@@ -316,7 +351,9 @@ describe("staff TOTP enroll, verify, recover", () => {
     const first = await post("login", { email: "ana@salon.com", password: PASSWORD });
     expect(first.body.status).toBe("ENROLL_REQUIRED");
     const { secret } = (await post("mfa/enroll", { mfaToken: first.body.mfaToken })).body as { secret: string };
-    expect((await post("mfa/enroll/confirm", { mfaToken: first.body.mfaToken, code: totpCode(secret, Date.now()) })).status).toBe(200);
+    expect(
+      (await post("mfa/enroll/confirm", { mfaToken: first.body.mfaToken, code: totpCode(secret, Date.now()) })).status,
+    ).toBe(200);
     const second = await post("login", { email: "ana@salon.com", password: PASSWORD });
     expect(second.body.status).toBe("MFA_REQUIRED");
     // The confirm code's step is spent; the next step's code is still inside the window.

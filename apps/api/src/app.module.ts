@@ -13,5 +13,21 @@ import { RedisModule } from "./redis/redis.module.js";
 import { StaffModule } from "./staff/staff.module.js";
 import { TenancyModule } from "./tenancy/tenancy.module.js";
 
-@Module({ imports: [ConfigModule, PrismaModule, RedisModule, RateLimitModule, TenancyModule, AuditModule, MailModule, AuthModule, CatalogModule, StaffModule, LocationsModule, PublicModule, HealthModule] })
+@Module({
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    RedisModule,
+    RateLimitModule,
+    TenancyModule,
+    AuditModule,
+    MailModule,
+    AuthModule,
+    CatalogModule,
+    StaffModule,
+    LocationsModule,
+    PublicModule,
+    HealthModule,
+  ],
+})
 export class AppModule {}

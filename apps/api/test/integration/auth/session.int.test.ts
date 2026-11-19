@@ -288,7 +288,9 @@ describe("sessions: refresh rotation, transports, logout", () => {
 
   it("refresh after logout is a plain 401: no reuse audit row", async () => {
     const a = cookieToken(await login("customer", f.customerId));
-    expect((await request(server()).post("/v1/auth/logout").set("Cookie", `bs_refresh=${a}`).set(CSRF)).status).toBe(204);
+    expect((await request(server()).post("/v1/auth/logout").set("Cookie", `bs_refresh=${a}`).set(CSRF)).status).toBe(
+      204,
+    );
     const res = await refreshWithCookie(a);
     expect(res.status).toBe(401);
     expect(await ctx.prisma.auditLog.count({ where: { action: "auth.refresh_reuse" } })).toBe(0);

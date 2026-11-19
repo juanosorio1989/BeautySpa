@@ -26,9 +26,7 @@ describe("NewPasswordSchema", () => {
 
 describe("OtpCodeSchema", () => {
   it("accepts 6 digits", () => expect(OtpCodeSchema.safeParse("123456").success).toBe(true));
-  it.each(["12345", "1234567", "12a456"])("rejects %s", (v) =>
-    expect(OtpCodeSchema.safeParse(v).success).toBe(false),
-  );
+  it.each(["12345", "1234567", "12a456"])("rejects %s", (v) => expect(OtpCodeSchema.safeParse(v).success).toBe(false));
 });
 
 describe("OtpStartRequestSchema", () => {
@@ -42,13 +40,13 @@ describe("OtpStartRequestSchema", () => {
 
 describe("MfaEnrollConfirmResponseSchema", () => {
   it("accepts 10 recovery codes", () =>
-    expect(
-      MfaEnrollConfirmResponseSchema.safeParse({ ...tokens, recoveryCodes: Array(10).fill("x") }).success,
-    ).toBe(true));
+    expect(MfaEnrollConfirmResponseSchema.safeParse({ ...tokens, recoveryCodes: Array(10).fill("x") }).success).toBe(
+      true,
+    ));
   it("rejects 9 recovery codes", () =>
-    expect(
-      MfaEnrollConfirmResponseSchema.safeParse({ ...tokens, recoveryCodes: Array(9).fill("x") }).success,
-    ).toBe(false));
+    expect(MfaEnrollConfirmResponseSchema.safeParse({ ...tokens, recoveryCodes: Array(9).fill("x") }).success).toBe(
+      false,
+    ));
 });
 
 describe("AccessClaimsSchema", () => {

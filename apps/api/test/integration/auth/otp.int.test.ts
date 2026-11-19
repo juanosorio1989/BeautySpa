@@ -143,7 +143,12 @@ describe("customer phone OTP (fake provider)", () => {
 
     const audit = await ctx.prisma.auditLog.findMany({ where: { action: "auth.customer.login" } });
     expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({ actorType: "CUSTOMER", actorId: customer.id, entity: "customer", entityId: customer.id });
+    expect(audit[0]).toMatchObject({
+      actorType: "CUSTOMER",
+      actorId: customer.id,
+      entity: "customer",
+      entityId: customer.id,
+    });
     expect(audit[0]!.after).toEqual({ isNew: true });
 
     const me = await request(server()).get("/v1/test/otp/me").set("Authorization", `Bearer ${res.body.accessToken}`);
@@ -172,7 +177,13 @@ describe("customer phone OTP (fake provider)", () => {
 
   it("verify for a soft-deleted customer is 401 UNAUTHORIZED and leaves the row untouched", async () => {
     await ctx.prisma.customer.create({
-      data: { organizationId: f.orgId, phoneE164: NEW_PHONE, locale: "en", createdVia: "ONLINE", deletedAt: new Date() },
+      data: {
+        organizationId: f.orgId,
+        phoneE164: NEW_PHONE,
+        locale: "en",
+        createdVia: "ONLINE",
+        deletedAt: new Date(),
+      },
     });
     const res = await verify({ phone: NEW_PHONE, code: "000000" });
     expect(res.status).toBe(401);

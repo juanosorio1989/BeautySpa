@@ -20,7 +20,8 @@ import { LocationService } from "../tenancy/location.service.js";
  * missing or invalid stored key falls back to its default.
  */
 export function readLocationSettings(json: unknown): LocationSettings {
-  const stored = json !== null && typeof json === "object" && !Array.isArray(json) ? (json as Record<string, unknown>) : {};
+  const stored =
+    json !== null && typeof json === "object" && !Array.isArray(json) ? (json as Record<string, unknown>) : {};
   const out: Record<string, unknown> = { ...DEFAULT_LOCATION_SETTINGS };
   for (const key of Object.keys(DEFAULT_LOCATION_SETTINGS) as (keyof LocationSettings)[]) {
     if (!(key in stored)) continue;

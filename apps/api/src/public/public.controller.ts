@@ -73,7 +73,9 @@ export class PublicController {
     const orgId = await this.tenancy.getOrgId();
     const location = await this.locations.resolve(orgId, locationId);
     const employees = await this.catalog.bookableEmployees(orgId, location.id);
-    const listedIds = new Set((await this.catalog.listedServices(orgId, location.id, employees)).services.map((x) => x.id));
+    const listedIds = new Set(
+      (await this.catalog.listedServices(orgId, location.id, employees)).services.map((x) => x.id),
+    );
     return employees
       .map((e) => ({
         id: e.id,

@@ -61,7 +61,12 @@ describe("staff password login", () => {
   it("wrong password, unknown email, inactive and can_login=false all answer the same 401", async () => {
     await createStaff(ctx.prisma, f, { email: "ana@salon.com", role: "EMPLOYEE", password: PASSWORD });
     await createStaff(ctx.prisma, f, { email: "off@salon.com", role: "EMPLOYEE", password: PASSWORD, active: false });
-    await createStaff(ctx.prisma, f, { email: "nologin@salon.com", role: "EMPLOYEE", password: PASSWORD, canLogin: false });
+    await createStaff(ctx.prisma, f, {
+      email: "nologin@salon.com",
+      role: "EMPLOYEE",
+      password: PASSWORD,
+      canLogin: false,
+    });
     await createStaff(ctx.prisma, f, { email: "nopw@salon.com", role: "EMPLOYEE" });
 
     const responses = [

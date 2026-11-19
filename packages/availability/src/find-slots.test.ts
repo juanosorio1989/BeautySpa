@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
-  ana, ANA_ID, at, everyDay, bea, BEA_ID, carla, CARLA_ID, chair1, CHAIR_1_ID, chair2, CHAIR_2_ID, dani, DANI_ID,
-  gel, GEL_ID, haircut, HAIRCUT_ID, location, makeEmployee, makeResource, mani, MANI_ID, MON, pedi, PEDI_ID,
+  ana,
+  ANA_ID,
+  at,
+  everyDay,
+  bea,
+  BEA_ID,
+  carla,
+  CARLA_ID,
+  chair1,
+  CHAIR_1_ID,
+  chair2,
+  CHAIR_2_ID,
+  dani,
+  DANI_ID,
+  gel,
+  GEL_ID,
+  haircut,
+  HAIRCUT_ID,
+  location,
+  makeEmployee,
+  makeResource,
+  mani,
+  MANI_ID,
+  MON,
+  pedi,
+  PEDI_ID,
 } from "../test/fixtures";
 import { AvailabilityError } from "./errors";
 import { findSlots } from "./find-slots";
@@ -22,7 +46,10 @@ const base = (choices: ServiceChoice[], o: Partial<FindSlotsInput> = {}): FindSl
 });
 const c = (serviceId: string, employeeId = "ANY"): ServiceChoice => ({ serviceId, employeeId });
 const busy = (employeeId: string, resourceId: string | null, from: string, to: string): BusySegment => ({
-  employeeId, resourceId, start: at(MON, from), blockEnd: at(MON, to),
+  employeeId,
+  resourceId,
+  start: at(MON, from),
+  blockEnd: at(MON, to),
 });
 const wholeDay = (employeeId: string, resourceId: string | null) => busy(employeeId, resourceId, "00:00", "23:59");
 
@@ -59,7 +86,9 @@ describe("findSlots", () => {
   });
   it("5. sequential fallback drops same-employee buffer", () => {
     const off = [{ start: at(MON, "00:00"), end: at("2026-12-08", "00:00") }];
-    const s = findSlots(base([c(MANI_ID), c(PEDI_ID)], { employees: [ana, makeEmployee(bea, { timeOff: off }), carla, dani] }))[0]!;
+    const s = findSlots(
+      base([c(MANI_ID), c(PEDI_ID)], { employees: [ana, makeEmployee(bea, { timeOff: off }), carla, dani] }),
+    )[0]!;
     const [m, p] = s.segments;
     expect([m!.employeeId, p!.employeeId]).toEqual([ANA_ID, ANA_ID]);
     expect([m!.start, m!.end, m!.blockEnd]).toEqual([at(MON, "09:00"), at(MON, "09:30"), at(MON, "09:30")]);
@@ -67,7 +96,11 @@ describe("findSlots", () => {
     expect(s.end).toBe(at(MON, "10:15"));
   });
   it("6. no chair free", () => {
-    expect(findSlots(base([c(MANI_ID), c(PEDI_ID)], { busy: [wholeDay(CARLA_ID, CHAIR_1_ID), wholeDay(CARLA_ID, CHAIR_2_ID)] }))).toEqual([]);
+    expect(
+      findSlots(
+        base([c(MANI_ID), c(PEDI_ID)], { busy: [wholeDay(CARLA_ID, CHAIR_1_ID), wholeDay(CARLA_ID, CHAIR_2_ID)] }),
+      ),
+    ).toEqual([]);
   });
   it("7. parallel block then haircut", () => {
     const s = findSlots(base([c(MANI_ID), c(PEDI_ID), c(HAIRCUT_ID, DANI_ID)]))[0]!;
@@ -102,14 +135,18 @@ describe("findSlots", () => {
     const a = findSlots(base([c(HAIRCUT_ID, DANI_ID)], { date: "2026-03-08", now }));
     expect(a).toHaveLength(37);
     expect(a[0]!.start).toBe(Date.parse("2026-03-08T13:00:00Z"));
-    const b = findSlots(base([c(HAIRCUT_ID, DANI_ID)], { date: "2026-11-01", now: Date.parse("2026-10-25T12:00:00Z") }));
+    const b = findSlots(
+      base([c(HAIRCUT_ID, DANI_ID)], { date: "2026-11-01", now: Date.parse("2026-10-25T12:00:00Z") }),
+    );
     expect(b).toHaveLength(37);
     expect(b[0]!.start).toBe(Date.parse("2026-11-01T14:00:00Z"));
   });
   it("12. lead time", () => {
     const now = Date.parse("2026-12-07T15:10:00Z");
     expect(findSlots(base([c(HAIRCUT_ID, DANI_ID)], { now }))[0]!.start).toBe(Date.parse("2026-12-07T16:15:00Z"));
-    expect(findSlots(base([c(HAIRCUT_ID, DANI_ID)], { now, mode: "STAFF" }))[0]!.start).toBe(Date.parse("2026-12-07T15:00:00Z"));
+    expect(findSlots(base([c(HAIRCUT_ID, DANI_ID)], { now, mode: "STAFF" }))[0]!.start).toBe(
+      Date.parse("2026-12-07T15:00:00Z"),
+    );
   });
   it("13. horizon", () => {
     const ch = [c(HAIRCUT_ID, DANI_ID)];
@@ -132,9 +169,13 @@ describe("findSlots", () => {
   });
   it("15. STAFF override ignores hours and time off", () => {
     const off = [{ start: at(MON, "00:00"), end: at("2026-12-08", "00:00") }];
-    const s = findSlots(base([c(HAIRCUT_ID, DANI_ID)], {
-      mode: "STAFF", override: true, employees: [ana, bea, carla, makeEmployee(dani, { timeOff: off })],
-    }));
+    const s = findSlots(
+      base([c(HAIRCUT_ID, DANI_ID)], {
+        mode: "STAFF",
+        override: true,
+        employees: [ana, bea, carla, makeEmployee(dani, { timeOff: off })],
+      }),
+    );
     expect(s.length).toBeGreaterThan(0);
     expect(s[0]!.start).toBe(at(MON, "00:00"));
   });
@@ -145,7 +186,11 @@ describe("findSlots", () => {
   });
   it("17. input errors", () => {
     const code = (ch: ServiceChoice[]) => {
-      try { findSlots(base(ch)); } catch (e) { return e instanceof AvailabilityError ? e.code : "other"; }
+      try {
+        findSlots(base(ch));
+      } catch (e) {
+        return e instanceof AvailabilityError ? e.code : "other";
+      }
       return "none";
     };
     expect(code([])).toBe("NO_SERVICES");
@@ -174,9 +219,13 @@ describe("findSlots", () => {
       makeEmployee(ana, { id: `00000000-0000-4000-8000-0000000001${String(i).padStart(2, "0")}` }),
     );
     const t0 = Date.now();
-    const s = findSlots(base([c(PEDI_ID), c(PEDI_ID), c(PEDI_ID), c(PEDI_ID)], {
-      mode: "STAFF", employees: many, busy: [wholeDay(CARLA_ID, CHAIR_1_ID), wholeDay(CARLA_ID, CHAIR_2_ID)],
-    }));
+    const s = findSlots(
+      base([c(PEDI_ID), c(PEDI_ID), c(PEDI_ID), c(PEDI_ID)], {
+        mode: "STAFF",
+        employees: many,
+        busy: [wholeDay(CARLA_ID, CHAIR_1_ID), wholeDay(CARLA_ID, CHAIR_2_ID)],
+      }),
+    );
     expect(s).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(200);
   });
@@ -195,14 +244,18 @@ describe("findSlots", () => {
   });
   it("R7. ANY ordering uses input busy only, not in-plan segments", () => {
     // bea busy 1h earlier in the day: input ordering always prefers ana for every segment.
-    const s = findSlots(base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(PEDI_ID)], {
-      busy: [busy(BEA_ID, null, "09:00", "10:00")],
-      employees: [ana, bea, carla, dani],
-    }));
+    const s = findSlots(
+      base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(PEDI_ID)], {
+        busy: [busy(BEA_ID, null, "09:00", "10:00")],
+        employees: [ana, bea, carla, dani],
+      }),
+    );
     const first = s.find((x) => x.start === at(MON, "10:00"))!;
     expect(first.segments.map((x) => x.employeeId)[0]).toBe(ANA_ID);
     // fully sequential (4 parallelizable, 2 techs): every segment picks ana while she is free
-    const seq = findSlots(base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(MANI_ID)], { busy: [busy(BEA_ID, null, "09:00", "10:00")] }));
+    const seq = findSlots(
+      base([c(MANI_ID), c(MANI_ID), c(GEL_ID), c(MANI_ID)], { busy: [busy(BEA_ID, null, "09:00", "10:00")] }),
+    );
     expect(seq[0]!.segments.every((x) => x.employeeId === ANA_ID)).toBe(true);
   });
   const windowed = (emps: number, chairCount: number) => {
@@ -210,13 +263,22 @@ describe("findSlots", () => {
       makeEmployee(ana, { id: `00000000-0000-4000-8000-0000000002${String(i).padStart(2, "0")}` }),
     );
     const resources = Array.from({ length: chairCount }, (_, i) =>
-      makeResource(chair1, { id: `00000000-0000-4000-8000-0000000003${String(i).padStart(2, "0")}`, name: `chair-${i}` }),
+      makeResource(chair1, {
+        id: `00000000-0000-4000-8000-0000000003${String(i).padStart(2, "0")}`,
+        name: `chair-${i}`,
+      }),
     );
     const busy = resources.flatMap((r) =>
-      [["12:00", "12:15"], ["15:15", "15:30"], ["18:30", "23:59"]].map(([a, b]) => busyOf(r.id, a!, b!)),
+      [
+        ["12:00", "12:15"],
+        ["15:15", "15:30"],
+        ["18:30", "23:59"],
+      ].map(([a, b]) => busyOf(r.id, a!, b!)),
     );
     const t0 = Date.now();
-    const s = findSlots(base([c(PEDI_ID), c(PEDI_ID), c(PEDI_ID), c(PEDI_ID)], { mode: "STAFF", employees, resources, busy }));
+    const s = findSlots(
+      base([c(PEDI_ID), c(PEDI_ID), c(PEDI_ID), c(PEDI_ID)], { mode: "STAFF", employees, resources, busy }),
+    );
     return { s, ms: Date.now() - t0 };
   };
   const busyOf = (resourceId: string, from: string, to: string): BusySegment => busy("x", resourceId, from, to);
@@ -240,17 +302,30 @@ describe("findSlots", () => {
       expect([m!.start, p!.start]).toEqual([at(MON, "09:00"), at(MON, "09:00")]);
     };
     const cases: [string, (hours: ReturnType<typeof everyDay>) => FindSlotsInput][] = [
-      ["explicit later choice", (h) => base([c(MANI_ID), c(PEDI_ID, ANA_ID)], {
-        services: [mani, noChair], employees: [makeEmployee(ana, { workingHours: h }), makeEmployee(bea, { workingHours: h })],
-      })],
-      ["later choice not offered by one employee", (h) => base([c(MANI_ID), c(PEDI_ID)], {
-        services: [mani, noChair],
-        employees: [makeEmployee(ana, { workingHours: h }), makeEmployee(bea, { workingHours: h, serviceIds: [MANI_ID] })],
-      })],
+      [
+        "explicit later choice",
+        (h) =>
+          base([c(MANI_ID), c(PEDI_ID, ANA_ID)], {
+            services: [mani, noChair],
+            employees: [makeEmployee(ana, { workingHours: h }), makeEmployee(bea, { workingHours: h })],
+          }),
+      ],
+      [
+        "later choice not offered by one employee",
+        (h) =>
+          base([c(MANI_ID), c(PEDI_ID)], {
+            services: [mani, noChair],
+            employees: [
+              makeEmployee(ana, { workingHours: h }),
+              makeEmployee(bea, { workingHours: h, serviceIds: [MANI_ID] }),
+            ],
+          }),
+      ],
     ];
     for (const [name, build] of cases) {
       it(`${name}, short hours`, () => expectParallel(findSlots(build(short))));
-      it(`${name}, full hours: first slot is the parallel plan`, () => expectParallel(findSlots(build(everyDay("09:00", "19:00")))));
+      it(`${name}, full hours: first slot is the parallel plan`, () =>
+        expectParallel(findSlots(build(everyDay("09:00", "19:00")))));
     }
   });
 });

@@ -45,13 +45,20 @@ describe("location settings", () => {
     const rows = await ctx.prisma.locationHours.findMany({ where: { locationId: f.locationId } });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.closes.getUTCHours()).toBe(0);
-    const c = await api("patch", "/staff/settings").send({ hours: [{ weekday: 1, start: "09:00", end: "17:00" }], name: "Renamed" });
+    const c = await api("patch", "/staff/settings").send({
+      hours: [{ weekday: 1, start: "09:00", end: "17:00" }],
+      name: "Renamed",
+    });
     expect(c.body.hours).toEqual([{ weekday: 1, start: "09:00", end: "17:00" }]);
     expect(c.body.location.name).toBe("Renamed");
     expect(await ctx.prisma.locationHours.count()).toBe(1);
     const audits = await ctx.prisma.auditLog.findMany({ where: { action: "location.update", entityId: f.locationId } });
     expect(audits).toHaveLength(3);
-    const last = audits.find((x) => (x.before as { location: { name: string } }).location.name === "Main" && (x.after as { location: { name: string } }).location.name === "Renamed");
+    const last = audits.find(
+      (x) =>
+        (x.before as { location: { name: string } }).location.name === "Main" &&
+        (x.after as { location: { name: string } }).location.name === "Renamed",
+    );
     expect(last).toBeDefined();
   });
 

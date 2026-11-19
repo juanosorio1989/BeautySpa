@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { StaffRoleSchema, EmailSchema } from "./auth";
-import { DayHoursSchema, IdSchema, IsoInstantSchema, LocaleSchema, LocalizedTextSchema, WeekHoursSchema } from "./common";
+import {
+  DayHoursSchema,
+  IdSchema,
+  IsoInstantSchema,
+  LocaleSchema,
+  LocalizedTextSchema,
+  WeekHoursSchema,
+} from "./common";
 
 const nonEmpty = (o: object) => Object.keys(o).length > 0;
 const EMPTY = "Empty update";

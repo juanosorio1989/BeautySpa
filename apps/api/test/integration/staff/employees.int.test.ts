@@ -28,7 +28,9 @@ describe("employees CRUD", () => {
   /** Enables login for `staffId` and returns a live refresh token for them. */
   const liveRefreshToken = async (staffId: string) => {
     await ctx.prisma.staffUser.update({ where: { id: staffId }, data: { canLogin: true } });
-    const { token } = await ctx.app.get(RefreshTokenService).create({ type: "STAFF", id: staffId }, { ip: null, userAgent: null });
+    const { token } = await ctx.app
+      .get(RefreshTokenService)
+      .create({ type: "STAFF", id: staffId }, { ip: null, userAgent: null });
     return token;
   };
 
@@ -75,8 +77,15 @@ describe("employees CRUD", () => {
     });
     expect([...res.body.serviceIds].sort()).toEqual([f.serviceId, service2].sort());
 
-    const audit = await ctx.prisma.auditLog.findFirst({ where: { action: "staff_user.create", entityId: res.body.id } });
-    expect(audit).toMatchObject({ entity: "staff_user", actorType: "STAFF", actorId: owner.id, organizationId: f.orgId });
+    const audit = await ctx.prisma.auditLog.findFirst({
+      where: { action: "staff_user.create", entityId: res.body.id },
+    });
+    expect(audit).toMatchObject({
+      entity: "staff_user",
+      actorType: "STAFF",
+      actorId: owner.id,
+      organizationId: f.orgId,
+    });
     expect(audit?.after).toEqual(res.body);
     expect(Object.keys(audit?.after as object)).not.toContain("passwordHash");
 
@@ -116,7 +125,9 @@ describe("employees CRUD", () => {
   });
 
   it("PATCH profile replaces the profile as a whole: omitted fields take their defaults", async () => {
-    const lvl = await ctx.prisma.level.create({ data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 1 } });
+    const lvl = await ctx.prisma.level.create({
+      data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 1 },
+    });
     const created = await api("post", "/staff/employees").send(
       stylist({ profile: { displayName: "Maria", levelId: lvl.id, bookableOnline: false } }),
     );
@@ -207,8 +218,12 @@ describe("employees CRUD", () => {
 
   it("rejects another org's profile.levelId with 400 on that path", async () => {
     const other = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
-    const lvl = await ctx.prisma.level.create({ data: { organizationId: other.id, name: { en: "X", es: "X" }, rank: 1 } });
-    const res = await api("post", "/staff/employees").send(stylist({ profile: { displayName: "Maria", levelId: lvl.id } }));
+    const lvl = await ctx.prisma.level.create({
+      data: { organizationId: other.id, name: { en: "X", es: "X" }, rank: 1 },
+    });
+    const res = await api("post", "/staff/employees").send(
+      stylist({ profile: { displayName: "Maria", levelId: lvl.id } }),
+    );
     expect(res.status).toBe(400);
     expect(res.body.errors[0].path).toBe("profile.levelId");
   });
@@ -239,11 +254,29 @@ describe("employees CRUD", () => {
     const t = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00.000Z`);
     await ctx.prisma.workingHours.createMany({
       data: [
-        { organizationId: f.orgId, staffUserId: id, locationId: f.locationId, weekday: 1, startTime: t("09:00"), endTime: t("17:00") },
-        { organizationId: f.orgId, staffUserId: id, locationId: second.id, weekday: 2, startTime: t("09:00"), endTime: t("17:00") },
+        {
+          organizationId: f.orgId,
+          staffUserId: id,
+          locationId: f.locationId,
+          weekday: 1,
+          startTime: t("09:00"),
+          endTime: t("17:00"),
+        },
+        {
+          organizationId: f.orgId,
+          staffUserId: id,
+          locationId: second.id,
+          weekday: 2,
+          startTime: t("09:00"),
+          endTime: t("17:00"),
+        },
       ],
     });
-    const range = { startsAt: new Date("2026-12-01T00:00:00Z"), endsAt: new Date("2026-12-02T00:00:00Z"), kind: "VACATION" as const };
+    const range = {
+      startsAt: new Date("2026-12-01T00:00:00Z"),
+      endsAt: new Date("2026-12-02T00:00:00Z"),
+      kind: "VACATION" as const,
+    };
     await ctx.prisma.timeOff.createMany({
       data: [
         { organizationId: f.orgId, staffUserId: id, locationId: f.locationId, ...range },
@@ -290,7 +323,9 @@ describe("employees CRUD", () => {
     expect((await api("get", "/staff/employees", reception.token)).status).toBe(200);
     expect((await api("get", `/staff/employees/${f.staffA}`, reception.token)).status).toBe(200);
     expect((await api("post", "/staff/employees", reception.token).send(stylist())).status).toBe(403);
-    expect((await api("patch", `/staff/employees/${f.staffA}`, reception.token).send({ locale: "es" })).status).toBe(403);
+    expect((await api("patch", `/staff/employees/${f.staffA}`, reception.token).send({ locale: "es" })).status).toBe(
+      403,
+    );
     const employee = await staffSession(ctx.app, ctx.prisma, f, "EMPLOYEE");
     expect((await api("get", "/staff/employees", employee.token)).status).toBe(403);
   });
