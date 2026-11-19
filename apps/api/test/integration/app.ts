@@ -5,6 +5,7 @@ import { AppModule } from "../../src/app.module.js";
 import { configureApp } from "../../src/bootstrap.js";
 import { ENV } from "../../src/config/env.js";
 import { PrismaService } from "../../src/prisma/prisma.service.js";
+import { TenancyService } from "../../src/tenancy/tenancy.service.js";
 import { REDIS } from "../../src/redis/redis.module.js";
 import { testEnv } from "../support/test-env.js";
 import { truncateAll } from "./helpers.js";
@@ -49,4 +50,9 @@ export async function createIntegrationApp(
 export async function resetState(prisma: PrismaService, redis: Redis): Promise<void> {
   await truncateAll(prisma);
   await redis.flushdb();
+}
+
+/** Clears the org id `TenancyService` caches; call after `resetState` when the fixture org is recreated. */
+export function resetTenancyCache(app: INestApplication): void {
+  (app.get(TenancyService) as unknown as { orgId?: string }).orgId = undefined;
 }

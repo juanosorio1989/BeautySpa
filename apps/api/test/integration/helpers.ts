@@ -1,8 +1,15 @@
+import { randomUUID } from "node:crypto";
+import type { INestApplication } from "@nestjs/common";
 import { PrismaClient, type StaffRole } from "@prisma/client";
 import { Encryptor } from "../../src/auth/crypto/encryption.js";
 import { hashPassword } from "../../src/auth/crypto/password.js";
+import { generateTotpSecret } from "../../src/auth/crypto/totp.js";
+import { TokenService } from "../../src/auth/token.service.js";
+import { pgCode } from "../../src/common/db-errors.js";
 import { testEnv } from "../support/test-env.js";
 import { testDatabaseUrl } from "./setup.js";
+
+export { pgCode };
 
 export function createTestClient(): PrismaClient {
   return new PrismaClient({ datasourceUrl: testDatabaseUrl() });
@@ -16,23 +23,6 @@ export async function truncateAll(prisma: PrismaClient): Promise<void> {
   if (rows.length === 0) return;
   const list = rows.map((r) => `"public"."${r.tablename}"`).join(", ");
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`);
-}
-
-/**
- * Extracts the PostgreSQL SQLSTATE from a Prisma error. Prisma 6 does not map
- * exclusion (23P01) or check (23514) violations to a P-code: it throws
- * PrismaClientUnknownRequestError with no `meta`/`cause`, and the SQLSTATE
- * appears only in the message as `code: "23P01"`. `meta.code` / `cause.code`
- * are checked first in case a future Prisma version exposes them.
- */
-export function pgCode(err: unknown): string | undefined {
-  if (typeof err !== "object" || err === null) return undefined;
-  const e = err as { meta?: Record<string, unknown>; cause?: { code?: unknown }; message?: string };
-  const metaCode = e.meta?.code;
-  if (typeof metaCode === "string" && /^[0-9A-Z]{5}$/.test(metaCode)) return metaCode;
-  const causeCode = e.cause?.code;
-  if (typeof causeCode === "string" && /^[0-9A-Z]{5}$/.test(causeCode)) return causeCode;
-  return /code: "([0-9A-Z]{5})"/.exec(e.message ?? "")?.[1];
 }
 
 export async function rejectionCode(promise: Promise<unknown>): Promise<string | undefined> {
@@ -175,4 +165,26 @@ export async function createStaff(prisma: PrismaClient, f: Fixture, opts: Create
     },
     select: { id: true },
   });
+}
+
+/**
+ * Creates a staff user who can log in and is enrolled in TOTP, and returns an
+ * access token for them issued by the app's own `TokenService`. `email`
+ * defaults to a unique `<role>-<uuid>@test.dev`.
+ */
+export async function staffSession(
+  app: INestApplication,
+  prisma: PrismaClient,
+  f: Fixture,
+  role: StaffRole,
+  email?: string,
+): Promise<{ id: string; token: string }> {
+  const { id } = await createStaff(prisma, f, {
+    email: email ?? `${role.toLowerCase()}-${randomUUID()}@test.dev`,
+    role,
+    canLogin: true,
+    totpSecret: generateTotpSecret(),
+  });
+  const { token } = await app.get(TokenService).issueAccess({ sub: id, typ: "staff", org: f.orgId, role });
+  return { id, token };
 }

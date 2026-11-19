@@ -3,3 +3,8 @@ export * from "./errors";
 export * from "./auth";
 export * from "./availability";
 export * from "./health";
+export * from "./catalog";
+export * from "./staff";
+export * from "./settings";
+export * from "./audit";
+export * from "./public";

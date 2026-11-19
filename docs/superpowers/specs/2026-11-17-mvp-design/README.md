@@ -5,7 +5,7 @@ Status: draft for approval · Date: 2026-11-17
 ## Intent
 
 A booking and salon-management SaaS for **Latino-owned salons in New York**
-(nails, hair, personal care). The competition (Fresha, Booksy) is English-first
+(nails, hair, facials, massages and body treatments). The competition (Fresha, Booksy) is English-first
 and SMS/email-first. Our edge: work the way this community already talks to its
 salon — **WhatsApp and Spanish**, while serving English-speaking clients just as
 well.
@@ -19,7 +19,7 @@ one so that step does not require a risky migration.
 1. Clients book online in seconds: pick services, professional (or "any"),
    time; verify phone with a one-time code. **No account creation.**
 2. Real-time availability that handles **parallel services** (mani + pedi with
-   two technicians) and **limited resources** (pedicure chairs).
+   two technicians) and **limited resources** (pedicure chairs, treatment cabins).
 3. Double booking of an employee or resource is impossible, enforced by the
    database.
 4. Reception enters phone, WhatsApp and walk-in appointments **fast from a

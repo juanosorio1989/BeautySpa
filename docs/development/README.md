@@ -49,6 +49,19 @@ The link is a one-time credential: do not paste it into chats or tickets.
 In development `EMAIL_PROVIDER=console`: invite and password reset emails are not sent, the API logs them
 (recipient, subject and text with the link) to its console.
 
+## Development seed
+
+`db:seed` is idempotent (natural keys; safe to run repeatedly) and refuses `NODE_ENV=production`.
+Customers and appointments are demo data: never run it against a real database. It creates:
+
+- Organization `demo-salon` and location "Main" (`America/New_York`, open Mon-Sat 09:00-19:00, default settings).
+- 2 levels (Junior, Senior), 5 categories, 20 services (3 with Senior prices), 2 resource types with 5 resources
+  (Chair 1-3, Cabin 1-2).
+- 5 employees (`ana@`, `carmen@`, `luis@`, `sofia@`, `valeria@demo-salon.test`) working Tue-Sat 09:00-13:00 and 14:00-19:00.
+  They have `canLogin = false`: they cannot log in until an owner invites them. `create-owner` is still needed for the first OWNER.
+- 3 customers (+1718555010x) with 2 WhatsApp consents, and 3 `[seed]` appointments on the next Tue-Sat
+  (recreated on each run).
+
 ## URLs
 
 - API docs (Swagger UI): http://localhost:3001/v1/docs

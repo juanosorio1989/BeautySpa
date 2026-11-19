@@ -24,11 +24,13 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 
 ## Public (no auth)
 
+`locationId` may be omitted only in an organization with a single location (else 400 on `locationId`).
+
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/public/locations` | name, address, hours, phone (one in the MVP) |
-| GET | `/public/services` | active, online-bookable, by category, both languages |
-| GET | `/public/employees` | bookable profiles + services they do |
+| GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`) |
+| GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
+| GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
 | GET | `/availability` | `locationId?`, `services[]=id:employeeId|ANY&date=YYYY-MM-DD` (or `from`/`to`), `excludeAppointmentId?` (authenticated owner of it, or staff) → `Slot[]` |
 | POST | `/holds` | `{ segments }` from a slot → `{ holdId, expiresAt }`. Rate-limited per IP. |
 
@@ -67,10 +69,68 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — move / change segments |
 | POST | `/staff/appointments/:id/status` | check-in, complete, no-show, cancel (EMPLOYEE: own, check-in/complete only) |
 | CRUD | `/staff/services`, `/staff/categories`, `/staff/levels`, `/staff/resources`, `/staff/resource-types` | OWNER |
-| CRUD | `/staff/employees`, `/staff/employees/:id/working-hours`; POST `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
-| CRUD | `/staff/time-off` | OWNER, RECEPTION; EMPLOYEE: read own |
-| GET/PATCH | `/staff/settings` | OWNER |
-| GET | `/staff/audit?entity=&id=` | OWNER |
+| GET | `/staff/employees?active=&locationId=`, `/staff/employees/:id` | OWNER, RECEPTION |
+| POST, PATCH | `/staff/employees`, `/staff/employees/:id` (no DELETE: `PATCH { active: false }`) | OWNER |
+| GET | `/staff/employees/:id/working-hours?locationId=` | OWNER, RECEPTION; EMPLOYEE: own |
+| PUT | same path, body `{ days: [{ weekday, start, end }] }` replaces the set | OWNER |
+| POST | `/staff/employees/:id/invite`, `/staff/employees/:id/reset-2fa` | OWNER |
+| CRUD | `/staff/time-off` (`?locationId` also returns rows with no location, i.e. all locations) | OWNER, RECEPTION; EMPLOYEE: read own |
+| GET/PATCH | `/staff/settings?locationId=` — location profile, `settings` (merged by key), `hours` (replaced as a set) | OWNER |
+| GET | `/staff/closures?from=&to=&locationId=` | all staff |
+| POST, PATCH, DELETE | `/staff/closures`, `/staff/closures/:id` | OWNER |
+| GET | `/staff/audit?entity=&id=&cursor=&limit=` | OWNER — `{ items, nextCursor }`, newest first (`id desc`); `nextCursor` is the last item id when a page is full (`limit`, default 50, max 100), else null |
+
+### Settings
+
+- `GET|PATCH /staff/settings?locationId=` (OWNER) answer `StaffSettings`:
+  `location { id, name, address, phone, timezone }`, `settings` and
+  `hours [{ weekday, start, end }]`.
+- `settings` keys (defaults): `slotIntervalMin` 5, 10, 15, 20, 30 or 60 (15);
+  `holdMinutes` 1-30 (5); `cancelWindowHours` 0-168 (24); `bookingHorizonDays`
+  1-365 (60); `minLeadMinutes` 0-1440 (60). A stored key that is missing or
+  invalid reads as its default.
+- `PATCH` merges `settings` by key (only given keys change), replaces `hours`
+  as a set (overlapping shifts on a weekday are 400 on `hours.<i>`) and
+  updates `name`, `address`, `phone`, `timezone`. An empty body is 400.
+- Wall times are "HH:MM"; an end may be "24:00" (stored as 00:00). `weekday`
+  is 0 (Sunday) to 6.
+- `locationId` may be omitted only in an organization with a single location
+  (else 400 on `locationId`); another org's location is 404. Closures follow
+  the same rule.
+
+### Employees
+
+- **Every staff member is an "employee"**: `/staff/employees` lists OWNER,
+  RECEPTION and EMPLOYEE rows (active first, then display name or email).
+  `profile` (display name, bio, photo, level, bookable online) exists only for
+  people who perform services; `serviceIds` require a profile, and
+  `PATCH { profile: null }` also removes all services. `canLogin` requires an
+  email. A duplicate email answers 409 `CONFLICT`.
+- `profile` in a PATCH replaces the profile as a whole; omitted fields take
+  their defaults (send the full profile to change one field).
+- **No hard delete** for services, resources and staff (they have history):
+  `PATCH { active: false }`. Categories, levels, resource types, time off and
+  closures can be deleted; a delete blocked by a foreign key answers 409.
+- **Locations**: `POST` without `locationIds` assigns the only location (400 on
+  `locationIds` when there are several). `PATCH locationIds` replaces them and
+  deletes the member's working hours and location-bound time off at removed
+  locations.
+- **Reads** are OWNER and RECEPTION (reception books for a professional);
+  writes are OWNER. `POST { sendInvite: true }` emails the invite after commit.
+  If that email fails, the member exists and the response is 5xx; recover with
+  `POST /staff/employees/:id/invite` (retrying the `POST` gives 409).
+- **Self-protection**: an OWNER cannot change their own `role`, `active` or
+  `canLogin` (403 `FORBIDDEN`), so the salon never loses its last owner by
+  accident.
+- **Revocation**: changing any member's `role` or `email` (your own email
+  included: you sign in again with the new address), or setting `active` or
+  `canLogin` to false, in the same transaction revokes all their refresh
+  tokens and spends their unused invite and password-reset links (a link sent
+  to an old address, or one that would turn login back on, stops working).
+- **Accepted limitation**: access tokens stay valid for up to 15 minutes after
+  revocation (`role`/`active` are not re-checked per request), so two OWNERs
+  acting concurrently could leave no active owner; self-protection only
+  prevents doing it to yourself.
 
 ## Webhooks
 
@@ -81,7 +141,7 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 
 | Capability | OWNER | RECEPTION | EMPLOYEE | CUSTOMER |
 |---|---|---|---|---|
-| Catalog, employees, settings | ✓ | – | – | – |
+| Catalog, employees, settings | ✓ | read employees | – | – |
 | All appointments, customers | ✓ | ✓ | own | own |
 | Customer private notes | ✓ | ✓ | own appointments | – |
 | Audit log | ✓ | – | – | – |
