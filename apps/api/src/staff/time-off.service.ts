@@ -1,6 +1,8 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
 import type { Prisma, TimeOff as TimeOffRow } from "@prisma/client";
+import { z } from "zod";
 import {
+  IsoInstantSchema,
   refineInstantRange,
   type AccessClaims,
   type TimeOff,
@@ -12,6 +14,10 @@ import { AuditService } from "../audit/audit.service.js";
 import { recordStaffAudit } from "../audit/staff-audit.js";
 import { invalidRef, notFound } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+
+const RangeSchema = z
+  .object({ startsAt: IsoInstantSchema, endsAt: IsoInstantSchema })
+  .superRefine(refineInstantRange);
 
 /** Vacation and blocked time of staff members; overlapping rows are allowed. */
 @Injectable()
@@ -36,7 +42,7 @@ export class TimeOffService {
         startsAt: { lt: new Date(q.to) },
         endsAt: { gt: new Date(q.from) },
         ...(employeeId !== undefined ? { staffUserId: employeeId } : {}),
-        ...(q.locationId !== undefined ? { locationId: q.locationId } : {}),
+        ...(q.locationId !== undefined ? { OR: [{ locationId: q.locationId }, { locationId: null }] } : {}),
       },
       orderBy: [{ startsAt: "asc" }, { id: "asc" }],
     });
@@ -45,11 +51,15 @@ export class TimeOffService {
 
   create(principal: AccessClaims, input: TimeOffInput, ip: string | null): Promise<TimeOff> {
     return this.prisma.$transaction(async (tx) => {
-      const staff = await tx.staffUser.findFirst({
-        where: { id: input.employeeId, organizationId: principal.org },
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM staff_user
+        WHERE id = ${input.employeeId}::uuid AND organization_id = ${principal.org}::uuid
+        FOR UPDATE`;
+      if (locked.length === 0) throw invalidRef("employeeId", "Unknown employee");
+      const staff = await tx.staffUser.findUniqueOrThrow({
+        where: { id: input.employeeId },
         select: { organizationId: true },
       });
-      if (!staff) throw invalidRef("employeeId", "Unknown employee");
       await this.assertLocation(tx, input.employeeId, input.locationId);
       const row = await tx.timeOff.create({
         data: {
@@ -70,6 +80,12 @@ export class TimeOffService {
 
   update(principal: AccessClaims, id: string, patch: TimeOffUpdate, ip: string | null): Promise<TimeOff> {
     return this.prisma.$transaction(async (tx) => {
+      const found = await tx.timeOff.findFirst({
+        where: { id, organizationId: principal.org },
+        select: { staffUserId: true },
+      });
+      if (!found) throw notFound("Time off");
+      await tx.$queryRaw`SELECT id FROM staff_user WHERE id = ${found.staffUserId}::uuid FOR UPDATE`;
       const current = await tx.timeOff.findFirst({ where: { id, organizationId: principal.org } });
       if (!current) throw notFound("Time off");
       const before = toDto(current);
@@ -80,9 +96,8 @@ export class TimeOffService {
         kind: patch.kind ?? current.kind,
         note: patch.note !== undefined ? patch.note : current.note,
       };
-      let message: string | undefined;
-      refineInstantRange(merged, { addIssue: (i: { message?: string }) => (message ??= i.message) } as never);
-      if (message !== undefined) throw invalidRef("endsAt", message);
+      const range = RangeSchema.safeParse(merged);
+      if (!range.success) throw invalidRef("endsAt", range.error.issues[0]?.message ?? "Invalid range");
       if (patch.locationId !== undefined) await this.assertLocation(tx, current.staffUserId, merged.locationId);
       const row = await tx.timeOff.update({
         where: { id },

@@ -90,4 +90,44 @@ describe("time off", () => {
     expect(unassigned.body.errors[0].path).toBe("locationId");
     expect((await api("post", "/staff/time-off").send(body({ locationId: f.locationId }))).status).toBe(201);
   });
+  it("?locationId=L returns rows at L and rows for all locations, not other locations", async () => {
+    const loc2 = await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} },
+    });
+    await ctx.prisma.staffLocation.create({ data: { staffUserId: f.staffA, locationId: loc2.id } });
+    const atL = await api("post", "/staff/time-off").send(body({ locationId: f.locationId }));
+    const all = await api("post", "/staff/time-off").send(body());
+    await api("post", "/staff/time-off").send(body({ locationId: loc2.id }));
+    const res = await api(
+      "get",
+      `/staff/time-off?from=2027-03-01T00:00:00.000Z&to=2027-03-10T00:00:00.000Z&locationId=${f.locationId}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.map((r: { id: string }) => r.id).sort()).toEqual([atL.body.id, all.body.id].sort());
+  });
+
+  it("never touches or lists another organization's time off", async () => {
+    const other = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
+    const loc = await ctx.prisma.location.create({
+      data: { organizationId: other.id, name: "O", timezone: "America/New_York", settings: {} },
+    });
+    const foreign = await ctx.prisma.staffUser.create({
+      data: { organizationId: other.id, email: "x@other.dev", role: "EMPLOYEE", locale: "en" },
+    });
+    await ctx.prisma.staffLocation.create({ data: { staffUserId: foreign.id, locationId: loc.id } });
+    const row = await ctx.prisma.timeOff.create({
+      data: {
+        organizationId: other.id,
+        staffUserId: foreign.id,
+        startsAt: new Date("2027-03-01T09:00:00.000Z"),
+        endsAt: new Date("2027-03-05T09:00:00.000Z"),
+        kind: "VACATION",
+      },
+    });
+    expect((await api("patch", `/staff/time-off/${row.id}`).send({ note: "x" })).status).toBe(404);
+    expect((await api("delete", `/staff/time-off/${row.id}`)).status).toBe(404);
+    expect(await ctx.prisma.timeOff.count({ where: { id: row.id } })).toBe(1);
+    const list = await api("get", "/staff/time-off?from=2027-03-01T00:00:00.000Z&to=2027-03-10T00:00:00.000Z");
+    expect(list.body).toEqual([]);
+  });
 });

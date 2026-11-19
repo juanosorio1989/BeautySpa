@@ -80,4 +80,17 @@ describe("working hours", () => {
     expect((await api("get", url(f.staffA), reception.token)).status).toBe(200);
     expect((await api("put", url(f.staffA), reception.token).send(week)).status).toBe(403);
   });
+  it("another organization's staff id is 404; an unassigned location reads as empty days", async () => {
+    const other = await ctx.prisma.organization.create({ data: { name: "Other", slug: "other", defaultLocale: "en" } });
+    const foreign = await ctx.prisma.staffUser.create({
+      data: { organizationId: other.id, email: "x@other.dev", role: "EMPLOYEE", locale: "en" },
+    });
+    expect((await api("get", url(foreign.id))).status).toBe(404);
+    const loc2 = await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} },
+    });
+    const res = await api("get", url(f.staffA, `?locationId=${loc2.id}`));
+    expect(res.status).toBe(200);
+    expect(res.body.days).toEqual([]);
+  });
 });

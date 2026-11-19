@@ -24,7 +24,7 @@ class WorkingHoursDto extends createZodDto(WorkingHoursSchema) {}
 export class WorkingHoursController {
   constructor(private readonly hours: WorkingHoursService) {}
 
-  /** OWNER, RECEPTION; an EMPLOYEE only for their own id (403 otherwise). */
+  /** OWNER, RECEPTION; an EMPLOYEE only for their own id (403 otherwise). A location the member is not assigned to gives `days: []`, not an error. */
   @StaffAuth()
   @Get()
   @ApiQuery({ name: "locationId", required: false })
