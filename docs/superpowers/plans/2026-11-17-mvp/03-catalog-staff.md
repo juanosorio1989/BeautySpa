@@ -61,7 +61,7 @@ One final branch review (`reviewer-opus`). Not a money/production-data branch (p
 2. **Overlapping ranges on the same weekday** (`09:00–13:00` and `12:00–15:00`) → 400 with the path of the second range; touching ranges (`13:00` end, `13:00` start) are accepted (tests in Task 1, applied in Tasks 6 and 7).
 3. **An id from another organization** (`categoryId`, `levelId`, `resourceTypeId`, `serviceIds[]`, `locationIds[]`, `employeeId`) → 400 `VALIDATION_FAILED` with that path, never 500 and never a cross-tenant row; another org's `:id` → 404 (tests in Tasks 3, 4, 5, 6).
 4. **Deleting something still in use** (resource type used by a service or resource) → 409 `CONFLICT`, not 500 (test in Task 3).
-5. **A deactivated employee, an employee whose profile is not bookable, or a pedicure service with no active chair** disappears from `/public/*`; deactivation also ends that person's sessions (tests in Tasks 5 and 8).
+5. **A deactivated employee, an employee whose profile is not bookable, or a service whose resource type (chair, cabin) has no active resource** disappears from `/public/*`; deactivation also ends that person's sessions (tests in Tasks 5 and 8).
 
 ---
 
@@ -323,7 +323,7 @@ Rules (design call 8): a listed employee is active, has `bookableOnline` profile
 
 - [ ] **Step 1: Write failing tests:**
   - Public services: a service done by a Junior (base price 4000) and a Senior (override 5500) shows `priceCents 4000, fromPriceCents 4000`; done only by the Senior → `fromPriceCents 5500`.
-  - Deactivating the only qualified employee hides the service; setting their `bookableOnline:false` hides them from `/public/employees`; a chair service with all chairs `active:false` is hidden; `onlineBookable:false` hides it.
+  - Deactivating the only qualified employee hides the service; setting their `bookableOnline:false` hides them from `/public/employees`; a service that needs a resource type (chair, cabin) whose resources are all `active:false` is hidden; `onlineBookable:false` hides it.
   - `/public/locations` returns `"24:00"` for a midnight close. No token needed for all three.
   - Audit: after 3 category creates, `?limit=2` returns 2 newest with `nextCursor`; the next page returns 1 with `nextCursor null`; `?entity=service_category&id=<id>` returns only that row's entries. RECEPTION → 403.
   - RBAC matrix (`rbac-matrix.int.test.ts`): table of `[method, path, allowedRoles]` covering every route added in Tasks 3–8; for each, every role not allowed gets 403 and a request without a token gets 401 (or 200 for `@Public()`). Requests use placeholder UUIDs and valid bodies only where needed to get past validation; assert only the status for denied roles.
@@ -343,11 +343,11 @@ Rules (design call 8): a listed employee is active, has `bookableOnline` profile
 
 **Data** (idempotent by natural keys: org `slug`, location name, level/category/resource-type `name.en`, service `name.en`, staff `email`, resource name, customer phone; seed appointments are those with `notes` starting `"[seed]"`, deleted and recreated on each run):
 - Org `demo-salon` "Demo Salon" (`es`); location "Main", `America/New_York`, address "123 Main St, Queens, NY", phone `+17185550100`, `DEFAULT_LOCATION_SETTINGS`, hours Mon–Sat 09:00–19:00 (Sunday closed).
-- Levels: Junior / Junior (rank 1), Senior / Senior (rank 2). Resource type "Pedicure chair" / "Silla de pedicura"; resources "Chair 1", "Chair 2", "Chair 3".
-- Categories (sort): Nails / Uñas (1), Hair / Cabello (2), Brows & lashes / Cejas y pestañas (3).
-- Services (min, buffer, cents, parallelizable, chair):
+- Levels: Junior / Junior (rank 1), Senior / Senior (rank 2). Resource types "Pedicure chair" / "Silla de pedicura" (resources "Chair 1", "Chair 2", "Chair 3") and "Treatment cabin" / "Cabina de tratamiento" (resources "Cabin 1", "Cabin 2").
+- Categories (sort): Nails / Uñas (1), Hair / Cabello (2), Brows & lashes / Cejas y pestañas (3), Facials / Faciales (4), Massages & body / Masajes y corporales (5).
+- Services (min, buffer, cents, parallelizable, resource):
 
-| Category | EN / ES | Min | Buf | ¢ | Par | Chair |
+| Category | EN / ES | Min | Buf | ¢ | Par | Resource |
 |---|---|---|---|---|---|---|
 | Nails | Classic manicure / Manicura clásica | 30 | 5 | 2500 | yes | – |
 | Nails | Gel manicure / Manicura en gel | 45 | 5 | 4000 | yes | – |
@@ -364,13 +364,18 @@ Rules (design call 8): a listed employee is active, has `bookableOnline` profile
 | Brows & lashes | Brow wax / Depilación de cejas | 15 | 5 | 1500 | no | – |
 | Brows & lashes | Brow tint / Tinte de cejas | 20 | 5 | 2000 | no | – |
 | Brows & lashes | Lash lift / Lifting de pestañas | 60 | 10 | 7000 | no | – |
+| Facials | Deep cleansing facial / Limpieza facial profunda | 60 | 10 | 7000 | no | cabin |
+| Facials | Hydrating facial / Facial hidratante | 60 | 10 | 8500 | no | cabin |
+| Massages & body | Relaxing massage / Masaje relajante | 60 | 10 | 8000 | no | cabin |
+| Massages & body | Deep tissue massage / Masaje de tejido profundo | 60 | 10 | 9500 | no | cabin |
+| Massages & body | Body scrub / Exfoliación corporal | 45 | 10 | 6500 | no | cabin |
 
 - Senior level prices: Women's haircut 6000, Root color 9500, Highlights 17000 (same durations).
-- Employees (role EMPLOYEE, `canLogin false`, `locale es`, location Main, `bookableOnline true`): Ana Rivera (`ana@demo-salon.test`, Senior, all Nails), Carmen López (`carmen@demo-salon.test`, Junior, all Nails + Brow wax), Luis Ortega (`luis@demo-salon.test`, Senior, all Hair), Sofía Méndez (`sofia@demo-salon.test`, Junior, Women's haircut, Blowout, all Brows & lashes). Working hours Tue–Sat 09:00–13:00 and 14:00–19:00.
+- Employees (role EMPLOYEE, `canLogin false`, `locale es`, location Main, `bookableOnline true`): Ana Rivera (`ana@demo-salon.test`, Senior, all Nails), Carmen López (`carmen@demo-salon.test`, Junior, all Nails + Brow wax), Luis Ortega (`luis@demo-salon.test`, Senior, all Hair), Sofía Méndez (`sofia@demo-salon.test`, Junior, Women's haircut, Blowout, all Brows & lashes), Valeria Cruz (`valeria@demo-salon.test`, Senior, all Facials and all Massages & body). Working hours Tue–Sat 09:00–13:00 and 14:00–19:00.
 - Customers (`createdVia RECEPTION`, `phoneVerifiedAt null`): María Gómez `+17185550101` `es` (WhatsApp consent granted, source RECEPTION), Jennifer Smith `+17185550102` `en` (no consent rows), Rosa Díaz `+17185550103` `es` (WhatsApp granted). Consent rows are added only when the customer has none.
 - Appointments (status BOOKED, source RECEPTION, notes `"[seed] …"`), on the next Tue–Sat on or after `opts.today` (default `todayIn("America/New_York")`) at local time via `wallTimeToUtc`: María 10:00 Classic manicure (Ana) ‖ Classic pedicure (Carmen, Chair 1); Jennifer 11:00 Women's haircut (Luis, Senior price 6000); Rosa 15:00 Brow wax (Sofía). Segment `blockEndsAt = endsAt + buffer`, snapshots from the service/level price.
 
-- [ ] **Step 1: Write the failing test** (`seed.int.test.ts`): truncate, run `seed(prisma, { today: "2026-12-01" })` twice; counts after the second run: levels 2, categories 3, services 15, level prices 3, resources 3, staff 4, working-hours rows 40, customers 3, consents 2, appointments 3, segments 4; the parallel appointment's two segments start at the same instant `2026-12-01T15:00:00.000Z` (10:00 EST); `GET /v1/public/services` on an integration app (with `DEFAULT_ORG_SLUG=demo-salon`) lists 15 services.
+- [ ] **Step 1: Write the failing test** (`seed.int.test.ts`): truncate, run `seed(prisma, { today: "2026-12-01" })` twice; counts after the second run: levels 2, categories 5, services 20, level prices 3, resource types 2, resources 5, staff 5, working-hours rows 50, customers 3, consents 2, appointments 3, segments 4; the parallel appointment's two segments start at the same instant `2026-12-01T15:00:00.000Z` (10:00 EST); `GET /v1/public/services` on an integration app (with `DEFAULT_ORG_SLUG=demo-salon`) lists 20 services.
 - [ ] **Step 2: Run** `pnpm --filter @beautyspa/api test:int test/integration/seed.int.test.ts` · Expected: FAIL (`seed` not exported).
 - [ ] **Step 3: Implement** the seed. Note: `seed.ts` is outside `src/`; import `DEFAULT_LOCATION_SETTINGS` from `@beautyspa/contracts` and `todayIn`/`wallTimeToUtc` from `@beautyspa/datetime` (add the workspace dependency to `apps/api/package.json` if missing).
 - [ ] **Step 4: Run** `pnpm turbo run lint typecheck test && pnpm --filter @beautyspa/api test:int && pnpm --filter @beautyspa/api db:seed` (twice) · Expected: PASS; the seed prints the same counts both times.
