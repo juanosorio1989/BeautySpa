@@ -39,8 +39,8 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 | Method | Path | Notes |
 |---|---|---|
 | GET/PATCH | `/me` | name, email, locale, consents per channel |
-| POST | `/appointments` | `{ holdId, notes? }` → `BOOKED`; schedules notifications |
-| GET | `/me/appointments` | upcoming + past |
+| POST | `/appointments` | `{ holdId, notes? }` → 201 `Appointment` (`BOOKED`, the caller attached, `notes` saved). Unknown hold (or another organization's) 404; expired hold (still held past `expiresAt`, or already released) 409 `HOLD_EXPIRED`; a hold already booked or otherwise used 409 `CONFLICT`; a customer without a name 400 `VALIDATION_FAILED` path `name` (the hold stays). The segments are not re-validated: the hold already occupies them. Notifications are triggered after commit and never fail the request. 10 per customer per hour. |
+| GET | `/me/appointments` | `{ upcoming, past }` of the caller's appointments, holds excluded. `upcoming`: `BOOKED` or `CHECKED_IN` ending after now, soonest first. `past`: everything else (including future cancelled ones), latest start first, at most 50. |
 | POST | `/me/appointments/:id/cancel` | within cancel window |
 | POST | `/me/appointments/:id/reschedule` | `{ segments }` — atomic swap, no hold (see flows.md) |
 | POST | `/me/appointments/:id/repeat` | returns services/employees to prefill booking |

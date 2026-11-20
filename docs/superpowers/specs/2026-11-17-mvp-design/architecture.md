@@ -46,6 +46,13 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   Postgres advisory lock), so writes of one organization are serialized and a
   race ends as a validation failure (409 `SLOT_TAKEN`). The exclusion constraints
   stay the final guard (see data-model.md).
+- Booking events **(call, plan 04)**: booking services report `booked`, `changed`
+  and `cancelled` through the `BookingEvents` port
+  (`apps/api/src/booking/booking-events.ts`), only after the write transaction
+  commits and through `notifyAfterCommit`, which logs and swallows errors so a
+  notification failure never fails the request. The adapter for now is
+  `LoggingBookingEvents` (debug log `booking.<event> <id>`); plan 05 binds the
+  notification router in its place.
 - Time **(call, plan 04)**: booking code reads the current time only from the
   injectable `Clock` (`CLOCK` token, `{ now(): number }` in epoch ms, default
   `Date.now`, provided by the global `CommonModule`), never `Date.now()`, so
