@@ -5,7 +5,9 @@ import { Encryptor } from "../../src/auth/crypto/encryption.js";
 import { hashPassword } from "../../src/auth/crypto/password.js";
 import { generateTotpSecret } from "../../src/auth/crypto/totp.js";
 import { TokenService } from "../../src/auth/token.service.js";
+import type { Clock } from "../../src/common/clock.js";
 import { pgCode } from "../../src/common/db-errors.js";
+import { wallToTime } from "../../src/common/wall-time.js";
 import { testEnv } from "../support/test-env.js";
 import { testDatabaseUrl } from "./setup.js";
 
@@ -187,4 +189,92 @@ export async function staffSession(
   });
   const { token } = await app.get(TokenService).issueAccess({ sub: id, typ: "staff", org: f.orgId, role });
   return { id, token };
+}
+
+/**
+ * An access token for an existing customer (default `f.customerId`), issued by
+ * the app's own `TokenService`.
+ */
+export async function customerSession(
+  app: INestApplication,
+  f: Fixture,
+  customerId: string = f.customerId,
+): Promise<{ id: string; token: string }> {
+  const { token } = await app
+    .get(TokenService)
+    .issueAccess({ sub: customerId, typ: "customer", org: f.orgId, role: "CUSTOMER" });
+  return { id: customerId, token };
+}
+
+/**
+ * A `Clock` pinned at `ms` until `set` moves it. Apps that book pass
+ * `override: (b) => b.overrideProvider(CLOCK).useValue(clock)`.
+ */
+export function fixedClock(ms: number): Clock & { set(ms: number): void } {
+  let current = ms;
+  return {
+    now: () => current,
+    set: (next: number) => {
+      current = next;
+    },
+  };
+}
+
+/** Monday 2026-11-30 07:00 in New York (EST, UTC-5). */
+export const BOOKING_NOW = Date.parse("2026-11-30T12:00:00.000Z");
+/** Tuesday; 09:00 local = 14:00Z. */
+export const BOOKING_DATE = "2026-12-01";
+
+export type BookingFixture = Fixture & { maniId: string; pediId: string };
+
+/**
+ * `seedFixture` plus what booking needs: location open Mon-Sat 09:00-19:00;
+ * Pedicure (`serviceId` = `pediId`, 60 min, chair) parallelizable; Manicure
+ * (`maniId`, 30 min + 5 buffer, 2500, parallelizable, no resource); `staffA`
+ * "Alex" and `staffB` "Blair" bookable online at the location, working
+ * Tue-Sat 09:00-19:00, doing both services. Location settings stay `{}`
+ * (defaults).
+ */
+export async function seedBookingFixture(prisma: PrismaClient): Promise<BookingFixture> {
+  const f = await seedFixture(prisma);
+  const opens = wallToTime("09:00");
+  const closes = wallToTime("19:00");
+  await prisma.locationHours.createMany({
+    data: [1, 2, 3, 4, 5, 6].map((weekday) => ({ locationId: f.locationId, weekday, opens, closes })),
+  });
+  await prisma.service.update({ where: { id: f.serviceId }, data: { parallelizable: true } });
+  const mani = await prisma.service.create({
+    data: {
+      organizationId: f.orgId,
+      name: { en: "Manicure", es: "Manicura" },
+      durationMin: 30,
+      bufferAfterMin: 5,
+      priceCents: 2500,
+      parallelizable: true,
+    },
+  });
+  const staff = [
+    { id: f.staffA, displayName: "Alex" },
+    { id: f.staffB, displayName: "Blair" },
+  ];
+  for (const s of staff) {
+    await prisma.employeeProfile.create({
+      data: { staffUserId: s.id, displayName: s.displayName, bookableOnline: true },
+    });
+    await prisma.staffLocation.create({ data: { staffUserId: s.id, locationId: f.locationId } });
+    await prisma.workingHours.createMany({
+      data: [2, 3, 4, 5, 6].map((weekday) => ({
+        organizationId: f.orgId,
+        staffUserId: s.id,
+        locationId: f.locationId,
+        weekday,
+        startTime: opens,
+        endTime: closes,
+      })),
+    });
+    await prisma.employeeService.createMany({
+      data: [f.serviceId, mani.id].map((serviceId) => ({ staffUserId: s.id, serviceId })),
+    });
+  }
+  return { ...f, maniId: mani.id, pediId: f.serviceId };
 }

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AuditModule } from "./audit/audit.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { CatalogModule } from "./catalog/catalog.module.js";
+import { CommonModule } from "./common/common.module.js";
 import { ConfigModule } from "./config/config.module.js";
 import { HealthModule } from "./health/health.module.js";
 import { LocationsModule } from "./locations/locations.module.js";
@@ -16,6 +17,7 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
 @Module({
   imports: [
     ConfigModule,
+    CommonModule,
     PrismaModule,
     RedisModule,
     RateLimitModule,

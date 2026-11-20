@@ -31,11 +31,20 @@ invalid key names, never values.
 
 Global providers: `REDIS` (`ioredis` client from `REDIS_URL`, `src/redis/`), `RateLimitService` (`src/rate-limit/`,
 Redis fixed window `rl:<key>`: `consume`, `enforce` → 429 `RATE_LIMITED`, `peek`, `reset`, `hashKeyPart` for putting
-phone/email/IP into keys), `TenancyService` (`src/tenancy/`).
+phone/email/IP into keys), `TenancyService` (`src/tenancy/`), `CLOCK` (`src/common/clock.ts`, global `CommonModule`:
+`Clock { now(): number }` in epoch ms, default `systemClock` = `Date.now`; booking code reads time only through it).
+
+Error helpers (`src/common/http-errors.ts`): `invalidRef`, `notFound`, `inUse`, `conflict(message)` (409 `CONFLICT`),
+`slotTaken(message?)` (409 `SLOT_TAKEN`), `holdExpired()` (409 `HOLD_EXPIRED`), `outsideCancelWindow()` (409
+`OUTSIDE_CANCEL_WINDOW`). `src/common/db-errors.ts`: `pgCode`, `isUniqueViolation`, `isForeignKeyViolation`,
+`isExclusionViolation` (SQLSTATE `23P01`, an overlapping booking).
 
 Tests build config with `testEnv(overrides)` (`test/support/test-env.ts`: throwaway keys, fake OTP, org `test-salon`).
 Integration tests use `createIntegrationApp({ env, imports, override })` and `resetState(prisma, redis)` from
-`test/integration/app.ts`.
+`test/integration/app.ts`. Booking tests use `test/integration/helpers.ts`: `seedBookingFixture` (location open
+Mon-Sat 09:00-19:00, staff "Alex"/"Blair" working Tue-Sat 09:00-19:00 doing Pedicure `pediId` and Manicure `maniId`),
+`customerSession(app, f)`, `fixedClock(ms)` (pass `override: (b) => b.overrideProvider(CLOCK).useValue(clock)`),
+`BOOKING_NOW` (Mon 2026-11-30 07:00 New York) and `BOOKING_DATE` (`2026-12-01`, a Tuesday).
 
 ## Auth
 
@@ -45,13 +54,16 @@ without an auth decorator answers 403 `FORBIDDEN` to everyone, so every new cont
 | Decorator | Allows |
 |---|---|
 | `@Public()` | anyone, no token (`/health`, `/auth/refresh`, `/auth/logout`, `/auth/otp/*`, login routes) |
+| `@OptionalAuth()` | no `Authorization` header (principal undefined) or any valid access token, customer or staff (principal set) |
 | `@CustomerAuth()` | a customer access token |
 | `@StaffAuth()` / `@StaffAuth("OWNER", ...)` | any staff token / only the listed roles |
 | `@Principal()` | param decorator: the verified `AccessClaims` |
 
 Policies sit on the handler or the controller (handler wins), metadata key `auth:policy`. Tokens come only from
 `Authorization: Bearer <jwt>`. Missing, invalid or expired token, or `org` other than `TenancyService.getOrgId()`:
-401 `UNAUTHORIZED`. Valid token of the wrong kind or role: 403 `FORBIDDEN`.
+401 `UNAUTHORIZED`. Valid token of the wrong kind or role: 403 `FORBIDDEN`. `@OptionalAuth()` skips verification only
+when the header is absent: a header that is present (empty, non-Bearer, invalid, expired, MFA or other-org token) is
+still 401, never treated as anonymous.
 
 - `TokenService`: EdDSA JWTs with `jose`, key from `JWT_PRIVATE_KEY_B64`, `kid` = `JWT_KEY_ID`. Access tokens
   (`aud: beautyspa`, 15 min; `typ`/`role` must agree) and MFA step tokens (`aud: beautyspa-mfa`, `typ: mfa`,
@@ -109,7 +121,7 @@ Providers (`OTP_PROVIDER` token, picked in `AuthModule` by `env.OTP_PROVIDER`):
 Dev usage: with the default `console` provider, call `start`, read the 6-digit code from the API log line
 `OTP for +1...: 123456`, and send it to `verify`.
 
-Tests: `src/auth/token.service.test.ts`, `src/auth/otp/*.test.ts` (unit), `test/integration/auth/{session,guard,otp,staff-login,mfa}.int.test.ts` (test-only
+Tests: `src/auth/token.service.test.ts`, `src/auth/otp/*.test.ts` (unit), `test/integration/auth/{session,guard,optional-auth,otp,staff-login,mfa}.int.test.ts` (test-only
 controllers passed through `createIntegrationApp({ imports })`). `TenancyService` caches the org id per app, so an
 integration test that re-seeds the org per case needs a fresh app per case.
 

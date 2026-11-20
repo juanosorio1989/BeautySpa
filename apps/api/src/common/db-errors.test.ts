@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isForeignKeyViolation, isUniqueViolation, pgCode } from "./db-errors.js";
+import { isExclusionViolation, isForeignKeyViolation, isUniqueViolation, pgCode } from "./db-errors.js";
 
 describe("pgCode", () => {
   it("reads the SQLSTATE from the message", () => {
@@ -40,5 +40,21 @@ describe("isForeignKeyViolation", () => {
     expect(isForeignKeyViolation(new Error("x"))).toBe(false);
     expect(isForeignKeyViolation({ code: "P2002" })).toBe(false);
     expect(isForeignKeyViolation(undefined)).toBe(false);
+  });
+});
+
+describe("isExclusionViolation", () => {
+  it("is true for SQLSTATE 23P01", () => {
+    expect(
+      isExclusionViolation(
+        new Error('db error: ERROR: conflicting key value violates exclusion constraint, code: "23P01"'),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false for other errors", () => {
+    expect(isExclusionViolation(new Error('code: "23505"'))).toBe(false);
+    expect(isExclusionViolation(new Error("x"))).toBe(false);
+    expect(isExclusionViolation(undefined)).toBe(false);
   });
 });

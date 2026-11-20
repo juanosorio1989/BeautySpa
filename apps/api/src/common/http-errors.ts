@@ -18,3 +18,26 @@ export function notFound(what: string): NotFoundException {
 export function inUse(what: string): ConflictException {
   return new ConflictException({ code: "CONFLICT", message: `${what} is in use` });
 }
+
+/** 409 `CONFLICT` for a write that the row's current state does not allow. */
+export function conflict(message: string): ConflictException {
+  return new ConflictException({ code: "CONFLICT", message });
+}
+
+/** 409 `SLOT_TAKEN`: the requested time is no longer free; the client refreshes slots. */
+export function slotTaken(message = "That time is no longer available"): ConflictException {
+  return new ConflictException({ code: "SLOT_TAKEN", message });
+}
+
+/** 409 `HOLD_EXPIRED`: the hold was released before it was confirmed. */
+export function holdExpired(): ConflictException {
+  return new ConflictException({ code: "HOLD_EXPIRED", message: "The hold has expired" });
+}
+
+/** 409 `OUTSIDE_CANCEL_WINDOW`: too close to the start for a customer to cancel or reschedule. */
+export function outsideCancelWindow(): ConflictException {
+  return new ConflictException({
+    code: "OUTSIDE_CANCEL_WINDOW",
+    message: "Too late to change this appointment online",
+  });
+}

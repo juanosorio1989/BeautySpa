@@ -31,3 +31,8 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isForeignKeyViolation(err: unknown): boolean {
   return prismaCode(err) === "P2003" || pgCode(err) === "23503";
 }
+
+/** Exclusion constraint violation (overlapping booking): SQLSTATE `23P01`. */
+export function isExclusionViolation(err: unknown): boolean {
+  return pgCode(err) === "23P01";
+}
