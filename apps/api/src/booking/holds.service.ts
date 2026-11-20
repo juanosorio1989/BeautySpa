@@ -3,13 +3,12 @@ import type { Hold, HoldInput } from "@beautyspa/contracts";
 import { utcToWall } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
-import { readLocationSettings } from "../common/location-settings.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { RateLimitService } from "../rate-limit/rate-limit.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentDto } from "./appointment-mapping.js";
-import { AppointmentWriter, releaseExpiredHolds } from "./appointment-writer.js";
+import { AppointmentWriter, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { toEngineSegments } from "./plan-mapping.js";
 
@@ -41,6 +40,7 @@ export class HoldsService {
     return this.prisma.$transaction(async (tx) => {
       const now = this.clock.now();
       const location = await this.locations.resolve(orgId, input.locationId, tx);
+      await lockOrgBookings(tx, orgId);
       await releaseExpiredHolds(tx, orgId, new Date(now));
       const earliest = Math.min(...segments.map((s) => s.start));
       const ctx = await this.context.load(tx, orgId, location, {
@@ -50,8 +50,7 @@ export class HoldsService {
       });
       this.writer.validateOrThrow(ctx, segments);
 
-      const loc = await tx.location.findUniqueOrThrow({ where: { id: location.id }, select: { settings: true } });
-      const expiresAt = new Date(now + readLocationSettings(loc.settings).holdMinutes * MINUTE);
+      const expiresAt = new Date(now + ctx.settings.holdMinutes * MINUTE);
       const appt = await tx.appointment.create({
         data: {
           organizationId: location.organizationId,

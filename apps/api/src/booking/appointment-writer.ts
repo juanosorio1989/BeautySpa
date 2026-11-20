@@ -6,6 +6,17 @@ import { invalidRef, slotTaken } from "../common/http-errors.js";
 import { choicesOf } from "./plan-mapping.js";
 
 /**
+ * Takes the organization's booking lock for the rest of the transaction: a transaction-scoped
+ * advisory lock keyed `hashtextextended('booking:' || orgId, 0)` (stable 64-bit key). Every
+ * booking write transaction takes it first, so concurrent writers of one organization run one
+ * after another and the later one re-validates against the earlier one's committed rows. It is
+ * per organization, not per location, because an employee's busy time spans locations.
+ */
+export async function lockOrgBookings(tx: Prisma.TransactionClient, orgId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('booking:' || ${orgId}::text, 0))`;
+}
+
+/**
  * Releases every `HELD` appointment whose hold has expired (`hold_expires_at <= now`), of one
  * organization or of all when `orgId` is null: `CANCELLED` by `SYSTEM` with reason
  * `HOLD_EXPIRED` (`hold_expires_at` kept), and its segments stop occupying time. The appointment
@@ -50,10 +61,10 @@ export class AppointmentWriter {
 
   /**
    * Inserts the validated plan's segments (`block_ends_at` = the plan's `blockEnd`, never
-   * recomputed). The exclusion constraints are the final guard against a concurrent writer:
-   * a 23P01 becomes 409 `SLOT_TAKEN`, and so does a 40P01, because two inserts that collide
-   * while both are uncommitted wait on each other and PostgreSQL aborts one of them (the
-   * other commits). Either way the transaction is aborted and rolls back.
+   * recomputed). With `lockOrgBookings` held, races are caught by validation; the exclusion
+   * constraints stay the final guard for any writer that skipped the lock: a 23P01 becomes
+   * 409 `SLOT_TAKEN`, and so does a 40P01 (two uncommitted colliding inserts wait on each
+   * other and PostgreSQL aborts one). Either way the transaction rolls back.
    */
   async insertSegments(
     tx: Prisma.TransactionClient,

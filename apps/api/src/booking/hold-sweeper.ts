@@ -9,7 +9,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { ENV, type Env } from "../config/env.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { releaseExpiredHolds } from "./appointment-writer.js";
+import { lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
 
 /**
  * Releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (0 disables it). In-process for now
@@ -42,7 +42,7 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
   }
 
   /**
-   * One run: per organization with expired holds, releases them and writes one
+   * One run: per organization with expired holds, takes the org booking lock, releases them and writes one
    * `appointment.hold_release` audit row (`after: { released }`) in the same transaction.
    * Returns the total released.
    */
@@ -56,6 +56,7 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
     let total = 0;
     for (const { organizationId } of orgs) {
       total += await this.prisma.$transaction(async (tx) => {
+        await lockOrgBookings(tx, organizationId);
         const released = await releaseExpiredHolds(tx, organizationId, now);
         if (released > 0) {
           await this.audit.record(

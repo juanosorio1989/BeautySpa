@@ -99,10 +99,19 @@ ALTER TABLE appointment_segment
   (`releaseExpiredHolds`: `CANCELLED`, `cancelled_by SYSTEM`, `cancel_reason
   "HOLD_EXPIRED"`, `hold_expires_at` kept, segments `occupies = false`), then
   inserts; the hold sweeper releases the rest (see architecture.md).
-- A constraint violation (`23P01`) maps to HTTP 409 `SLOT_TAKEN`. So does a
-  deadlock (`40P01`) on the segment insert: two transactions inserting colliding
-  segments while both are uncommitted wait on each other's rows, PostgreSQL
-  aborts one after `deadlock_timeout` (about 1 s) and the other commits.
+- Org booking lock **(call, plan 04)**: every booking write transaction first
+  takes `lockOrgBookings` (`pg_advisory_xact_lock(hashtextextended('booking:' ||
+  org_id, 0))`, held until commit or rollback), then releases expired holds,
+  re-validates the plan and writes. Concurrent writers of one organization run
+  one after another, so the later one sees the earlier one's rows and fails
+  validation with 409 `SLOT_TAKEN`. The lock is per organization, not per
+  location, because an employee's busy time spans locations. The hold sweeper
+  takes it too.
+- The exclusion constraints remain the final guard: a violation (`23P01`) maps
+  to HTTP 409 `SLOT_TAKEN`, and so does a deadlock (`40P01`) on the segment
+  insert (two uncommitted colliding inserts wait on each other; PostgreSQL
+  aborts one after `deadlock_timeout`). With the lock this only happens for a
+  writer that skipped it.
 - Working hours, time off, and closures are not in the constraint; the booking
   transaction re-runs the availability check for the exact plan before insert.
 - Prisma does not model these constraints. A test asserts both constraints exist

@@ -41,6 +41,11 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   disables it, and tests use 0). Each run writes one `appointment.hold_release`
   audit row per organization that had holds released (`actorType "SYSTEM"`,
   `after: { released: n }`). Plan 05 moves it to the BullMQ `maintenance` queue.
+- Booking writes **(call, plan 04)**: each booking write transaction takes the
+  organization's booking lock first (`lockOrgBookings`, a transaction-scoped
+  Postgres advisory lock), so writes of one organization are serialized and a
+  race ends as a validation failure (409 `SLOT_TAKEN`). The exclusion constraints
+  stay the final guard (see data-model.md).
 - Time **(call, plan 04)**: booking code reads the current time only from the
   injectable `Clock` (`CLOCK` token, `{ now(): number }` in epoch ms, default
   `Date.now`, provided by the global `CommonModule`), never `Date.now()`, so

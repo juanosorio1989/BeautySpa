@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import type { Context, Mode, WeeklyHours } from "@beautyspa/availability";
+import type { LocationSettings } from "@beautyspa/contracts";
 import { localDayBoundsUtc, type IsoDate } from "@beautyspa/datetime";
 import { readLocationSettings } from "../common/location-settings.js";
 import { dayHoursFromRows } from "../common/wall-time.js";
@@ -16,6 +17,9 @@ export interface LoadOptions {
   override?: boolean;
 }
 
+/** The engine `Context` plus the location settings it was built from (e.g. `holdMinutes` for holds). */
+export type BookingContext = Context & { settings: LocationSettings };
+
 const weekly = (rows: { weekday: number; start: Date; end: Date }[]) => dayHoursFromRows(rows) as WeeklyHours[];
 
 /** Reads the rows the availability engine needs for one day (plus a 24 h margin each side) into its `Context`. */
@@ -26,7 +30,7 @@ export class BookingContextService {
     orgId: string,
     location: { id: string; timezone: string },
     opts: LoadOptions,
-  ): Promise<Context> {
+  ): Promise<BookingContext> {
     const day = localDayBoundsUtc(opts.date, location.timezone);
     const from = new Date(day.start - DAY_MS);
     const to = new Date(day.end + DAY_MS);
@@ -114,6 +118,7 @@ export class BookingContextService {
       })),
       mode: opts.mode,
       now: opts.now,
+      settings,
       ...(opts.override !== undefined ? { override: opts.override } : {}),
     };
   }

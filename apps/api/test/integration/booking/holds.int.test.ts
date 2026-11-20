@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PlannedSegment, Slot } from "@beautyspa/contracts";
-import { AppointmentWriter } from "../../../src/booking/appointment-writer.js";
+import { AppointmentWriter, lockOrgBookings } from "../../../src/booking/appointment-writer.js";
 import { HoldSweeper } from "../../../src/booking/hold-sweeper.js";
 import { toEngineSegments } from "../../../src/booking/plan-mapping.js";
 import { CLOCK } from "../../../src/common/clock.js";
@@ -92,6 +92,33 @@ describe("POST /holds", () => {
     expect(old.cancelledAt?.getTime()).toBe(BOOKING_NOW + 6 * MINUTE);
     expect(old.holdExpiresAt?.getTime()).toBe(BOOKING_NOW + 5 * MINUTE);
     expect(old.segments.every((s) => !s.occupies)).toBe(true);
+  });
+
+  it("waits for the organization's booking lock before writing", async () => {
+    const slot = await firstPediSlot();
+    let release!: () => void;
+    const released = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const holder = ctx.prisma.$transaction(
+      async (tx) => {
+        await lockOrgBookings(tx, f.orgId);
+        locked();
+        await released;
+      },
+      { timeout: 10_000 },
+    );
+    await isLocked;
+    let settled = false;
+    const pending = hold(slot.segments).then((r) => {
+      settled = true;
+      return r;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(settled).toBe(false);
+    release();
+    await holder;
+    expect((await pending).status).toBe(201);
   });
 
   it("maps an exclusion-constraint violation on insert to 409 SLOT_TAKEN and rolls back", async () => {
