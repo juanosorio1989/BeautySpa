@@ -21,8 +21,6 @@ const weekly = (rows: { weekday: number; start: Date; end: Date }[]) => dayHours
 /** Reads the rows the availability engine needs for one day (plus a 24 h margin each side) into its `Context`. */
 @Injectable()
 export class BookingContextService {
-  constructor(private readonly prisma: PrismaService) {}
-
   async load(
     db: Prisma.TransactionClient | PrismaService,
     orgId: string,

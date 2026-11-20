@@ -162,6 +162,43 @@ describe("GET /availability", () => {
     expect((await get(`services=bad&date=${BOOKING_DATE}`)).status).toBe(400);
   });
 
+  it("hides slots during a location closure", async () => {
+    await ctx.prisma.locationClosure.create({
+      data: {
+        locationId: f.locationId,
+        startsAt: new Date("2026-12-01T14:00:00.000Z"),
+        endsAt: new Date("2026-12-01T16:00:00.000Z"),
+      },
+    });
+    const slots = await slotsOf(pediQuery());
+    expect(slots[0]!.startsAt).toBe("2026-12-01T16:00:00.000Z");
+  });
+
+  it("counts an employee's bookings at another location as busy", async () => {
+    const other = await ctx.prisma.location.create({
+      data: { organizationId: f.orgId, name: "Second", timezone: "America/New_York", settings: {} },
+    });
+    await ctx.prisma.staffLocation.create({ data: { staffUserId: f.staffA, locationId: other.id } });
+    const appt = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "14:00", endsAt: "15:00" });
+    await ctx.prisma.appointment.update({ where: { id: appt.id }, data: { locationId: other.id } });
+    const slots = await slotsOf(`services=${f.pediId}:${f.staffA}&date=${BOOKING_DATE}&locationId=${f.locationId}`);
+    expect(slots.map((s) => s.startsAt)).not.toContain("2026-12-01T14:00:00.000Z");
+    expect(slots[0]!.startsAt).toBe("2026-12-01T15:00:00.000Z");
+  });
+
+  it("applies a level price override to the employee's slot", async () => {
+    const level = await ctx.prisma.level.create({
+      data: { organizationId: f.orgId, name: { en: "Senior", es: "Senior" }, rank: 1 },
+    });
+    await ctx.prisma.employeeProfile.update({ where: { staffUserId: f.staffA }, data: { levelId: level.id } });
+    await ctx.prisma.serviceLevelPrice.create({
+      data: { serviceId: f.pediId, levelId: level.id, durationMin: 90, priceCents: 5500 },
+    });
+    const first = (await slotsOf(`services=${f.pediId}:${f.staffA}&date=${BOOKING_DATE}`))[0]!;
+    expect(Date.parse(first.endsAt) - Date.parse(first.startsAt)).toBe(90 * 60_000);
+    expect(first.segments[0]!.priceCents).toBe(5500);
+  });
+
   it("documents services as a repeated string query parameter", async () => {
     const res = await request(ctx.app.getHttpServer()).get("/v1/openapi.json");
     const params = res.body.paths["/v1/availability"].get.parameters as {
