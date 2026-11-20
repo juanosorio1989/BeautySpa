@@ -36,6 +36,6 @@ export function toEngineSegments(segments: PlannedSegment[]): EnginePlannedSegme
 }
 
 /** The concrete (service, employee) choice of each segment. */
-export function choicesOf(segments: PlannedSegment[]): ServiceChoice[] {
+export function choicesOf(segments: Pick<PlannedSegment, "serviceId" | "employeeId">[]): ServiceChoice[] {
   return segments.map((s) => ({ serviceId: s.serviceId, employeeId: s.employeeId }));
 }

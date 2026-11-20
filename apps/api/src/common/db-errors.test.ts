@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isExclusionViolation, isForeignKeyViolation, isUniqueViolation, pgCode } from "./db-errors.js";
+import { isDeadlock, isExclusionViolation, isForeignKeyViolation, isUniqueViolation, pgCode } from "./db-errors.js";
 
 describe("pgCode", () => {
   it("reads the SQLSTATE from the message", () => {
@@ -56,5 +56,18 @@ describe("isExclusionViolation", () => {
     expect(isExclusionViolation(new Error('code: "23505"'))).toBe(false);
     expect(isExclusionViolation(new Error("x"))).toBe(false);
     expect(isExclusionViolation(undefined)).toBe(false);
+  });
+});
+
+describe("isDeadlock", () => {
+  it("is true for SQLSTATE 40P01 as Prisma reports it", () => {
+    expect(
+      isDeadlock(new Error('QueryError(PostgresError { code: "40P01", message: "deadlock detected", severity: "ERROR" })')),
+    ).toBe(true);
+  });
+
+  it("is false for other errors", () => {
+    expect(isDeadlock(new Error('code: "23P01"'))).toBe(false);
+    expect(isDeadlock(undefined)).toBe(false);
   });
 });

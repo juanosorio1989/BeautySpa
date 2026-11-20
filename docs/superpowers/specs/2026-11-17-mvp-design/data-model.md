@@ -89,10 +89,20 @@ ALTER TABLE appointment_segment
 - `occupies` is `true` for `HELD`, `BOOKED`, `CHECKED_IN`, `COMPLETED`, and set
   to `false` when the appointment becomes `CANCELLED` or `NO_SHOW`, in the same
   transaction as the status change.
-- Expired holds still occupy until released. The booking transaction first
-  releases expired holds that overlap the requested ranges, then inserts; a
-  sweeper job every minute releases the rest.
-- A constraint violation (`23P01`) maps to HTTP 409 `SLOT_TAKEN`.
+- Reschedule and move **(call, plan 04)** delete the appointment's old segments
+  and insert the new plan in the same transaction (`AppointmentWriter.replaceSegments`);
+  marking the old ones `occupies = false` would leave stale rows inside the
+  appointment. The audit row keeps the old plan in `before`. Status changes
+  still use `occupies = false`.
+- Expired holds still occupy until released (reads already ignore them). Every
+  booking write transaction first releases all expired holds of the organization
+  (`releaseExpiredHolds`: `CANCELLED`, `cancelled_by SYSTEM`, `cancel_reason
+  "HOLD_EXPIRED"`, `hold_expires_at` kept, segments `occupies = false`), then
+  inserts; the hold sweeper releases the rest (see architecture.md).
+- A constraint violation (`23P01`) maps to HTTP 409 `SLOT_TAKEN`. So does a
+  deadlock (`40P01`) on the segment insert: two transactions inserting colliding
+  segments while both are uncommitted wait on each other's rows, PostgreSQL
+  aborts one after `deadlock_timeout` (about 1 s) and the other commits.
 - Working hours, time off, and closures are not in the constraint; the booking
   transaction re-runs the availability check for the exact plan before insert.
 - Prisma does not model these constraints. A test asserts both constraints exist
@@ -137,8 +147,9 @@ means 24:00.
 **Database error mapping.** `apps/api/src/common/db-errors.ts` holds `pgCode`
 (SQLSTATE from a Prisma error, also re-exported by the integration test
 helpers), `isUniqueViolation` (`P2002` / `23505`) and `isForeignKeyViolation`
-(`P2003` / `23503`, answered as 409 `CONFLICT` on blocked deletes). Plan 04
-adds the `23P01` → `SLOT_TAKEN` mapping there.
+(`P2003` / `23503`, answered as 409 `CONFLICT` on blocked deletes),
+`isExclusionViolation` (`23P01`) and `isDeadlock` (`40P01`); the booking
+segment insert answers both as 409 `SLOT_TAKEN`.
 
 ## Notifications and audit
 

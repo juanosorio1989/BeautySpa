@@ -32,7 +32,7 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 | GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
 | GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
 | GET | `/availability` | `locationId?`, repeated `services=<serviceId>:<employeeId\|ANY>` (1-4), one `date=YYYY-MM-DD` per call (the date strip calls per day), `excludeAppointmentId?` → `Slot[]`. Optional auth: the mode comes from the token (none or customer: online rules; staff: no lead time, no horizon, non-online employees and services included). `excludeAppointmentId` needs a token: a customer must own the appointment, staff any in the organization, else 404; no token is 401. Segments of `HELD` appointments whose hold has expired are ignored. Rate-limited per IP (120 per minute). |
-| POST | `/holds` | `{ segments }` from a slot → `{ holdId, expiresAt }`. Rate-limited per IP. |
+| POST | `/holds` | `{ locationId?, segments }` copied from a slot → 201 `{ holdId, expiresAt }` (`expiresAt` = now + `holdMinutes`). The plan is re-validated in the write transaction: 409 `SLOT_TAKEN` when the time is taken, 400 `VALIDATION_FAILED` (path `segments`) when the plan was altered. 30 per IP per 10 min. |
 
 ## Client (customer token)
 

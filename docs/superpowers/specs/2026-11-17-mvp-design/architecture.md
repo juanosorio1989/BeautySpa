@@ -35,6 +35,16 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   raw SQL inside Prisma migrations (see data-model.md).
 - Workers: BullMQ queues `notifications` and `maintenance` (hold sweeper). Run as
   a separate process from the same app (`api` and `worker` entrypoints).
+- Hold sweeper **(call, plan 04)**: until the worker entrypoint exists, the API
+  process runs `HoldSweeper` (`apps/api/src/booking/hold-sweeper.ts`), which
+  releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0`
+  disables it, and tests use 0). Each run writes one `appointment.hold_release`
+  audit row per organization that had holds released (`actorType "SYSTEM"`,
+  `after: { released: n }`). Plan 05 moves it to the BullMQ `maintenance` queue.
+- Time **(call, plan 04)**: booking code reads the current time only from the
+  injectable `Clock` (`CLOCK` token, `{ now(): number }` in epoch ms, default
+  `Date.now`, provided by the global `CommonModule`), never `Date.now()`, so
+  integration tests pin and advance `now`.
 - Tenancy **(call)**: every tenant-owned row has `organization_id`. In the MVP
   the API resolves the organization from config (`DEFAULT_ORG_SLUG`); a request
   scope carries `orgId` and every repository query filters by it. Postgres RLS

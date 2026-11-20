@@ -36,3 +36,12 @@ export function isForeignKeyViolation(err: unknown): boolean {
 export function isExclusionViolation(err: unknown): boolean {
   return pgCode(err) === "23P01";
 }
+
+/**
+ * Deadlock detected: SQLSTATE `40P01`. Two transactions inserting segments that collide on the
+ * exclusion constraints can each wait on the other's uncommitted row; PostgreSQL aborts one
+ * after `deadlock_timeout` and the other commits.
+ */
+export function isDeadlock(err: unknown): boolean {
+  return pgCode(err) === "40P01";
+}
