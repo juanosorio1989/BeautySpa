@@ -64,10 +64,10 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 | GET | `/staff/agenda?date=&locationId=` | all (EMPLOYEE: own only) |
 | GET | `/staff/customers?q=` | OWNER, RECEPTION; EMPLOYEE: only customers with an appointment with them |
 | POST | `/staff/customers` | OWNER, RECEPTION — `{ name, phone, locale, consents }` |
-| POST | `/staff/appointments` | OWNER, RECEPTION — `{ customerId, segments, override? }`; skips hold; STAFF mode |
-| POST | `/staff/walk-in` | OWNER, RECEPTION — `{ customerId?, services }` → first slot from now, booked |
-| PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — move / change segments |
-| POST | `/staff/appointments/:id/status` | check-in, complete, no-show, cancel (EMPLOYEE: own, check-in/complete only) |
+| POST | `/staff/appointments` | OWNER, RECEPTION — `{ customerId, locationId?, segments, notes?, override? }` → 201 `StaffAppointment` (`BOOKED`, source `RECEPTION`, `createdByStaffId` = caller). Skips the hold; validated in STAFF mode (no lead time or horizon); `override: true` also ignores working hours, time off, location hours and closures, never overlaps (409 `SLOT_TAKEN`). `customerId` not an active customer of the org → 400 `VALIDATION_FAILED` path `customerId`. |
+| POST | `/staff/walk-in` | OWNER, RECEPTION — `{ customerId?, locationId?, services, notes? }` → 201 `StaffAppointment` (`CHECKED_IN`, source `WALK_IN`; `customerId` may be null). Takes the first STAFF-mode slot of today (location timezone) starting no later than now rounded down to the slot grid + `slotIntervalMin`; none → 409 `SLOT_TAKEN` (design call 9). |
+| PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — `{ segments, override? }` → `StaffAppointment`. `BOOKED` or `CHECKED_IN` only (else 409 `CONFLICT`); services may change; same validation as staff create with its own segments excluded; no cancel window; old segments replaced, `manage_version` + 1; taken time → 409 `SLOT_TAKEN` with the old time kept. |
+| POST | `/staff/appointments/:id/status` | all staff — `{ status, reason? }` → `StaffAppointment`. Transitions (design call 7): `BOOKED → CHECKED_IN \| COMPLETED \| NO_SHOW \| CANCELLED`, `CHECKED_IN → COMPLETED \| CANCELLED`, anything else 409 `CONFLICT`; `NO_SHOW` only once now ≥ start (else 409). `CANCELLED` (no cancel window for staff) records `cancelledBy STAFF` and the reason and increments `manage_version`; `CANCELLED` and `NO_SHOW` free the time. EMPLOYEE: only appointments with a segment of theirs and only `CHECKED_IN`/`COMPLETED`, else 403. |
 | CRUD | `/staff/services`, `/staff/categories`, `/staff/levels`, `/staff/resources`, `/staff/resource-types` | OWNER |
 | GET | `/staff/employees?active=&locationId=`, `/staff/employees/:id` | OWNER, RECEPTION |
 | POST, PATCH | `/staff/employees`, `/staff/employees/:id` (no DELETE: `PATCH { active: false }`) | OWNER |

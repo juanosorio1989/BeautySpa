@@ -12,10 +12,19 @@ import { HoldsController } from "./holds.controller.js";
 import { HoldsService } from "./holds.service.js";
 import { MyAppointmentsController } from "./my-appointments.controller.js";
 import { MyAppointmentsService } from "./my-appointments.service.js";
+import { StaffAppointmentsController } from "./staff-appointments.controller.js";
+import { StaffAppointmentsService } from "./staff-appointments.service.js";
+import { WalkInService } from "./walk-in.service.js";
 
 @Module({
   imports: [AuditModule],
-  controllers: [AvailabilityController, HoldsController, AppointmentsController, MyAppointmentsController],
+  controllers: [
+    AvailabilityController,
+    HoldsController,
+    AppointmentsController,
+    MyAppointmentsController,
+    StaffAppointmentsController,
+  ],
   providers: [
     BookingContextService,
     AvailabilityService,
@@ -24,6 +33,8 @@ import { MyAppointmentsService } from "./my-appointments.service.js";
     HoldSweeper,
     AppointmentsService,
     MyAppointmentsService,
+    StaffAppointmentsService,
+    WalkInService,
     { provide: BookingEvents, useClass: LoggingBookingEvents },
   ],
   exports: [BookingContextService, AppointmentWriter],
