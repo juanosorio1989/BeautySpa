@@ -67,15 +67,32 @@ channel gets nothing; reception sees a "no messages" badge on that appointment.
 
 ## Cancel / reschedule (client)
 
-- Allowed until `cancelWindowHours` before start (default 24 **(call)**). After
-  that, the UI shows the salon's phone.
+- Only the caller's own appointment (another customer's or another
+  organization's id is 404, nothing changes), only while `BOOKED` (else 409
+  `CONFLICT`), and only while `now <= startsAt - cancelWindowHours` of the
+  appointment's location (default 24; equality allowed; `0` means until the
+  start) **(call)**, else 409 `OUTSIDE_CANCEL_WINDOW`. After that, the UI shows
+  the salon's phone.
+- Both run in one transaction that takes the organization's booking lock first
+  and locks the appointment row `FOR UPDATE`; `manage_version` increments
+  (old manage links stop working); one audit row (`before` = the appointment
+  before, `after` = after); the notification event runs after commit.
+- Cancel: status `CANCELLED`, `cancelled_by = CUSTOMER`, optional reason,
+  segments `occupies = false`, so the time shows again in availability.
 - Reschedule **(call)**: availability is requested with
   `excludeAppointmentId`, so the client's own current time does not block the
-  new one. Confirming runs one transaction: old segments `occupies = false`,
-  new segments inserted on the same appointment, re-validated; on conflict the
-  whole transaction rolls back (`SLOT_TAKEN`). No hold, because the client is
-  already authenticated and there is no OTP delay. Staff "move" uses the same
-  mechanism. `manage_version` increments; reminders re-scheduled.
+  new one. Confirming releases expired holds, re-validates the new plan with
+  online rules (own segments excluded), deletes the old segments and inserts the
+  new ones on the same appointment (stale `occupies = false` rows would stay
+  inside the appointment otherwise; the audit row keeps the old plan in
+  `before`). On any failure the whole transaction rolls back (`SLOT_TAKEN` when
+  the time was taken) and the old time stays booked. No hold, because the client
+  is already authenticated and there is no OTP delay. Staff "move" uses the same
+  mechanism. Reminders re-scheduled.
+- Repeat (`POST /me/appointments/:id/repeat`, any status, read-only) returns
+  `{ locationId, services }` to prefill a new booking: services in segment
+  order, inactive ones dropped; the same employee while still active, at the
+  location, bookable online and qualified, else `"ANY"`.
 
 ## Hold lifecycle
 
