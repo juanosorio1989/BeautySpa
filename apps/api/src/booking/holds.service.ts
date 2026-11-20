@@ -8,7 +8,7 @@ import { RateLimitService } from "../rate-limit/rate-limit.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentDto } from "./appointment-mapping.js";
-import { AppointmentWriter, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
+import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { toEngineSegments } from "./plan-mapping.js";
 
@@ -38,9 +38,10 @@ export class HoldsService {
     const orgId = await this.tenancy.getOrgId();
     const segments = toEngineSegments(input.segments);
     return this.prisma.$transaction(async (tx) => {
-      const now = this.clock.now();
       const location = await this.locations.resolve(orgId, input.locationId, tx);
       await lockOrgBookings(tx, orgId);
+      // Read after the lock so `now` never predates the wait.
+      const now = this.clock.now();
       await releaseExpiredHolds(tx, orgId, new Date(now));
       const earliest = Math.min(...segments.map((s) => s.start));
       const ctx = await this.context.load(tx, orgId, location, {
@@ -80,6 +81,6 @@ export class HoldsService {
         tx,
       );
       return { holdId: appt.id, expiresAt: expiresAt.toISOString() };
-    });
+    }, BOOKING_TX_OPTIONS);
   }
 }

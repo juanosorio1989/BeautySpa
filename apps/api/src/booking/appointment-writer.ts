@@ -6,6 +6,12 @@ import { invalidRef, slotTaken } from "../common/http-errors.js";
 import { choicesOf } from "./plan-mapping.js";
 
 /**
+ * Interactive-transaction options for booking writes. Waiting for `lockOrgBookings` counts
+ * toward Prisma's transaction `timeout` (default 5 s), so booking writes get more headroom.
+ */
+export const BOOKING_TX_OPTIONS = { maxWait: 5000, timeout: 10000 } as const;
+
+/**
  * Takes the organization's booking lock for the rest of the transaction: a transaction-scoped
  * advisory lock keyed `hashtextextended('booking:' || orgId, 0)` (stable 64-bit key). Every
  * booking write transaction takes it first, so concurrent writers of one organization run one

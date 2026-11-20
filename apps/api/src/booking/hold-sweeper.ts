@@ -1,15 +1,9 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnApplicationBootstrap,
-  type OnApplicationShutdown,
-} from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from "@nestjs/common";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { ENV, type Env } from "../config/env.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
+import { BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
 
 /**
  * Releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (0 disables it). In-process for now
@@ -31,7 +25,9 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
     const ms = this.env.HOLD_SWEEP_INTERVAL_MS;
     if (ms <= 0) return;
     this.timer = setInterval(() => {
-      this.sweep().catch((err: unknown) => this.logger.error(`Hold sweep failed: ${(err as Error).message}`));
+      this.sweep().catch((err: unknown) =>
+        this.logger.error(`Hold sweep failed: ${(err as Error).message}`, (err as Error).stack),
+      );
     }, ms);
     this.timer.unref();
   }
@@ -47,9 +43,8 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
    * Returns the total released.
    */
   async sweep(): Promise<number> {
-    const now = new Date(this.clock.now());
     const orgs = await this.prisma.appointment.findMany({
-      where: { status: "HELD", holdExpiresAt: { lte: now } },
+      where: { status: "HELD", holdExpiresAt: { lte: new Date(this.clock.now()) } },
       distinct: ["organizationId"],
       select: { organizationId: true },
     });
@@ -57,6 +52,8 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
     for (const { organizationId } of orgs) {
       total += await this.prisma.$transaction(async (tx) => {
         await lockOrgBookings(tx, organizationId);
+        // Read after the lock so `now` never predates the wait.
+        const now = new Date(this.clock.now());
         const released = await releaseExpiredHolds(tx, organizationId, now);
         if (released > 0) {
           await this.audit.record(
@@ -74,7 +71,7 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
           );
         }
         return released;
-      });
+      }, BOOKING_TX_OPTIONS);
     }
     return total;
   }
