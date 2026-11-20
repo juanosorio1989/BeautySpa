@@ -1,35 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import {
-  DEFAULT_LOCATION_SETTINGS,
-  LocationSettingsSchema,
-  type AccessClaims,
-  type LocationSettings,
-  type StaffSettings,
-  type StaffSettingsPatch,
-} from "@beautyspa/contracts";
+import { type AccessClaims, type StaffSettings, type StaffSettingsPatch } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
 import { recordStaffAudit } from "../audit/staff-audit.js";
 import { notFound } from "../common/http-errors.js";
+import { readLocationSettings } from "../common/location-settings.js";
 import { dayHoursFromRows, wallToTime } from "../common/wall-time.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
-
-/**
- * `{ ...DEFAULT_LOCATION_SETTINGS, ...stored }` validated key by key: any
- * missing or invalid stored key falls back to its default.
- */
-export function readLocationSettings(json: unknown): LocationSettings {
-  const stored =
-    json !== null && typeof json === "object" && !Array.isArray(json) ? (json as Record<string, unknown>) : {};
-  const out: Record<string, unknown> = { ...DEFAULT_LOCATION_SETTINGS };
-  for (const key of Object.keys(DEFAULT_LOCATION_SETTINGS) as (keyof LocationSettings)[]) {
-    if (!(key in stored)) continue;
-    const candidate = { ...DEFAULT_LOCATION_SETTINGS, [key]: stored[key] };
-    if (LocationSettingsSchema.safeParse(candidate).success) out[key] = stored[key];
-  }
-  return LocationSettingsSchema.parse(out);
-}
 
 /** Location profile, booking settings and weekly opening hours (replaced as a set). */
 @Injectable()

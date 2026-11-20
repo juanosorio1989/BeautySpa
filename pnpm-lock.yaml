@@ -23,6 +23,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@beautyspa/availability':
+        specifier: workspace:*
+        version: link:../../packages/availability
       '@beautyspa/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

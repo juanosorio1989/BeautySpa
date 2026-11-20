@@ -20,6 +20,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@beautyspa/availability": "workspace:*",
     "@beautyspa/contracts": "workspace:*",
     "@beautyspa/datetime": "workspace:*",
     "@nestjs/common": "^11.0.0",

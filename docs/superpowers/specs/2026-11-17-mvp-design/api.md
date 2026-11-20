@@ -31,7 +31,7 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 | GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`) |
 | GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
 | GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
-| GET | `/availability` | `locationId?`, `services[]=id:employeeId|ANY&date=YYYY-MM-DD` (or `from`/`to`), `excludeAppointmentId?` (authenticated owner of it, or staff) → `Slot[]` |
+| GET | `/availability` | `locationId?`, repeated `services=<serviceId>:<employeeId\|ANY>` (1-4), one `date=YYYY-MM-DD` per call (the date strip calls per day), `excludeAppointmentId?` → `Slot[]`. Optional auth: the mode comes from the token (none or customer: online rules; staff: no lead time, no horizon, non-online employees and services included). `excludeAppointmentId` needs a token: a customer must own the appointment, staff any in the organization, else 404; no token is 401. Segments of `HELD` appointments whose hold has expired are ignored. Rate-limited per IP (120 per minute). |
 | POST | `/holds` | `{ segments }` from a slot → `{ holdId, expiresAt }`. Rate-limited per IP. |
 
 ## Client (customer token)
