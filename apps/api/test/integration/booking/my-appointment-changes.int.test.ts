@@ -296,6 +296,35 @@ describe("POST /me/appointments/:id/cancel | reschedule | repeat", () => {
       expect(res.body.code).toBe("OUTSIDE_CANCEL_WINDOW");
       expect(await snapshot(id)).toEqual(before);
     });
+
+    it("answers 400 on segments when the new plan changes the services, changing nothing", async () => {
+      const { id } = await seedPedi();
+      const slots = await slotsFor(`services=${f.maniId}:${f.staffA}&date=${BOOKING_DATE}&excludeAppointmentId=${id}`);
+      const target = slots.find((s) => s.startsAt === "2026-12-01T16:00:00.000Z")!;
+      expect(target).toBeDefined();
+      const before = await snapshot(id);
+      const res = await post(`${id}/reschedule`, { segments: target.segments });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_FAILED");
+      expect(res.body.errors[0].path).toBe("segments");
+      expect(await snapshot(id)).toEqual(before);
+      expect(await ctx.prisma.auditLog.count({ where: { entityId: id } })).toBe(0);
+      expect(events.changed).not.toHaveBeenCalled();
+    });
+
+    it("answers 409 CONFLICT for a cancelled appointment", async () => {
+      const { id } = await seedAppointment(
+        [{ serviceId: f.pediId, staffUserId: f.staffA, startsAt: new Date(START).toISOString(), durationMin: 60 }],
+        { status: "CANCELLED" },
+      );
+      const slots = await slotsFor(`services=${f.pediId}:${f.staffA}&date=${BOOKING_DATE}`);
+      const target = slots.find((s) => s.startsAt === "2026-12-01T16:00:00.000Z")!;
+      const before = await snapshot(id);
+      const res = await post(`${id}/reschedule`, { segments: target.segments });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("CONFLICT");
+      expect(await snapshot(id)).toEqual(before);
+    });
   });
 
   describe("ownership", () => {
@@ -326,14 +355,19 @@ describe("POST /me/appointments/:id/cancel | reschedule | repeat", () => {
 
     it("answers 404 for an appointment of another organization", async () => {
       const { id } = await seedPedi();
+      const slots = await slotsFor(`services=${f.pediId}:${f.staffA}&date=${BOOKING_DATE}&excludeAppointmentId=${id}`);
+      const target = slots.find((s) => s.startsAt === "2026-12-01T16:00:00.000Z")!;
       const otherOrg = await ctx.prisma.organization.create({
         data: { name: "Other", slug: "other", defaultLocale: "en" },
       });
       await ctx.prisma
         .$executeRaw`UPDATE appointment SET organization_id = ${otherOrg.id}::uuid WHERE id = ${id}::uuid`;
+      const before = await snapshot(id);
       expect((await post(`${id}/cancel`)).status).toBe(404);
+      expect((await post(`${id}/reschedule`, { segments: target.segments })).status).toBe(404);
       expect((await post(`${id}/repeat`)).status).toBe(404);
-      expect((await snapshot(id)).status).toBe("BOOKED");
+      expect(await snapshot(id)).toEqual(before);
+      expect(await ctx.prisma.auditLog.count({ where: { entityId: id } })).toBe(0);
     });
   });
 

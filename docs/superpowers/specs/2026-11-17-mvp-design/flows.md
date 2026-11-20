@@ -81,7 +81,9 @@ channel gets nothing; reception sees a "no messages" badge on that appointment.
   segments `occupies = false`, so the time shows again in availability.
 - Reschedule **(call)**: availability is requested with
   `excludeAppointmentId`, so the client's own current time does not block the
-  new one. Confirming releases expired holds, re-validates the new plan with
+  new one. The new plan must keep the same services (the same multiset of
+  service ids; employees and times may change), else 400 `VALIDATION_FAILED`
+  on `segments`. Confirming releases expired holds, re-validates the new plan with
   online rules (own segments excluded), deletes the old segments and inserts the
   new ones on the same appointment (stale `occupies = false` rows would stay
   inside the appointment otherwise; the audit row keeps the old plan in

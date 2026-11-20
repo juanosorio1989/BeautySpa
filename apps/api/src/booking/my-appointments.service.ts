@@ -11,7 +11,7 @@ import type {
 import { utcToWall } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
-import { conflict, notFound, outsideCancelWindow } from "../common/http-errors.js";
+import { conflict, invalidRef, notFound, outsideCancelWindow } from "../common/http-errors.js";
 import { readLocationSettings } from "../common/location-settings.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentDto, type AppointmentRow } from "./appointment-mapping.js";
@@ -26,6 +26,7 @@ const HOUR = 3_600_000;
 
 const startOf = (row: AppointmentRow) => Math.min(...row.segments.map((s) => s.startsAt.getTime()));
 const endOf = (row: AppointmentRow) => Math.max(...row.segments.map((s) => s.endsAt.getTime()));
+const sortedServiceIds = (segments: { serviceId: string }[]) => segments.map((s) => s.serviceId).sort();
 
 interface Changeable {
   row: AppointmentRow;
@@ -105,7 +106,8 @@ export class MyAppointmentsService {
   }
 
   /**
-   * One transaction (org booking lock first): expired holds released, the new plan re-validated
+   * One transaction (org booking lock first): the new plan must keep the same multiset of
+   * services (else 400 `VALIDATION_FAILED` path `segments`), expired holds released, the new plan re-validated
    * `ONLINE` against the appointment's location with its own segments excluded, the old segments
    * deleted and the new ones inserted (design call 6), `manage_version` incremented. Any error
    * rolls everything back, so the old time stays booked. Audit `appointment.reschedule` with the
@@ -124,6 +126,10 @@ export class MyAppointmentsService {
       // Read after the lock so `now` never predates the wait.
       const now = this.clock.now();
       const { row, location } = await this.lockChangeable(tx, principal, id, now);
+      // Ruling R5: a customer reschedule keeps the same services (employees and times may change).
+      if (sortedServiceIds(row.segments).join() !== sortedServiceIds(input.segments).join()) {
+        throw invalidRef("segments", "Reschedule cannot change services");
+      }
 
       await releaseExpiredHolds(tx, orgId, new Date(now));
       const earliest = Math.min(...segments.map((s) => s.start));
