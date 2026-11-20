@@ -26,9 +26,25 @@ export const ServiceChoiceSchema = z.object({
 });
 export type ServiceChoice = z.infer<typeof ServiceChoiceSchema>;
 
+const ServiceChoiceStringSchema = z.string().transform((value, ctx): ServiceChoice => {
+  const [serviceId, employeeId, ...rest] = value.split(":");
+  const parsed = ServiceChoiceSchema.safeParse({ serviceId, employeeId });
+  if (rest.length > 0 || !parsed.success) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expected serviceId:employeeId|ANY" });
+    return z.NEVER;
+  }
+  return parsed.data;
+});
+
+export const ServiceChoiceInputSchema = z.union([ServiceChoiceSchema, ServiceChoiceStringSchema]);
+
 export const AvailabilityQuerySchema = z.object({
   locationId: IdSchema.optional(),
-  services: z.array(ServiceChoiceSchema).min(1).max(4),
+  services: z.preprocess(
+    (v) => (Array.isArray(v) || v === undefined ? v : [v]),
+    z.array(ServiceChoiceInputSchema).min(1).max(4),
+  ),
   date: IsoDateSchema,
+  excludeAppointmentId: IdSchema.optional(),
 });
 export type AvailabilityQuery = z.infer<typeof AvailabilityQuerySchema>;
