@@ -7,7 +7,7 @@ import { customerSession, seedFixture, staffSession } from "./helpers.js";
 type StaffRole = "OWNER" | "RECEPTION" | "EMPLOYEE";
 type Role = StaffRole | "CUSTOMER";
 type Method = "get" | "post" | "put" | "patch" | "delete";
-const ALL: Role[] = ["OWNER", "RECEPTION", "EMPLOYEE"];
+const ALL: StaffRole[] = ["OWNER", "RECEPTION", "EMPLOYEE"];
 const CUSTOMER_ONLY: Role[] = ["CUSTOMER"];
 /** Every caller kind: all staff roles are denied on CUSTOMER_ONLY routes and CUSTOMER on every staff route. */
 const EVERY_ROLE: Role[] = [...ALL, "CUSTOMER"];
@@ -70,7 +70,7 @@ const MATRIX: [Method, string, Role[], Role[]?][] = [
   ["patch", `/staff/appointments/${ID}`, OWNER_RECEPTION],
   ["post", `/staff/appointments/${ID}/status`, ALL],
   ["post", "/staff/walk-in", OWNER_RECEPTION],
-  // Last on purpose: a CUSTOMER that passes the guard here is erased, so later CUSTOMER rows would fail.
+  // The CUSTOMER call on this row uses its own customer (see `tokenFor`), since the call erases the caller.
   ["delete", "/me", CUSTOMER_ONLY],
 ];
 
@@ -84,6 +84,7 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
   const tokens = {} as Record<Role, string>;
   const ids = {} as Record<Role, string>;
+  let erasableCustomerToken: string;
 
   beforeAll(async () => {
     ctx = await createIntegrationApp();
@@ -91,11 +92,15 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
     resetTenancyCache(ctx.app);
     const f = await seedFixture(ctx.prisma);
     for (const role of ALL) {
-      const session = await staffSession(ctx.app, ctx.prisma, f, role as StaffRole);
+      const session = await staffSession(ctx.app, ctx.prisma, f, role);
       tokens[role] = session.token;
       ids[role] = session.id;
     }
     tokens.CUSTOMER = (await customerSession(ctx.app, f)).token;
+    const second = await ctx.prisma.customer.create({
+      data: { organizationId: f.orgId, phoneE164: "+13055550199", name: "Bea", locale: "en", createdVia: "ONLINE" },
+    });
+    erasableCustomerToken = (await customerSession(ctx.app, f, second.id)).token;
   });
   afterAll(async () => {
     await ctx.close();
@@ -108,6 +113,10 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
     return method === "get" || method === "delete" ? req : req.send({});
   };
 
+  /** `DELETE /me` erases its caller, so its CUSTOMER call gets a customer of its own and rows stay order-independent. */
+  const tokenFor = (role: Role, method: Method, path: string) =>
+    role === "CUSTOMER" && method === "delete" && path === "/me" ? erasableCustomerToken : tokens[role];
+
   describe.each(MATRIX)("%s %s", (method, path, allowed, selfScoped) => {
     it("answers 401 without a token", async () => {
       expect((await call(method, path)).status).toBe(401);
@@ -115,11 +124,11 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
     for (const role of EVERY_ROLE) {
       if (!allowed.includes(role)) {
         it(`answers 403 to ${role}`, async () => {
-          expect((await call(method, path, tokens[role])).status).toBe(403);
+          expect((await call(method, path, tokenFor(role, method, path))).status).toBe(403);
         });
       } else if (!selfScoped?.includes(role)) {
         it(`lets ${role} past the guard`, async () => {
-          const status = (await call(method, path, tokens[role])).status;
+          const status = (await call(method, path, tokenFor(role, method, path))).status;
           expect([401, 403]).not.toContain(status);
         });
       }
@@ -134,6 +143,9 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
   describe("GET /availability (optional auth)", () => {
     it("does not require a token", async () => {
       expect([401, 403]).not.toContain((await call("get", "/availability")).status);
+    });
+    it("accepts a valid CUSTOMER token", async () => {
+      expect([401, 403]).not.toContain((await call("get", "/availability", tokens.CUSTOMER)).status);
     });
     it("answers 401 to an invalid token", async () => {
       expect((await call("get", "/availability", "not-a-token")).status).toBe(401);

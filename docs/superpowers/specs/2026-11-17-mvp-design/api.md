@@ -36,6 +36,8 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 
 ## Client (customer token)
 
+Shapes `Appointment`, `MyAppointments`, `Me`, `CustomerExport`: see `packages/contracts/src/booking.ts` and `customer.ts`.
+
 | Method | Path | Notes |
 |---|---|---|
 | GET/PATCH | `/me` | name, email, locale, consents per channel; PATCH writes only changed values (consent rows source `PROFILE`) and audits only changed keys |
@@ -58,6 +60,8 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 "confirm" plus the salon phone. Reschedule from the link goes through OTP.
 
 ## Staff (staff token, RBAC)
+
+Shapes `StaffAppointment`, `Agenda`, `StaffCustomer`: see `packages/contracts/src/booking.ts` and `customer.ts`.
 
 | Method | Path | Roles |
 |---|---|---|
