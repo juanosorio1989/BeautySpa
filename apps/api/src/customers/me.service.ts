@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
-import type { Customer, Prisma } from "@prisma/client";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import type { AccessClaims, CustomerExport, Me, MePatch } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
 import { RefreshTokenService } from "../auth/refresh-token.service.js";
@@ -7,6 +7,7 @@ import { APPOINTMENT_INCLUDE, startOf, toAppointmentDto } from "../booking/appoi
 import { BOOKING_TX_OPTIONS, lockOrgBookings } from "../booking/appointment-writer.js";
 import { BookingEvents, notifyAfterCommit } from "../booking/booking-events.js";
 import { CLOCK, type Clock } from "../common/clock.js";
+import { assertLiveCustomer } from "../common/live-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { currentConsents, recordConsents, toCustomerDto } from "./consents.js";
 
@@ -14,23 +15,35 @@ import { currentConsents, recordConsents, toCustomerDto } from "./consents.js";
 const DELETED_FIELDS = ["name", "email", "phoneE164", "privateNotes"];
 const ALL_REVOKED = { WHATSAPP: false, SMS: false, EMAIL: false } as const;
 
-const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
+/** Cancel reasons the system writes; they hold no personal data and stay in audit rows. */
+const SYSTEM_CANCEL_REASONS = ["ACCOUNT_DELETED", "HOLD_EXPIRED"];
 
 /**
- * Sets the `notes` key to JSON null in `before`/`after` of the org's `appointment` audit rows for
- * `appointmentIds` (only where the key exists; null `before`/`after` stay null). The one documented
- * exception to audit_log being append-only: free-text notes may hold the customer's personal data.
+ * Removes free text from the org's `appointment` audit rows for `appointmentIds`: the `notes`
+ * key becomes JSON null, and so does `cancelReason` unless it is a system reason. Only keys that
+ * exist are touched; a null `before`/`after` stays null (`NULL || x` is NULL). The one documented
+ * exception to audit_log being append-only, because that free text may hold personal data.
  */
-async function scrubAuditNotes(tx: Prisma.TransactionClient, orgId: string, appointmentIds: string[]): Promise<void> {
+async function scrubAppointmentAudits(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  appointmentIds: string[],
+): Promise<void> {
   if (appointmentIds.length === 0) return;
   await tx.$executeRaw`
     UPDATE audit_log SET
-      before = CASE WHEN before ? 'notes' THEN jsonb_set(before, '{notes}', 'null'::jsonb) ELSE before END,
-      after = CASE WHEN after ? 'notes' THEN jsonb_set(after, '{notes}', 'null'::jsonb) ELSE after END
+      before = before
+        || CASE WHEN before ? 'notes' THEN '{"notes": null}'::jsonb ELSE '{}'::jsonb END
+        || CASE WHEN before->>'cancelReason' <> ALL(${SYSTEM_CANCEL_REASONS}::text[])
+             THEN '{"cancelReason": null}'::jsonb ELSE '{}'::jsonb END,
+      after = after
+        || CASE WHEN after ? 'notes' THEN '{"notes": null}'::jsonb ELSE '{}'::jsonb END
+        || CASE WHEN after->>'cancelReason' <> ALL(${SYSTEM_CANCEL_REASONS}::text[])
+             THEN '{"cancelReason": null}'::jsonb ELSE '{}'::jsonb END
     WHERE organization_id = ${orgId}::uuid
       AND entity = 'appointment'
       AND entity_id = ANY(${appointmentIds}::text[])
-      AND (before ? 'notes' OR after ? 'notes')`;
+      AND (before ? 'notes' OR after ? 'notes' OR before ? 'cancelReason' OR after ? 'cancelReason')`;
 }
 
 /**
@@ -51,7 +64,7 @@ export class MeService {
   ) {}
 
   async get(principal: AccessClaims): Promise<Me> {
-    const row = await this.liveCustomer(this.prisma, principal);
+    const row = await assertLiveCustomer(this.prisma, principal);
     return toCustomerDto(row, await currentConsents(this.prisma, row.id));
   }
 
@@ -63,7 +76,7 @@ export class MeService {
    */
   async patch(principal: AccessClaims, input: MePatch, ip: string | null): Promise<Me> {
     return this.prisma.$transaction(async (tx) => {
-      const row = await this.liveCustomer(tx, principal, { lock: true });
+      const row = await assertLiveCustomer(tx, principal, { lock: true });
       const data: Prisma.CustomerUpdateInput = {};
       if (input.name !== undefined && input.name !== row.name) data.name = input.name;
       if (input.email !== undefined && input.email !== row.email) data.email = input.email;
@@ -99,7 +112,7 @@ export class MeService {
 
   /** `Me`, the full consent history (oldest first) and every non-`HELD` appointment (earliest first). */
   async export(principal: AccessClaims): Promise<CustomerExport> {
-    const row = await this.liveCustomer(this.prisma, principal);
+    const row = await assertLiveCustomer(this.prisma, principal);
     const [consents, history, appointments] = await Promise.all([
       currentConsents(this.prisma, row.id),
       this.prisma.notificationConsent.findMany({
@@ -123,14 +136,18 @@ export class MeService {
   }
 
   /**
-   * Deletes the account (design call 11) in one transaction, org booking lock first: every
-   * appointment of the customer loses its notes (also inside its earlier audit rows); future `BOOKED` ones (earliest segment start
-   * after now) become `CANCELLED` by `CUSTOMER` with reason `ACCOUNT_DELETED`, stop occupying time,
-   * get `manage_version` + 1 and one `appointment.cancel` audit each; each granted channel gets a
-   * `granted:false` consent row (`PROFILE`); name, email and private notes become null, the phone
-   * becomes `deleted:<id>` (frees the number for a new signup) and `deleted_at` is set; every
-   * refresh token is revoked; `customer.delete` lists the cleared keys only. Appointment rows stay
-   * attached to the anonymized customer. `events.cancelled` runs after commit for each cancellation.
+   * Deletes the account (design call 11) in one transaction, org booking lock first:
+   * - every appointment of the customer loses its notes, earlier customer cancellations lose their
+   *   reason, and the same free text is scrubbed from earlier appointment audit rows;
+   * - future `BOOKED` ones (earliest segment start after now) become `CANCELLED` by `CUSTOMER` with
+   *   reason `ACCOUNT_DELETED`, stop occupying time, get `manage_version` + 1 and one
+   *   `appointment.cancel` audit each;
+   * - each granted channel gets a `granted:false` consent row (`PROFILE`);
+   * - name, email and private notes become null, the phone becomes `deleted:<id>` (frees the
+   *   number for a new signup) and `deleted_at` is set;
+   * - every refresh token is revoked; `customer.delete` lists the cleared keys only.
+   * Appointment rows stay attached to the anonymized customer. `events.cancelled` runs after
+   * commit for each cancellation.
    */
   async remove(principal: AccessClaims, ip: string | null): Promise<void> {
     const orgId = principal.org;
@@ -138,20 +155,21 @@ export class MeService {
       await lockOrgBookings(tx, orgId);
       // Read after the lock so `now` never predates the wait.
       const now = this.clock.now();
-      const customer = await this.liveCustomer(tx, principal, { lock: true });
+      const customer = await assertLiveCustomer(tx, principal, { lock: true });
       const customerId = customer.id;
 
-      // Notes go first, so the cancel audits below never carry them.
-      const notesCleared = await tx.appointment.updateManyAndReturn({
+      // Free text goes first, so the cancel rows and audits written below keep their system reason.
+      const appointments = await tx.appointment.updateManyAndReturn({
         where: { organizationId: orgId, customerId },
         data: { notes: null },
         select: { id: true },
       });
-      await scrubAuditNotes(
-        tx,
-        orgId,
-        notesCleared.map((a) => a.id),
-      );
+      await tx.appointment.updateMany({
+        where: { organizationId: orgId, customerId, cancelledBy: "CUSTOMER", cancelReason: { not: null } },
+        data: { cancelReason: null },
+      });
+      const appointmentIds = appointments.map((a) => a.id);
+      await scrubAppointmentAudits(tx, orgId, appointmentIds);
 
       const booked = await tx.appointment.findMany({
         where: { organizationId: orgId, customerId, status: "BOOKED" },
@@ -223,25 +241,5 @@ export class MeService {
     for (const id of cancelledIds) {
       await notifyAfterCommit(this.events, this.logger, () => this.events.cancelled(id));
     }
-  }
-
-  /**
-   * The caller's customer row (filtered by org); 401 `UNAUTHORIZED` when it is missing or deleted.
-   * With `lock`, the row is locked `FOR UPDATE` first, so a concurrent update or deletion waits.
-   */
-  private async liveCustomer(
-    db: Prisma.TransactionClient,
-    principal: AccessClaims,
-    opts: { lock?: boolean } = {},
-  ): Promise<Customer> {
-    if (opts.lock) {
-      await db.$queryRaw`
-        SELECT id FROM customer
-        WHERE id = ${principal.sub}::uuid AND organization_id = ${principal.org}::uuid
-        FOR UPDATE`;
-    }
-    const row = await db.customer.findFirst({ where: { id: principal.sub, organizationId: principal.org } });
-    if (!row || row.deletedAt) throw unauthorized();
-    return row;
   }
 }

@@ -45,7 +45,7 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 | POST | `/me/appointments/:id/reschedule` | `{ segments }` (a slot from `/availability?excludeAppointmentId=`) → `Appointment` (200). Atomic swap, no hold; same ownership, status and window rules as cancel; must keep the same services (employees and times may change), else 400 `VALIDATION_FAILED` on `segments`; taken time → 409 `SLOT_TAKEN` with the old time kept (see flows.md). |
 | POST | `/me/appointments/:id/repeat` | → `{ locationId, services: [{ serviceId, employeeId \| "ANY" }] }` (200) to prefill a booking; any status; inactive services dropped, employees no longer bookable become `"ANY"`. |
 | GET | `/me/export` | `{ customer, consentHistory, appointments }` (holds excluded) |
-| DELETE | `/me` | 204; anonymizes the customer, cancels future bookings, revokes tokens (see security-quality.md). Every `/me` route answers 401 for a deleted customer. |
+| DELETE | `/me` | 204; anonymizes the customer, cancels future bookings, clears notes and customer cancel reasons (also in audit rows), revokes tokens (see security-quality.md). Every `/me` and `/me/appointments` route answers 401 for a deleted customer. |
 
 ## Manage link (from WhatsApp/email, no login)
 

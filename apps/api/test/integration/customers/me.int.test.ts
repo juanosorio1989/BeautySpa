@@ -300,6 +300,9 @@ describe("/me profile, export and deletion", () => {
         await patchMe({ name: "Again" }, login.accessToken),
         await exportMe(login.accessToken),
         await deleteMe(login.accessToken),
+        await http().get("/v1/me/appointments").set(auth(login.accessToken)),
+        await http().post(`/v1/me/appointments/${past.id}/repeat`).set(auth(login.accessToken)),
+        await http().post(`/v1/me/appointments/${future.id}/cancel`).set(auth(login.accessToken)).send({}),
       ]) {
         expect(res.status).toBe(401);
         expect(res.body.code).toBe("UNAUTHORIZED");
@@ -348,6 +351,41 @@ describe("/me profile, export and deletion", () => {
       expect((createAfter!.after as { status: string }).status).toBe("BOOKED");
       const [holdAudit] = await auditRows("appointment.hold");
       expect(holdAudit?.entityId).toBe(appointmentId);
+    });
+
+    it("scrubs customer cancel reasons from appointments and audit rows", async () => {
+      clock.set(Date.parse("2026-11-28T12:00:00.000Z"));
+      const earlier = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "14:00", endsAt: "15:00" });
+      const later = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "16:00", endsAt: "17:00" });
+      const cancel = await http()
+        .post(`/v1/me/appointments/${earlier.id}/cancel`)
+        .set(auth(token))
+        .send({ reason: "Ana's phone 3055550100 broke" });
+      expect(cancel.status).toBe(200);
+
+      expect((await deleteMe()).status).toBe(204);
+
+      const auditLeaks = await ctx.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM audit_log
+        WHERE organization_id = ${f.orgId}::uuid
+          AND (coalesce(before::text, '') LIKE '%3055550100%' OR coalesce(after::text, '') LIKE '%3055550100%')`;
+      expect(Number(auditLeaks[0]!.n)).toBe(0);
+      const rowLeaks = await ctx.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM appointment a
+        WHERE a.organization_id = ${f.orgId}::uuid AND a::text LIKE '%3055550100%'`;
+      expect(Number(rowLeaks[0]!.n)).toBe(0);
+
+      const earlierRow = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: earlier.id } });
+      expect(earlierRow).toMatchObject({ status: "CANCELLED", cancelledBy: "CUSTOMER", cancelReason: null });
+      const laterRow = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: later.id } });
+      expect(laterRow).toMatchObject({ status: "CANCELLED", cancelReason: "ACCOUNT_DELETED" });
+
+      const cancels = await auditRows("appointment.cancel");
+      expect(cancels.map((a) => [a.entityId, (a.after as { cancelReason: string | null }).cancelReason])).toEqual([
+        [earlier.id, null],
+        [later.id, "ACCOUNT_DELETED"],
+      ]);
+      expect((cancels[1]!.before as { cancelReason: string | null }).cancelReason).toBeNull();
     });
 
     it("leaves a BOOKED appointment that already started alone", async () => {

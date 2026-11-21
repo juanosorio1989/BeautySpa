@@ -12,6 +12,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { conflict, invalidRef, notFound, outsideCancelWindow } from "../common/http-errors.js";
 import { readLocationSettings } from "../common/location-settings.js";
+import { assertLiveCustomer } from "../common/live-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { APPOINTMENT_INCLUDE, startOf, toAppointmentDto, type AppointmentRow } from "./appointment-mapping.js";
 import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings } from "./appointment-writer.js";
@@ -49,6 +50,7 @@ export class MyAppointmentsService {
    * Start and end come from the segments (as in the DTO).
    */
   async list(principal: AccessClaims): Promise<MyAppointments> {
+    await assertLiveCustomer(this.prisma, principal);
     const now = this.clock.now();
     const rows = await this.prisma.appointment.findMany({
       where: { organizationId: principal.org, customerId: principal.sub, status: { not: "HELD" } },
@@ -150,6 +152,7 @@ export class MyAppointmentsService {
    */
   async repeat(principal: AccessClaims, id: string): Promise<Repeat> {
     const orgId = principal.org;
+    await assertLiveCustomer(this.prisma, principal);
     const row = await this.prisma.appointment.findFirst({
       where: { id, organizationId: orgId, customerId: principal.sub },
       include: { segments: APPOINTMENT_INCLUDE.segments },
@@ -199,6 +202,8 @@ export class MyAppointmentsService {
     id: string,
     now: number,
   ): Promise<Changeable> {
+    // Under the org booking lock, so a deletion that committed first is seen here.
+    await assertLiveCustomer(tx, principal);
     const [locked] = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM appointment
       WHERE id = ${id}::uuid AND organization_id = ${principal.org}::uuid AND customer_id = ${principal.sub}::uuid

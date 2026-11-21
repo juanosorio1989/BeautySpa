@@ -166,7 +166,7 @@ segment insert answers both as 409 `SLOT_TAKEN`.
 | Table | Key columns |
 |---|---|
 | `notification_log` | `organization_id`, `appointment_id`, `customer_id`, `template_key`, `locale`, `channel`, `provider`, `provider_message_id`, `status` (`QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `SKIPPED`), `error`, `attempts`, `sent_at`, `updated_at` |
-| `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only, except that `DELETE /me` sets `notes` to null inside the customer's appointment audit rows (see security-quality.md). |
+| `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only, except that `DELETE /me` sets `notes` and non-system `cancelReason` to null inside the customer's appointment audit rows (see security-quality.md). |
 
 ## Encryption
 
