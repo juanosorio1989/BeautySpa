@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cita confirmada</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#7A2E5A}a:hover{color:#5C2143}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FBF8F5; font-family: Inter, system-ui, sans-serif; color: #1F1A17; display: flex; flex-direction: column; padding: 48px 20px 28px; gap: 20px">
+  <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center">
+    <div style="width: 64px; height: 64px; border-radius: 999px; background: #E5F3EC; color: #1E6B45; display: flex; align-items: center; justify-content: center">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+    </div>
+    <h1 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 28px">¡Listo, María!</h1>
+    <p style="margin: 0; font-size: 15px; color: #5E534D">Tu cita quedó reservada.</p>
+  </div>
+  <section style="background: #FFFFFF; border: 1px solid #E6DDD7; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 20px">Jueves 19 de noviembre</span>
+      <span style="font-size: 15px; color: #4A403B">11:00 – 11:45 a. m.</span>
+    </div>
+    <div style="height: 1px; background: #EFE8E3"></div>
+    <div style="display: flex; justify-content: space-between; font-size: 15px"><span>Manicure · Bea</span><span>$25</span></div>
+    <div style="display: flex; justify-content: space-between; font-size: 15px"><span>Pedicure spa · Ana</span><span>$40</span></div>
+    <div style="height: 1px; background: #EFE8E3"></div>
+    <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 600"><span>Total en el salón</span><span>$65</span></div>
+    <div style="font-size: 13px; color: #5E534D">[DIRECCIÓN DEL SALÓN] · Queens, NY</div>
+  </section>
+  <section style="background: #F6E9F0; border-radius: 18px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+    <span style="font-weight: 600; font-size: 15px; color: #5C2143">¿Quieres recordatorios por WhatsApp?</span>
+    <span style="font-size: 14px; color: #4A403B">Te avisamos un día antes y dos horas antes.</span>
+    <button type="button" style="align-self: flex-start; border: 0; border-radius: 12px; padding: 0 18px; min-height: 44px; background: #7A2E5A; color: #FFFFFF; font: 600 15px Inter, sans-serif">Sí, envíenmelos</button>
+  </section>
+  <div style="flex: 1"></div>
+  <div style="display: flex; flex-direction: column; gap: 10px">
+    <a href="#" style="display: flex; align-items: center; justify-content: center; min-height: 52px; border-radius: 14px; border: 1px solid #DCD2CC; background: #FFFFFF; color: #1F1A17; font: 600 16px Inter, sans-serif; text-decoration: none">Agregar a mi calendario</a>
+    <a href="#" style="display: flex; align-items: center; justify-content: center; min-height: 44px; color: #7A2E5A; font: 600 15px Inter, sans-serif; text-decoration: none">Ver o cambiar mis citas</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
