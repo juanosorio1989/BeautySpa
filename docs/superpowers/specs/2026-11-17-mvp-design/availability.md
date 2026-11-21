@@ -88,8 +88,11 @@ Max 4 services per request **(call)**.
 `online_bookable`, and `bookable_online`. Walk-in uses it with `t` = now rounded
 down to the slot grid. Staff may also book outside working hours / time off /
 location hours **and location closures** with an explicit `override: true` on the request (UI asks "Book
-outside {name}'s hours?"); the override is written to the audit log. Overlaps are
-never allowed (DB constraint).
+outside {name}'s hours?"); the override is recorded as `override: true` in the
+audit row's `after` (`appointment.create` / `appointment.move`). Overlaps are
+never allowed, override or not: validation answers 409 `SLOT_TAKEN`, and the DB
+exclusion constraint is the final guard. Walk-in takes the first slot starting
+no later than that grid floor + `slotIntervalMin` (no override).
 
 ## Price shown for "Any"
 
@@ -102,6 +105,11 @@ employee, shown before confirming.
 `POST /holds` receives the plan, the API re-runs the check for those exact
 segments inside a transaction, then inserts. The exclusion constraints are the
 final guard for races.
+
+Expired holds: reads ignore them; every write that claims time (hold, staff
+booking, walk-in, reschedule, move) first releases the organization's expired
+holds. Status changes and cancels do not release them, because they only free
+time and never claim it (ruling R6).
 
 ## Required tests (table-driven, Vitest)
 

@@ -35,6 +35,31 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   raw SQL inside Prisma migrations (see data-model.md).
 - Workers: BullMQ queues `notifications` and `maintenance` (hold sweeper). Run as
   a separate process from the same app (`api` and `worker` entrypoints).
+- Hold sweeper **(call, plan 04)**: until the worker entrypoint exists, the API
+  process runs `HoldSweeper` (`apps/api/src/booking/hold-sweeper.ts`), which
+  releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0`
+  disables it, and tests use 0). Each run writes one `appointment.hold_release`
+  audit row per organization that had holds released (`actorType "SYSTEM"`,
+  `after: { released: n }`); booking writes that release expired holds write the
+  same row (`releaseExpiredHoldsAudited`). An organization whose sweep fails is
+  logged and skipped; the others still run. Plan 05 moves it to the BullMQ
+  `maintenance` queue.
+- Booking writes **(call, plan 04)**: each booking write transaction takes the
+  organization's booking lock first (`lockOrgBookings`, a transaction-scoped
+  Postgres advisory lock), so writes of one organization are serialized and a
+  race ends as a validation failure (409 `SLOT_TAKEN`). The exclusion constraints
+  stay the final guard (see data-model.md).
+- Booking events **(call, plan 04)**: booking services report `booked`, `changed`
+  and `cancelled` through the `BookingEvents` port
+  (`apps/api/src/booking/booking-events.ts`), only after the write transaction
+  commits and through `notifyAfterCommit`, which logs and swallows errors so a
+  notification failure never fails the request. The adapter for now is
+  `LoggingBookingEvents` (debug log `booking.<event> <id>`); plan 05 binds the
+  notification router in its place.
+- Time **(call, plan 04)**: booking code reads the current time only from the
+  injectable `Clock` (`CLOCK` token, `{ now(): number }` in epoch ms, default
+  `Date.now`, provided by the global `CommonModule`), never `Date.now()`, so
+  integration tests pin and advance `now`.
 - Tenancy **(call)**: every tenant-owned row has `organization_id`. In the MVP
   the API resolves the organization from config (`DEFAULT_ORG_SLUG`); a request
   scope carries `orgId` and every repository query filters by it. Postgres RLS

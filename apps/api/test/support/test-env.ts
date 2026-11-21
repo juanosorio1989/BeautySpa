@@ -19,6 +19,7 @@ export function testEnv(overrides: Record<string, string> = {}): Env {
     DATA_ENCRYPTION_KEY,
     OTP_PROVIDER: "fake",
     EMAIL_PROVIDER: "console",
+    HOLD_SWEEP_INTERVAL_MS: "0",
     ...overrides,
   });
 }

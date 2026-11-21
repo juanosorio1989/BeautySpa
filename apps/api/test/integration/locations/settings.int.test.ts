@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_LOCATION_SETTINGS } from "@beautyspa/contracts";
-import { readLocationSettings } from "../../../src/locations/settings.service.js";
+import { readLocationSettings } from "../../../src/common/location-settings.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import { seedFixture, staffSession, type Fixture } from "../helpers.js";
 

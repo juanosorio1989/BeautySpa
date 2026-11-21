@@ -17,7 +17,8 @@ const BEARER = /^Bearer ([A-Za-z0-9_.-]+)$/;
  * Global guard (APP_GUARD), fail closed: a handler or controller without an
  * auth decorator answers 403 to everyone. Token problems (missing, invalid,
  * expired, other organization) are 401; a valid token of the wrong kind or
- * role is 403.
+ * role is 403. `optional` skips verification only when no `Authorization`
+ * header is sent at all; a header that is present is always verified.
  */
 @Injectable()
 export class AccessGuard implements CanActivate {
@@ -36,7 +37,9 @@ export class AccessGuard implements CanActivate {
     if (policy.kind === "public") return true;
 
     const req = context.switchToHttp().getRequest<AuthedRequest>();
-    const match = BEARER.exec(req.get("authorization") ?? "");
+    const header = req.get("authorization");
+    if (policy.kind === "optional" && header === undefined) return true;
+    const match = BEARER.exec(header ?? "");
     if (!match) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
     const claims = await this.tokens.verifyAccess(match[1]!);
     if (claims.org !== (await this.tenancy.getOrgId())) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
@@ -48,6 +51,7 @@ export class AccessGuard implements CanActivate {
 }
 
 function allows(policy: Exclude<AuthPolicy, { kind: "public" }>, claims: AccessClaims): boolean {
+  if (policy.kind === "optional") return true;
   if (policy.kind === "customer") return claims.typ === "customer" && claims.role === "CUSTOMER";
   if (claims.typ !== "staff" || claims.role === "CUSTOMER") return false;
   return policy.roles.length === 0 || policy.roles.includes(claims.role);

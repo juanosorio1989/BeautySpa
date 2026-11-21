@@ -8,3 +8,5 @@ export * from "./staff";
 export * from "./settings";
 export * from "./audit";
 export * from "./public";
+export * from "./booking";
+export * from "./customer";

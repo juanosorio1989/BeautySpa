@@ -86,7 +86,7 @@ export class OtpService {
     const orgId = await this.tenancy.getOrgId();
     const key = { organizationId_phoneE164: { organizationId: orgId, phoneE164: req.phone } };
     const existing = await this.prisma.customer.findUnique({ where: key, select: { deletedAt: true } });
-    // A soft-deleted customer keeps the phone until plan 04 anonymization frees it.
+    // Unreachable for deleted accounts: `DELETE /me` rewrites the phone to `deleted:<id>`; kept as a guard.
     if (existing?.deletedAt) throw new UnauthorizedException({ code: "UNAUTHORIZED" });
 
     const now = new Date();

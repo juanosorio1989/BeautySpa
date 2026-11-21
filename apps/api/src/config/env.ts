@@ -82,6 +82,8 @@ const EnvSchema = z
     COOKIE_SECURE: bool.optional(),
     COOKIE_DOMAIN: z.string().optional(),
     TRUST_PROXY: trustProxy.default("false"),
+    /** In-process hold sweeper period; 0 disables it (design call 12). */
+    HOLD_SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(60000),
   })
   .superRefine((e, ctx) => {
     const require = (key: keyof typeof e, message: string) => {

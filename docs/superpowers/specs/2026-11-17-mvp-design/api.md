@@ -31,21 +31,25 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 | GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`) |
 | GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
 | GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
-| GET | `/availability` | `locationId?`, `services[]=id:employeeId|ANY&date=YYYY-MM-DD` (or `from`/`to`), `excludeAppointmentId?` (authenticated owner of it, or staff) → `Slot[]` |
-| POST | `/holds` | `{ segments }` from a slot → `{ holdId, expiresAt }`. Rate-limited per IP. |
+| GET | `/availability` | `locationId?`, repeated `services=<serviceId>:<employeeId\|ANY>` (1-4), one `date=YYYY-MM-DD` per call (the date strip calls per day), `excludeAppointmentId?` → `Slot[]`. Optional auth: the mode comes from the token (none or customer: online rules; staff: no lead time, no horizon, non-online employees and services included). `excludeAppointmentId` needs a token: a customer must own the appointment, staff any in the organization, else 404; no token is 401. Segments of `HELD` appointments whose hold has expired are ignored. Rate-limited per IP (120 per minute). |
+| POST | `/holds` | `{ locationId?, segments }` copied from a slot → 201 `{ holdId, expiresAt }` (`expiresAt` = now + `holdMinutes`). The plan is re-validated in the write transaction: 409 `SLOT_TAKEN` when the time is taken, 400 `VALIDATION_FAILED` (path `segments`) when the plan was altered. 30 per IP per 10 min. |
 
 ## Client (customer token)
 
+Shapes `Appointment`, `MyAppointments`, `Me`, `CustomerExport`: see `packages/contracts/src/booking.ts` and `customer.ts`.
+
 | Method | Path | Notes |
 |---|---|---|
-| GET/PATCH | `/me` | name, email, locale, consents per channel |
-| POST | `/appointments` | `{ holdId, notes? }` → `BOOKED`; schedules notifications |
-| GET | `/me/appointments` | upcoming + past |
-| POST | `/me/appointments/:id/cancel` | within cancel window |
-| POST | `/me/appointments/:id/reschedule` | `{ segments }` — atomic swap, no hold (see flows.md) |
-| POST | `/me/appointments/:id/repeat` | returns services/employees to prefill booking |
-| GET | `/me/export` | JSON export of the customer's data |
-| DELETE | `/me` | anonymizes the customer, revokes tokens |
+| GET/PATCH | `/me` | name, email, locale, consents per channel; PATCH writes only changed values (consent rows source `PROFILE`) and audits only changed keys |
+| POST | `/appointments` | `{ holdId, notes? }` → 201 `Appointment` (`BOOKED`, the caller attached, `notes` saved). Unknown hold (or another organization's) 404; expired hold (still held past `expiresAt`, or already released) 409 `HOLD_EXPIRED`; a hold already booked or otherwise used 409 `CONFLICT`; a deleted customer's still-valid token 401 `UNAUTHORIZED`; a customer without a name 400 `VALIDATION_FAILED` path `name` (the hold stays in both cases). The segments are not re-validated: the hold already occupies them. Notifications are triggered after commit and never fail the request. 10 per customer per hour. |
+| GET | `/me/appointments` | `{ upcoming, past }` of the caller's appointments, holds excluded. `upcoming`: `BOOKED` or `CHECKED_IN` ending after now, soonest first. `past`: everything else (including future cancelled ones), latest start first, at most 50. |
+| POST | `/me/appointments/:id/cancel` | `{ reason? }` → `Appointment` (200). Own `BOOKED` appointment within the cancel window: `CANCELLED`, segments stop occupying, `manage_version` + 1. Not the caller's → 404; not `BOOKED` → 409 `CONFLICT`; too late → 409 `OUTSIDE_CANCEL_WINDOW` (see flows.md). |
+| POST | `/me/appointments/:id/reschedule` | `{ segments }` (a slot from `/availability?excludeAppointmentId=`) → `Appointment` (200). Atomic swap, no hold; same ownership, status and window rules as cancel; must keep the same services (employees and times may change), else 400 `VALIDATION_FAILED` on `segments`; taken time → 409 `SLOT_TAKEN` with the old time kept (see flows.md). |
+| POST | `/me/appointments/:id/repeat` | → `{ locationId, services: [{ serviceId, employeeId \| "ANY" }] }` (200) to prefill a booking; any status; inactive services dropped, employees no longer bookable become `"ANY"`; an appointment whose services are all inactive returns `services: []`. |
+| GET | `/me/export` | `{ customer, consentHistory, appointments }` (holds excluded) |
+| DELETE | `/me` | 204; anonymizes the customer, cancels future bookings, clears notes and customer cancel reasons (also in audit rows), revokes tokens (see security-quality.md). Every `/me` and `/me/appointments` route, and `POST /appointments`, answers 401 for a deleted customer. |
+
+An appointment's `notes` and `cancelReason` are visible to its customer (in `/me/appointments` and `/me/export`), whoever wrote them, so staff must not put internal remarks there; staff-only remarks belong in the customer's private notes (endpoint in a later plan). In every request body, a `notes` or `reason` that is blank after trimming is stored as `null`.
 
 ## Manage link (from WhatsApp/email, no login)
 
@@ -59,15 +63,17 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 
 ## Staff (staff token, RBAC)
 
+Shapes `StaffAppointment`, `Agenda`, `StaffCustomer`: see `packages/contracts/src/booking.ts` and `customer.ts`.
+
 | Method | Path | Roles |
 |---|---|---|
-| GET | `/staff/agenda?date=&locationId=` | all (EMPLOYEE: own only) |
-| GET | `/staff/customers?q=` | OWNER, RECEPTION; EMPLOYEE: only customers with an appointment with them |
-| POST | `/staff/customers` | OWNER, RECEPTION — `{ name, phone, locale, consents }` |
-| POST | `/staff/appointments` | OWNER, RECEPTION — `{ customerId, segments, override? }`; skips hold; STAFF mode |
-| POST | `/staff/walk-in` | OWNER, RECEPTION — `{ customerId?, services }` → first slot from now, booked |
-| PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — move / change segments |
-| POST | `/staff/appointments/:id/status` | check-in, complete, no-show, cancel (EMPLOYEE: own, check-in/complete only) |
+| GET | `/staff/agenda?date=&locationId=&employeeId=` | all (EMPLOYEE: own only; another `employeeId` is 403) |
+| GET | `/staff/customers?q=` | all; EMPLOYEE: only customers with a non-held appointment with them. `q` 2-80 chars; name match, plus phone match with 4+ digits; 20 max |
+| POST | `/staff/customers` | OWNER, RECEPTION — `{ name, phone, locale, email?, consents }`; 201; duplicate phone 409 `CONFLICT`; audit `customer.create` lists keys only |
+| POST | `/staff/appointments` | OWNER, RECEPTION — `{ customerId, locationId?, segments, notes?, override? }` → 201 `StaffAppointment` (`BOOKED`, source `RECEPTION`, `createdByStaffId` = caller). Skips the hold; validated in STAFF mode (no lead time or horizon); `override: true` also ignores working hours, time off, location hours and closures, never overlaps (409 `SLOT_TAKEN`). `customerId` not an active customer of the org → 400 `VALIDATION_FAILED` path `customerId`. |
+| POST | `/staff/walk-in` | OWNER, RECEPTION — `{ customerId?, locationId?, services, notes? }` → 201 `StaffAppointment` (`CHECKED_IN`, source `WALK_IN`; `customerId` may be null). Takes the first STAFF-mode slot of today (location timezone) starting no later than now rounded down to the slot grid + `slotIntervalMin`; none → 409 `SLOT_TAKEN` (design call 9). |
+| PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — `{ segments, override? }` → `StaffAppointment`. `BOOKED` or `CHECKED_IN` only (else 409 `CONFLICT`); services may change; same validation as staff create with its own segments excluded; no cancel window; old segments replaced, `manage_version` + 1; taken time → 409 `SLOT_TAKEN` with the old time kept. An appointment that has already started is validated as of its own start, so the new plan may keep that start (or start later), for example to hand an in-progress walk-in to another employee or add a service; it cannot start earlier. |
+| POST | `/staff/appointments/:id/status` | all staff — `{ status, reason? }` → `StaffAppointment`. Transitions (design call 7): `BOOKED → CHECKED_IN \| COMPLETED \| NO_SHOW \| CANCELLED`, `CHECKED_IN → COMPLETED \| CANCELLED`, anything else 409 `CONFLICT`; `NO_SHOW` only once now ≥ start (else 409); `CHECKED_IN` and `COMPLETED` only once the appointment's local day (location timezone) has come, earlier on that day is fine (else 409 `CONFLICT` "Too early to check in"). `CANCELLED` (no cancel window for staff) records `cancelledBy STAFF` and the reason and increments `manage_version`; `CANCELLED` and `NO_SHOW` free the time. EMPLOYEE: only appointments with a segment of theirs and only `CHECKED_IN`/`COMPLETED`, else 403. |
 | CRUD | `/staff/services`, `/staff/categories`, `/staff/levels`, `/staff/resources`, `/staff/resource-types` | OWNER |
 | GET | `/staff/employees?active=&locationId=`, `/staff/employees/:id` | OWNER, RECEPTION |
 | POST, PATCH | `/staff/employees`, `/staff/employees/:id` (no DELETE: `PATCH { active: false }`) | OWNER |

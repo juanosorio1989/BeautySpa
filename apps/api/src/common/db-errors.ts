@@ -31,3 +31,17 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isForeignKeyViolation(err: unknown): boolean {
   return prismaCode(err) === "P2003" || pgCode(err) === "23503";
 }
+
+/** Exclusion constraint violation (overlapping booking): SQLSTATE `23P01`. */
+export function isExclusionViolation(err: unknown): boolean {
+  return pgCode(err) === "23P01";
+}
+
+/**
+ * Deadlock detected: SQLSTATE `40P01`. Two transactions inserting segments that collide on the
+ * exclusion constraints can each wait on the other's uncommitted row; PostgreSQL aborts one
+ * after `deadlock_timeout` and the other commits.
+ */
+export function isDeadlock(err: unknown): boolean {
+  return pgCode(err) === "40P01";
+}

@@ -89,10 +89,32 @@ ALTER TABLE appointment_segment
 - `occupies` is `true` for `HELD`, `BOOKED`, `CHECKED_IN`, `COMPLETED`, and set
   to `false` when the appointment becomes `CANCELLED` or `NO_SHOW`, in the same
   transaction as the status change.
-- Expired holds still occupy until released. The booking transaction first
-  releases expired holds that overlap the requested ranges, then inserts; a
-  sweeper job every minute releases the rest.
-- A constraint violation (`23P01`) maps to HTTP 409 `SLOT_TAKEN`.
+- Reschedule and move **(call, plan 04)** delete the appointment's old segments
+  and insert the new plan in the same transaction (`AppointmentWriter.replaceSegments`);
+  marking the old ones `occupies = false` would leave stale rows inside the
+  appointment. The audit row keeps the old plan in `before`. Status changes
+  still use `occupies = false`.
+- Expired holds still occupy until released (reads already ignore them). Every
+  booking write that claims time (not status changes or cancels, which only free
+  it) first releases all expired holds of the organization
+  (`releaseExpiredHolds`: `CANCELLED`, `cancelled_by SYSTEM`, `cancel_reason
+  "HOLD_EXPIRED"`, `hold_expires_at` kept, segments `occupies = false`), then
+  inserts; the hold sweeper releases the rest (see architecture.md). Whoever
+  releases (a write or the sweeper) records one `appointment.hold_release` audit
+  row (`SYSTEM`, `after: { released: n }`) when `n > 0`.
+- Org booking lock **(call, plan 04)**: every booking write transaction first
+  takes `lockOrgBookings` (`pg_advisory_xact_lock(hashtextextended('booking:' ||
+  org_id, 0))`, held until commit or rollback), then releases expired holds,
+  re-validates the plan and writes. Concurrent writers of one organization run
+  one after another, so the later one sees the earlier one's rows and fails
+  validation with 409 `SLOT_TAKEN`. The lock is per organization, not per
+  location, because an employee's busy time spans locations. The hold sweeper
+  takes it too.
+- The exclusion constraints remain the final guard: a violation (`23P01`) maps
+  to HTTP 409 `SLOT_TAKEN`, and so does a deadlock (`40P01`) on the segment
+  insert (two uncommitted colliding inserts wait on each other; PostgreSQL
+  aborts one after `deadlock_timeout`). With the lock this only happens for a
+  writer that skipped it.
 - Working hours, time off, and closures are not in the constraint; the booking
   transaction re-runs the availability check for the exact plan before insert.
 - Prisma does not model these constraints. A test asserts both constraints exist
@@ -137,15 +159,16 @@ means 24:00.
 **Database error mapping.** `apps/api/src/common/db-errors.ts` holds `pgCode`
 (SQLSTATE from a Prisma error, also re-exported by the integration test
 helpers), `isUniqueViolation` (`P2002` / `23505`) and `isForeignKeyViolation`
-(`P2003` / `23503`, answered as 409 `CONFLICT` on blocked deletes). Plan 04
-adds the `23P01` → `SLOT_TAKEN` mapping there.
+(`P2003` / `23503`, answered as 409 `CONFLICT` on blocked deletes),
+`isExclusionViolation` (`23P01`) and `isDeadlock` (`40P01`); the booking
+segment insert answers both as 409 `SLOT_TAKEN`.
 
 ## Notifications and audit
 
 | Table | Key columns |
 |---|---|
 | `notification_log` | `organization_id`, `appointment_id`, `customer_id`, `template_key`, `locale`, `channel`, `provider`, `provider_message_id`, `status` (`QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `SKIPPED`), `error`, `attempts`, `sent_at`, `updated_at` |
-| `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only. |
+| `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only, except that `DELETE /me` sets `notes` and non-system `cancelReason` to null inside the customer's appointment audit rows (see security-quality.md). |
 
 ## Encryption
 
