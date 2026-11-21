@@ -80,7 +80,10 @@ describe("POST /appointments and GET /me/appointments", () => {
       expect(body.notes).toBe("Window seat please");
       expect(body.segments[0]!.blockEndsAt).toBe(slot.segments[0]!.blockEndsAt);
 
-      const row = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: holdId }, include: { segments: true } });
+      const row = await ctx.prisma.appointment.findUniqueOrThrow({
+        where: { id: holdId },
+        include: { segments: true },
+      });
       expect(row.status).toBe("BOOKED");
       expect(row.customerId).toBe(f.customerId);
       expect(row.holdExpiresAt).toBeNull();
@@ -124,7 +127,8 @@ describe("POST /appointments and GET /me/appointments", () => {
       const other = await ctx.prisma.organization.create({
         data: { name: "Other", slug: "other", defaultLocale: "en" },
       });
-      await ctx.prisma.$executeRaw`UPDATE appointment SET organization_id = ${other.id}::uuid WHERE id = ${holdId}::uuid`;
+      await ctx.prisma
+        .$executeRaw`UPDATE appointment SET organization_id = ${other.id}::uuid WHERE id = ${holdId}::uuid`;
       const res = await book({ holdId });
       expect(res.status).toBe(404);
     });

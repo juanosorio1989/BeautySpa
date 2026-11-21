@@ -38,11 +38,7 @@ export class LoggingBookingEvents extends BookingEvents {
  * Runs `fn` (a call on `events`) after commit. Any error is logged with the adapter's name and
  * swallowed: the write already succeeded and the response must not change.
  */
-export async function notifyAfterCommit(
-  events: BookingEvents,
-  logger: Logger,
-  fn: () => Promise<void>,
-): Promise<void> {
+export async function notifyAfterCommit(events: BookingEvents, logger: Logger, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
   } catch (err) {

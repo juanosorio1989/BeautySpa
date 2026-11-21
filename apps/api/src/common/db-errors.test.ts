@@ -62,7 +62,9 @@ describe("isExclusionViolation", () => {
 describe("isDeadlock", () => {
   it("is true for SQLSTATE 40P01 as Prisma reports it", () => {
     expect(
-      isDeadlock(new Error('QueryError(PostgresError { code: "40P01", message: "deadlock detected", severity: "ERROR" })')),
+      isDeadlock(
+        new Error('QueryError(PostgresError { code: "40P01", message: "deadlock detected", severity: "ERROR" })'),
+      ),
     ).toBe(true);
   });
 

@@ -6,7 +6,14 @@ import { HoldSweeper } from "../../../src/booking/hold-sweeper.js";
 import { toEngineSegments } from "../../../src/booking/plan-mapping.js";
 import { CLOCK } from "../../../src/common/clock.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
-import { BOOKING_DATE, BOOKING_NOW, bookSegment, fixedClock, seedBookingFixture, type BookingFixture } from "../helpers.js";
+import {
+  BOOKING_DATE,
+  BOOKING_NOW,
+  bookSegment,
+  fixedClock,
+  seedBookingFixture,
+  type BookingFixture,
+} from "../helpers.js";
 
 const MINUTE = 60_000;
 
@@ -22,8 +29,7 @@ describe("POST /holds", () => {
     expect(res.status).toBe(200);
     return (res.body as Slot[])[0]!;
   };
-  const hold = (segments: PlannedSegment[]) =>
-    request(ctx.app.getHttpServer()).post("/v1/holds").send({ segments });
+  const hold = (segments: PlannedSegment[]) => request(ctx.app.getHttpServer()).post("/v1/holds").send({ segments });
 
   beforeAll(async () => {
     ctx = await createIntegrationApp({ override: (b) => b.overrideProvider(CLOCK).useValue(clock) });
