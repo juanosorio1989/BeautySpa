@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PlannedSegment, Slot } from "@beautyspa/contracts";
-import { AppointmentWriter, lockOrgBookings } from "../../../src/booking/appointment-writer.js";
+import { AppointmentWriter, lockOrgBookings, releaseExpiredHolds } from "../../../src/booking/appointment-writer.js";
 import { HoldSweeper } from "../../../src/booking/hold-sweeper.js";
 import { toEngineSegments } from "../../../src/booking/plan-mapping.js";
 import { CLOCK } from "../../../src/common/clock.js";
@@ -98,6 +98,76 @@ describe("POST /holds", () => {
     expect(old.cancelledAt?.getTime()).toBe(BOOKING_NOW + 6 * MINUTE);
     expect(old.holdExpiresAt?.getTime()).toBe(BOOKING_NOW + 5 * MINUTE);
     expect(old.segments.every((s) => !s.occupies)).toBe(true);
+  });
+
+  it("audits the expired holds it releases as one SYSTEM appointment.hold_release row", async () => {
+    const slot = await firstPediSlot();
+    const first = await hold(slot.segments);
+    expect(first.status).toBe(201);
+    expect(await ctx.prisma.auditLog.count({ where: { action: "appointment.hold_release" } })).toBe(0);
+
+    clock.set(BOOKING_NOW + 6 * MINUTE);
+    expect((await hold(slot.segments)).status).toBe(201);
+
+    const audits = await ctx.prisma.auditLog.findMany({ where: { action: "appointment.hold_release" } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      organizationId: f.orgId,
+      actorType: "SYSTEM",
+      actorId: null,
+      entity: "appointment",
+      entityId: null,
+      after: { released: 1 },
+    });
+  });
+
+  it("releaseExpiredHolds leaves another organization's expired hold untouched", async () => {
+    const org = await ctx.prisma.organization.create({
+      data: { name: "Other", slug: "other-salon", defaultLocale: "en" },
+    });
+    const location = await ctx.prisma.location.create({
+      data: { organizationId: org.id, name: "Other main", timezone: "America/New_York", settings: {} },
+    });
+    const staff = await ctx.prisma.staffUser.create({
+      data: { organizationId: org.id, email: "x@other.dev", role: "EMPLOYEE", locale: "en" },
+    });
+    const service = await ctx.prisma.service.create({
+      data: { organizationId: org.id, name: { en: "Cut", es: "Corte" }, durationMin: 60, priceCents: 3000 },
+    });
+    const startsAt = new Date("2026-12-01T15:00:00.000Z");
+    const endsAt = new Date("2026-12-01T16:00:00.000Z");
+    const other = await ctx.prisma.appointment.create({
+      data: {
+        organizationId: org.id,
+        locationId: location.id,
+        status: "HELD",
+        source: "ONLINE",
+        holdExpiresAt: new Date(BOOKING_NOW - MINUTE),
+        segments: {
+          create: {
+            organizationId: org.id,
+            serviceId: service.id,
+            staffUserId: staff.id,
+            startsAt,
+            endsAt,
+            blockEndsAt: endsAt,
+            durationMin: 60,
+            priceCents: 3000,
+            occupies: true,
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    const released = await ctx.prisma.$transaction((tx) => releaseExpiredHolds(tx, f.orgId, new Date(BOOKING_NOW)));
+    expect(released).toBe(0);
+    const row = await ctx.prisma.appointment.findUniqueOrThrow({
+      where: { id: other.id },
+      include: { segments: true },
+    });
+    expect(row.status).toBe("HELD");
+    expect(row.segments.every((s) => s.occupies)).toBe(true);
   });
 
   it("waits for the organization's booking lock before writing", async () => {

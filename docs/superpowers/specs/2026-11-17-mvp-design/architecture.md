@@ -40,7 +40,10 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0`
   disables it, and tests use 0). Each run writes one `appointment.hold_release`
   audit row per organization that had holds released (`actorType "SYSTEM"`,
-  `after: { released: n }`). Plan 05 moves it to the BullMQ `maintenance` queue.
+  `after: { released: n }`); booking writes that release expired holds write the
+  same row (`releaseExpiredHoldsAudited`). An organization whose sweep fails is
+  logged and skipped; the others still run. Plan 05 moves it to the BullMQ
+  `maintenance` queue.
 - Booking writes **(call, plan 04)**: each booking write transaction takes the
   organization's booking lock first (`lockOrgBookings`, a transaction-scoped
   Postgres advisory lock), so writes of one organization are serialized and a

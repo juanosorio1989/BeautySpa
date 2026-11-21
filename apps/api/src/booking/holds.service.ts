@@ -8,7 +8,12 @@ import { RateLimitService } from "../rate-limit/rate-limit.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { TenancyService } from "../tenancy/tenancy.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentDto } from "./appointment-mapping.js";
-import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
+import {
+  AppointmentWriter,
+  BOOKING_TX_OPTIONS,
+  lockOrgBookings,
+  releaseExpiredHoldsAudited,
+} from "./appointment-writer.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { toEngineSegments } from "./plan-mapping.js";
 
@@ -42,7 +47,7 @@ export class HoldsService {
       await lockOrgBookings(tx, orgId);
       // Read after the lock so `now` never predates the wait.
       const now = this.clock.now();
-      await releaseExpiredHolds(tx, orgId, new Date(now));
+      await releaseExpiredHoldsAudited(tx, this.audit, orgId, new Date(now));
       const earliest = Math.min(...segments.map((s) => s.start));
       const ctx = await this.context.load(tx, orgId, location, {
         mode: "ONLINE",

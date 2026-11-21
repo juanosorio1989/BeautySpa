@@ -20,7 +20,19 @@ export type Hold = z.infer<typeof HoldSchema>;
 export const NotesSchema = z.string().trim().max(500);
 export type Notes = z.infer<typeof NotesSchema>;
 
-export const BookInputSchema = z.object({ holdId: IdSchema, notes: NotesSchema.nullable().default(null) });
+/** Optional free text: trimmed, at most `max` chars, missing or blank (`""` after trim) → `null`. */
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .transform((v) => (v === "" ? null : v))
+    .default(null);
+const OptionalNotesSchema = optionalText(500);
+const OptionalReasonSchema = optionalText(200);
+
+export const BookInputSchema = z.object({ holdId: IdSchema, notes: OptionalNotesSchema });
 export type BookInput = z.infer<typeof BookInputSchema>;
 
 export const AppointmentSegmentSchema = PlannedSegmentSchema.extend({ id: IdSchema });
@@ -64,7 +76,7 @@ export const MyAppointmentsSchema = z.object({
 });
 export type MyAppointments = z.infer<typeof MyAppointmentsSchema>;
 
-export const CancelInputSchema = z.object({ reason: z.string().trim().max(200).nullable().default(null) });
+export const CancelInputSchema = z.object({ reason: OptionalReasonSchema });
 export type CancelInput = z.infer<typeof CancelInputSchema>;
 
 export const RescheduleInputSchema = z.object({ segments: PlanSegmentsSchema });
@@ -77,7 +89,7 @@ export const StaffAppointmentInputSchema = z.object({
   customerId: IdSchema,
   locationId: IdSchema.optional(),
   segments: PlanSegmentsSchema,
-  notes: NotesSchema.nullable().default(null),
+  notes: OptionalNotesSchema,
   override: z.boolean().default(false),
 });
 export type StaffAppointmentInput = z.infer<typeof StaffAppointmentInputSchema>;
@@ -90,7 +102,7 @@ export type StaffAppointmentPatch = z.infer<typeof StaffAppointmentPatchSchema>;
 
 export const StatusChangeSchema = z.object({
   status: z.enum(["CHECKED_IN", "COMPLETED", "NO_SHOW", "CANCELLED"]),
-  reason: z.string().trim().max(200).nullable().default(null),
+  reason: OptionalReasonSchema,
 });
 export type StatusChange = z.infer<typeof StatusChangeSchema>;
 
@@ -98,7 +110,7 @@ export const WalkInInputSchema = z.object({
   customerId: IdSchema.nullable().default(null),
   locationId: IdSchema.optional(),
   services: z.array(ServiceChoiceSchema).min(1).max(4),
-  notes: NotesSchema.nullable().default(null),
+  notes: OptionalNotesSchema,
 });
 export type WalkInInput = z.infer<typeof WalkInInputSchema>;
 

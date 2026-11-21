@@ -3,6 +3,7 @@ import type { AccessClaims, Appointment, BookInput } from "@beautyspa/contracts"
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { conflict, holdExpired, invalidRef, notFound } from "../common/http-errors.js";
+import { assertLiveCustomer } from "../common/live-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { RateLimitService } from "../rate-limit/rate-limit.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentDto } from "./appointment-mapping.js";
@@ -34,7 +35,8 @@ export class AppointmentsService {
    * One transaction: org booking lock, then the hold row locked `FOR UPDATE` (filtered by the
    * token's org), then the checks in order: unknown → 404; expired (still `HELD` past
    * `holdExpiresAt`, or released by a sweep) → 409 `HOLD_EXPIRED`; any other non-`HELD` → 409
-   * `CONFLICT`; customer without a name → 400 path `name`. The plan is not re-validated: the
+   * `CONFLICT`; caller missing or deleted (a still-valid token after `DELETE /me`) → 401
+   * `UNAUTHORIZED`; customer without a name → 400 path `name`. The plan is not re-validated: the
    * hold's segments already occupy the time. `events.booked` runs after commit.
    */
   async book(principal: AccessClaims, input: BookInput, ip: string | null): Promise<Appointment> {
@@ -56,11 +58,8 @@ export class AppointmentsService {
       if (expiredHeld || released) throw holdExpired();
       if (hold.status !== "HELD") throw conflict("Hold already used");
 
-      const customer = await tx.customer.findFirst({
-        where: { id: principal.sub, organizationId: orgId },
-        select: { name: true },
-      });
-      if (!customer?.name) throw invalidRef("name", "Name is required before booking");
+      const customer = await assertLiveCustomer(tx, principal);
+      if (!customer.name) throw invalidRef("name", "Name is required before booking");
 
       const before = await tx.appointment.findUniqueOrThrow({
         where: { id: input.holdId },

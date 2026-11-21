@@ -3,7 +3,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { ENV, type Env } from "../config/env.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
+import { BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHoldsAudited } from "./appointment-writer.js";
 
 /**
  * Releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (0 disables it). In-process for now
@@ -39,8 +39,9 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
 
   /**
    * One run: per organization with expired holds, takes the org booking lock, releases them and writes one
-   * `appointment.hold_release` audit row (`after: { released }`) in the same transaction.
-   * Returns the total released.
+   * `appointment.hold_release` audit row (`after: { released }`) in the same transaction. An org whose
+   * transaction fails is logged (with stack) and skipped; the others still run. Returns the total released
+   * by the orgs that succeeded.
    */
   async sweep(): Promise<number> {
     const orgs = await this.prisma.appointment.findMany({
@@ -50,28 +51,19 @@ export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdow
     });
     let total = 0;
     for (const { organizationId } of orgs) {
-      total += await this.prisma.$transaction(async (tx) => {
-        await lockOrgBookings(tx, organizationId);
-        // Read after the lock so `now` never predates the wait.
-        const now = new Date(this.clock.now());
-        const released = await releaseExpiredHolds(tx, organizationId, now);
-        if (released > 0) {
-          await this.audit.record(
-            {
-              orgId: organizationId,
-              actorType: "SYSTEM",
-              actorId: null,
-              action: "appointment.hold_release",
-              entity: "appointment",
-              entityId: null,
-              before: null,
-              after: { released },
-            },
-            tx,
-          );
-        }
-        return released;
-      }, BOOKING_TX_OPTIONS);
+      try {
+        total += await this.prisma.$transaction(async (tx) => {
+          await lockOrgBookings(tx, organizationId);
+          // Read after the lock so `now` never predates the wait.
+          const now = new Date(this.clock.now());
+          return releaseExpiredHoldsAudited(tx, this.audit, organizationId, now);
+        }, BOOKING_TX_OPTIONS);
+      } catch (err) {
+        this.logger.error(
+          `Hold sweep failed for organization ${organizationId}: ${(err as Error).message}`,
+          (err as Error).stack,
+        );
+      }
     }
     return total;
   }

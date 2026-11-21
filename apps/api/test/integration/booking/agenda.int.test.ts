@@ -86,6 +86,24 @@ describe("GET /staff/agenda", () => {
     expect(body.appointments[0]!.startsAt < body.appointments[1]!.startsAt).toBe(true);
   });
 
+  it("includes CHECKED_IN, COMPLETED and NO_SHOW appointments", async () => {
+    const statuses = ["CHECKED_IN", "COMPLETED", "NO_SHOW"] as const;
+    const ids: string[] = [];
+    for (const [i, status] of statuses.entries()) {
+      const a = await bookSegment(ctx.prisma, f, {
+        staffUserId: f.staffA,
+        startsAt: `${15 + i}:00`,
+        endsAt: `${16 + i}:00`,
+      });
+      await ctx.prisma.appointment.update({ where: { id: a.id }, data: { status } });
+      ids.push(a.id);
+    }
+    const res = await get(`date=${BOOKING_DATE}`);
+    expect(res.status).toBe(200);
+    const body = res.body as Agenda;
+    expect(body.appointments.map((a) => [a.id, a.status])).toEqual(ids.map((id, i) => [id, statuses[i]]));
+  });
+
   it("includes an appointment at 23:30 local that is after UTC midnight", async () => {
     // 23:30 local = 04:30Z on the next UTC day
     const row = await ctx.prisma.appointment.create({

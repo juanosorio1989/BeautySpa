@@ -8,7 +8,12 @@ import { invalidRef, slotTaken } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentDto, toStaffAppointmentDto } from "./appointment-mapping.js";
-import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
+import {
+  AppointmentWriter,
+  BOOKING_TX_OPTIONS,
+  lockOrgBookings,
+  releaseExpiredHoldsAudited,
+} from "./appointment-writer.js";
 import { BookingContextService, type BookingContext } from "./booking-context.service.js";
 import { BookingEvents, notifyAfterCommit } from "./booking-events.js";
 import { assertActiveCustomer } from "./staff-appointments.service.js";
@@ -45,7 +50,7 @@ export class WalkInService {
       const location = await this.locations.resolve(orgId, input.locationId, tx);
       if (input.customerId !== null) await assertActiveCustomer(tx, orgId, input.customerId);
 
-      await releaseExpiredHolds(tx, orgId, new Date(now));
+      await releaseExpiredHoldsAudited(tx, this.audit, orgId, new Date(now));
       const date = todayIn(location.timezone, now);
       const ctx = await this.context.load(tx, orgId, location, { mode: "STAFF", now, date });
       const slot = this.firstSlotNow(ctx, input, date, now);

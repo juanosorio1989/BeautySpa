@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context, PlannedSegment, PlanRejection } from "@beautyspa/availability";
+import type { AuditService } from "../audit/audit.service.js";
 import { AppointmentWriter } from "./appointment-writer.js";
 import type { BookingContextService } from "./booking-context.service.js";
 
@@ -18,8 +19,8 @@ const segment: PlannedSegment = {
   priceCents: 2500,
 };
 const ctx = {} as Context;
-/** `validateOrThrow` never touches the context loader. */
-const newWriter = () => new AppointmentWriter({} as BookingContextService);
+/** `validateOrThrow` never touches the context loader or the audit service. */
+const newWriter = () => new AppointmentWriter({} as BookingContextService, {} as AuditService);
 
 const thrown = (reason: PlanRejection): unknown => {
   validatePlan.mockReturnValueOnce({ ok: false, reason });

@@ -89,7 +89,7 @@ export class MyAppointmentsService {
           status: "CANCELLED",
           cancelledAt: new Date(now),
           cancelledBy: "CUSTOMER",
-          cancelReason: input.reason ? input.reason : null,
+          cancelReason: input.reason,
           manageVersion: { increment: 1 },
         },
         include: APPOINTMENT_INCLUDE,

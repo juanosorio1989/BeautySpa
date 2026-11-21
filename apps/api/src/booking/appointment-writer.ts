@@ -8,6 +8,7 @@ import {
   type PlanRejection,
 } from "@beautyspa/availability";
 import { utcToWall } from "@beautyspa/datetime";
+import { AuditService } from "../audit/audit.service.js";
 import { isDeadlock, isExclusionViolation } from "../common/db-errors.js";
 import { invalidRef, slotTaken } from "../common/http-errors.js";
 import { BookingContextService, type BookingContext } from "./booking-context.service.js";
@@ -59,6 +60,36 @@ export async function releaseExpiredHolds(
   return released.length;
 }
 
+/**
+ * `releaseExpiredHolds` for one organization plus, when it released any, one
+ * `appointment.hold_release` audit row in the same transaction (`SYSTEM`, no entity id,
+ * `after: { released }`). Every booking write and the sweeper release through this.
+ */
+export async function releaseExpiredHoldsAudited(
+  tx: Prisma.TransactionClient,
+  audit: AuditService,
+  orgId: string,
+  now: Date,
+): Promise<number> {
+  const released = await releaseExpiredHolds(tx, orgId, now);
+  if (released > 0) {
+    await audit.record(
+      {
+        orgId,
+        actorType: "SYSTEM",
+        actorId: null,
+        action: "appointment.hold_release",
+        entity: "appointment",
+        entityId: null,
+        before: null,
+        after: { released },
+      },
+      tx,
+    );
+  }
+  return released;
+}
+
 /** Rejections the client fixes by refreshing slots (409); the rest mean a bad plan (400). Design call 5. */
 const TAKEN: ReadonlySet<PlanRejection> = new Set(["EMPLOYEE_UNAVAILABLE", "RESOURCE_UNAVAILABLE", "TOO_SOON"]);
 
@@ -75,7 +106,10 @@ export interface ReplacePlanTarget {
 /** Re-validates a plan inside the write transaction and writes its segments. */
 @Injectable()
 export class AppointmentWriter {
-  constructor(private readonly context: BookingContextService) {}
+  constructor(
+    private readonly context: BookingContextService,
+    private readonly audit: AuditService,
+  ) {}
 
   /** Throws 409 `SLOT_TAKEN` or 400 `VALIDATION_FAILED` (path `segments`) unless the plan is valid in `ctx`. */
   validateOrThrow(ctx: Context, segments: PlannedSegment[]): void {
@@ -131,8 +165,9 @@ export class AppointmentWriter {
 
   /**
    * Swaps an existing appointment's plan inside the caller's write transaction (org booking
-   * lock already held): releases the org's expired holds, loads the context for the day of the
-   * earliest new segment with the appointment's own segments excluded, validates the new plan
+   * lock already held): releases the org's expired holds (audited) as of `now`, loads the
+   * context for the day of the earliest new segment with the appointment's own segments
+   * excluded, validates the new plan
    * (409 `SLOT_TAKEN` / 400 `VALIDATION_FAILED`) and replaces the segments (design call 6).
    * Used by customer reschedule and staff move; returns the context it validated against.
    */
@@ -142,7 +177,7 @@ export class AppointmentWriter {
     segments: PlannedSegment[],
   ): Promise<BookingContext> {
     const { orgId, location, appointmentId, mode, now, override } = target;
-    await releaseExpiredHolds(tx, orgId, new Date(now));
+    await releaseExpiredHoldsAudited(tx, this.audit, orgId, new Date(now));
     const earliest = Math.min(...segments.map((s) => s.start));
     const ctx = await this.context.load(tx, orgId, location, {
       mode,

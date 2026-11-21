@@ -9,7 +9,7 @@ import type {
   StaffAppointmentPatch,
   StatusChange,
 } from "@beautyspa/contracts";
-import { utcToWall } from "@beautyspa/datetime";
+import { todayIn, utcToWall } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { conflict, invalidRef, notFound } from "../common/http-errors.js";
@@ -22,7 +22,12 @@ import {
   toStaffAppointmentDto,
   type AppointmentRow,
 } from "./appointment-mapping.js";
-import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
+import {
+  AppointmentWriter,
+  BOOKING_TX_OPTIONS,
+  lockOrgBookings,
+  releaseExpiredHoldsAudited,
+} from "./appointment-writer.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { BookingEvents, notifyAfterCommit } from "./booking-events.js";
 import { toEngineSegments } from "./plan-mapping.js";
@@ -41,6 +46,8 @@ const EMPLOYEE_STATUSES: ReadonlySet<StatusChange["status"]> = new Set(["CHECKED
 /** Statuses that free the appointment's time (segments stop occupying). */
 const RELEASING: ReadonlySet<StatusChange["status"]> = new Set(["CANCELLED", "NO_SHOW"]);
 const MOVABLE: ReadonlySet<AppointmentStatus> = new Set(["BOOKED", "CHECKED_IN"]);
+/** Statuses that need the appointment's local day to have come (R13). */
+const SAME_DAY_OR_LATER: ReadonlySet<StatusChange["status"]> = new Set(["CHECKED_IN", "COMPLETED"]);
 
 /** Throws 400 on `customerId` unless it is a customer of the organization that is not deleted. */
 export async function assertActiveCustomer(
@@ -92,7 +99,7 @@ export class StaffAppointmentsService {
       const location = await this.locations.resolve(orgId, input.locationId, tx);
       await assertActiveCustomer(tx, orgId, input.customerId);
 
-      await releaseExpiredHolds(tx, orgId, new Date(now));
+      await releaseExpiredHoldsAudited(tx, this.audit, orgId, new Date(now));
       const earliest = Math.min(...segments.map((s) => s.start));
       const ctx = await this.context.load(tx, orgId, location, {
         mode: "STAFF",
@@ -129,8 +136,9 @@ export class StaffAppointmentsService {
    * One transaction (org booking lock first): the appointment (locked `FOR UPDATE`, else 404)
    * must be `BOOKED` or `CHECKED_IN` (else 409 `CONFLICT`). Expired holds released, the new
    * plan validated in `STAFF` mode (with `override` when asked; services may change, R5) with
-   * its own segments excluded, old segments deleted and the new ones inserted (design call 6),
-   * `manage_version` incremented. Audit `appointment.move`; `events.changed` after commit.
+   * its own segments excluded (an appointment that has started is validated as of its start,
+   * so it may keep that start: R9), old segments deleted and the new ones inserted (design
+   * call 6), `manage_version` incremented. Audit `appointment.move`; `events.changed` after commit.
    */
   async move(
     principal: AccessClaims,
@@ -151,9 +159,18 @@ export class StaffAppointmentsService {
         select: { id: true, organizationId: true, timezone: true },
       });
 
+      // In progress (R9): validate as of its own start, so the plan may keep that start (in
+      // STAFF mode `now` only sets the earliest allowed start). Holds expired by the real `now`
+      // are released first, so validating at the earlier instant never sees them as busy.
+      const start = startOf(row);
+      let planNow = now;
+      if (start <= now) {
+        await releaseExpiredHoldsAudited(tx, this.audit, orgId, new Date(now));
+        planNow = start;
+      }
       await this.writer.replacePlan(
         tx,
-        { orgId, location, appointmentId: id, mode: "STAFF", now, override: patch.override },
+        { orgId, location, appointmentId: id, mode: "STAFF", now: planNow, override: patch.override },
         segments,
       );
 
@@ -182,8 +199,9 @@ export class StaffAppointmentsService {
    * One transaction (org booking lock first): the appointment locked `FOR UPDATE` (else 404).
    * EMPLOYEE: only appointments with a segment of theirs and only `CHECKED_IN`/`COMPLETED`, else
    * 403. Then design call 7: the transition must be allowed (else 409 `CONFLICT`), `NO_SHOW`
-   * only once `now >= startsAt`. `CANCELLED` records `cancelledBy STAFF`, the reason and
-   * increments `manage_version` (no cancel window for staff); `CANCELLED` and `NO_SHOW` stop the
+   * only once `now >= startsAt`; `CHECKED_IN`/`COMPLETED` only once the appointment's local day
+   * (location timezone) has come, else 409 "Too early to check in" (R13). `CANCELLED` records
+   * `cancelledBy STAFF`, the reason and increments `manage_version` (no cancel window for staff); `CANCELLED` and `NO_SHOW` stop the
    * segments occupying time. Audit `appointment.status`; `events.cancelled` only for `CANCELLED`.
    */
   async changeStatus(
@@ -211,6 +229,15 @@ export class StaffAppointmentsService {
       if (input.status === "NO_SHOW" && now < startOf(row)) {
         throw conflict("No-show only after the appointment starts");
       }
+      if (SAME_DAY_OR_LATER.has(input.status)) {
+        const { timezone } = await tx.location.findFirstOrThrow({
+          where: { id: row.locationId, organizationId: orgId },
+          select: { timezone: true },
+        });
+        if (utcToWall(startOf(row), timezone).date > todayIn(timezone, now)) {
+          throw conflict("Too early to check in");
+        }
+      }
 
       if (RELEASING.has(input.status)) {
         await tx.appointmentSegment.updateMany({
@@ -226,7 +253,7 @@ export class StaffAppointmentsService {
                 status: "CANCELLED",
                 cancelledAt: new Date(now),
                 cancelledBy: "STAFF",
-                cancelReason: input.reason ? input.reason : null,
+                cancelReason: input.reason,
                 manageVersion: { increment: 1 },
               }
             : { status: input.status },

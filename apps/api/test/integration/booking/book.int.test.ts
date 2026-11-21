@@ -175,6 +175,19 @@ describe("POST /appointments and GET /me/appointments", () => {
       expect(events.booked).not.toHaveBeenCalled();
     });
 
+    it("answers 401 to a deleted customer's still-valid token and leaves the hold untouched", async () => {
+      const { holdId } = await holdFirstPediSlot();
+      const deleted = await http().delete("/v1/me").set("Authorization", `Bearer ${token}`);
+      expect(deleted.status).toBe(204);
+      const res = await book({ holdId });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe("UNAUTHORIZED");
+      const row = await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: holdId } });
+      expect(row.status).toBe("HELD");
+      expect(row.customerId).toBeNull();
+      expect(events.booked).not.toHaveBeenCalled();
+    });
+
     it("still answers 201 when the booked event fails", async () => {
       events.booked.mockRejectedValue(new Error("notifier down"));
       const logged = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);

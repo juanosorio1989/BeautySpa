@@ -99,7 +99,9 @@ ALTER TABLE appointment_segment
   it) first releases all expired holds of the organization
   (`releaseExpiredHolds`: `CANCELLED`, `cancelled_by SYSTEM`, `cancel_reason
   "HOLD_EXPIRED"`, `hold_expires_at` kept, segments `occupies = false`), then
-  inserts; the hold sweeper releases the rest (see architecture.md).
+  inserts; the hold sweeper releases the rest (see architecture.md). Whoever
+  releases (a write or the sweeper) records one `appointment.hold_release` audit
+  row (`SYSTEM`, `after: { released: n }`) when `n > 0`.
 - Org booking lock **(call, plan 04)**: every booking write transaction first
   takes `lockOrgBookings` (`pg_advisory_xact_lock(hashtextextended('booking:' ||
   org_id, 0))`, held until commit or rollback), then releases expired holds,

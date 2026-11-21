@@ -312,9 +312,53 @@ describe("staff appointments: create, move, status", () => {
     });
   });
 
+  describe("PATCH /staff/appointments/:id of an appointment in progress", () => {
+    /** Walk-in at 10:07 local (starts 10:00 with staffA), then the clock moves to 10:20. */
+    const inProgressWalkIn = async () => {
+      clock.set(local("10:07"));
+      const res = await authed(http().post("/v1/staff/walk-in"), reception.token).send({
+        customerId: f.customerId,
+        services: [{ serviceId: f.pediId, employeeId: f.staffA }],
+      });
+      expect(res.status).toBe(201);
+      const body = res.body as StaffAppointment;
+      expect(body.startsAt).toBe(iso(local("10:00")));
+      clock.set(local("10:20"));
+      return body;
+    };
+
+    it("keeps the 10:00 start while handing it to the other employee", async () => {
+      const walkIn = await inProgressWalkIn();
+      const res = await move(walkIn.id, {
+        segments: [pedi(local("10:00"), f.staffB, walkIn.segments[0]!.resourceId!)],
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: "CHECKED_IN", startsAt: iso(local("10:00")) });
+      expect((res.body as StaffAppointment).segments[0]!.employeeId).toBe(f.staffB);
+    });
+
+    it("adds a second service after the first one", async () => {
+      const walkIn = await inProgressWalkIn();
+      const first = pedi(local("10:00"), f.staffA, walkIn.segments[0]!.resourceId!);
+      const res = await move(walkIn.id, { segments: [first, mani(local("11:00"))] });
+      expect(res.status).toBe(200);
+      expect((res.body as StaffAppointment).segments).toHaveLength(2);
+    });
+
+    it("still refuses moving an in-progress appointment to start earlier than it did", async () => {
+      const walkIn = await inProgressWalkIn();
+      const res = await move(walkIn.id, {
+        segments: [pedi(local("09:45"), f.staffB, walkIn.segments[0]!.resourceId!)],
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("SLOT_TAKEN");
+    });
+  });
+
   describe("POST /staff/appointments/:id/status", () => {
     it("goes BOOKED -> CHECKED_IN -> COMPLETED and then refuses CANCELLED", async () => {
       const { id } = await seedPedi();
+      clock.set(local("09:50"));
       const checkedIn = await setStatus(id, { status: "CHECKED_IN" });
       expect(checkedIn.status).toBe(200);
       expect((checkedIn.body as StaffAppointment).status).toBe("CHECKED_IN");
@@ -384,6 +428,7 @@ describe("staff appointments: create, move, status", () => {
 
     it("lets an EMPLOYEE check in their own appointment only, and never cancel", async () => {
       const own = await seedPedi(f.staffA);
+      clock.set(local("09:50"));
       const others = await bookSegment(ctx.prisma, f, {
         staffUserId: f.staffB,
         startsAt: "15:00",
@@ -397,6 +442,25 @@ describe("staff appointments: create, move, status", () => {
       expect((await setStatus(others.id, { status: "CHECKED_IN" }, token)).status).toBe(403);
       expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: others.id } })).status).toBe("BOOKED");
       expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: own.id } })).status).toBe("CHECKED_IN");
+    });
+
+    it("refuses CHECKED_IN and COMPLETED on a later local day with 409", async () => {
+      const { id } = await seedPedi();
+      clock.set(local("10:00") - 24 * HOUR);
+      const checkIn = await setStatus(id, { status: "CHECKED_IN" });
+      expect(checkIn.status).toBe(409);
+      expect(checkIn.body).toMatchObject({ code: "CONFLICT", detail: "Too early to check in" });
+      expect((await setStatus(id, { status: "COMPLETED" })).status).toBe(409);
+      expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id } })).status).toBe("BOOKED");
+      expect(await auditsOf("appointment.status")).toHaveLength(0);
+    });
+
+    it("checks in on the same local day before the start", async () => {
+      const { id } = await seedPedi();
+      clock.set(local("00:00"));
+      const res = await setStatus(id, { status: "CHECKED_IN" });
+      expect(res.status).toBe(200);
+      expect((res.body as StaffAppointment).status).toBe("CHECKED_IN");
     });
 
     it("answers 404 for an unknown appointment id", async () => {
@@ -418,6 +482,7 @@ describe("staff appointments: create, move, status", () => {
 
     it("completes a BOOKED appointment directly", async () => {
       const { id } = await seedPedi();
+      clock.set(local("11:00"));
       const res = await setStatus(id, { status: "COMPLETED" });
       expect(res.status).toBe(200);
       expect((res.body as StaffAppointment).status).toBe("COMPLETED");
