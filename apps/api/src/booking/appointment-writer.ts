@@ -1,8 +1,16 @@
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
-import { validatePlan, type Context, type PlannedSegment, type PlanRejection } from "@beautyspa/availability";
+import {
+  validatePlan,
+  type Context,
+  type Mode,
+  type PlannedSegment,
+  type PlanRejection,
+} from "@beautyspa/availability";
+import { utcToWall } from "@beautyspa/datetime";
 import { isDeadlock, isExclusionViolation } from "../common/db-errors.js";
 import { invalidRef, slotTaken } from "../common/http-errors.js";
+import { BookingContextService, type BookingContext } from "./booking-context.service.js";
 import { choicesOf } from "./plan-mapping.js";
 
 /**
@@ -54,9 +62,21 @@ export async function releaseExpiredHolds(
 /** Rejections the client fixes by refreshing slots (409); the rest mean a bad plan (400). Design call 5. */
 const TAKEN: ReadonlySet<PlanRejection> = new Set(["EMPLOYEE_UNAVAILABLE", "RESOURCE_UNAVAILABLE", "TOO_SOON"]);
 
+/** What `replacePlan` needs to know about the appointment whose plan changes. */
+export interface ReplacePlanTarget {
+  orgId: string;
+  location: { id: string; organizationId: string; timezone: string };
+  appointmentId: string;
+  mode: Mode;
+  now: number;
+  override?: boolean;
+}
+
 /** Re-validates a plan inside the write transaction and writes its segments. */
 @Injectable()
 export class AppointmentWriter {
+  constructor(private readonly context: BookingContextService) {}
+
   /** Throws 409 `SLOT_TAKEN` or 400 `VALIDATION_FAILED` (path `segments`) unless the plan is valid in `ctx`. */
   validateOrThrow(ctx: Context, segments: PlannedSegment[]): void {
     const result = validatePlan(ctx, choicesOf(segments), segments);
@@ -107,5 +127,32 @@ export class AppointmentWriter {
   ): Promise<void> {
     await tx.appointmentSegment.deleteMany({ where: { appointmentId: appt.id, organizationId: appt.organizationId } });
     await this.insertSegments(tx, appt, segments);
+  }
+
+  /**
+   * Swaps an existing appointment's plan inside the caller's write transaction (org booking
+   * lock already held): releases the org's expired holds, loads the context for the day of the
+   * earliest new segment with the appointment's own segments excluded, validates the new plan
+   * (409 `SLOT_TAKEN` / 400 `VALIDATION_FAILED`) and replaces the segments (design call 6).
+   * Used by customer reschedule and staff move; returns the context it validated against.
+   */
+  async replacePlan(
+    tx: Prisma.TransactionClient,
+    target: ReplacePlanTarget,
+    segments: PlannedSegment[],
+  ): Promise<BookingContext> {
+    const { orgId, location, appointmentId, mode, now, override } = target;
+    await releaseExpiredHolds(tx, orgId, new Date(now));
+    const earliest = Math.min(...segments.map((s) => s.start));
+    const ctx = await this.context.load(tx, orgId, location, {
+      mode,
+      now,
+      date: utcToWall(earliest, location.timezone).date,
+      excludeAppointmentId: appointmentId,
+      ...(override !== undefined ? { override } : {}),
+    });
+    this.validateOrThrow(ctx, segments);
+    await this.replaceSegments(tx, { id: appointmentId, organizationId: location.organizationId }, segments);
+    return ctx;
   }
 }

@@ -95,7 +95,8 @@ ALTER TABLE appointment_segment
   appointment. The audit row keeps the old plan in `before`. Status changes
   still use `occupies = false`.
 - Expired holds still occupy until released (reads already ignore them). Every
-  booking write transaction first releases all expired holds of the organization
+  booking write that claims time (not status changes or cancels, which only free
+  it) first releases all expired holds of the organization
   (`releaseExpiredHolds`: `CANCELLED`, `cancelled_by SYSTEM`, `cancel_reason
   "HOLD_EXPIRED"`, `hold_expires_at` kept, segments `occupies = false`), then
   inserts; the hold sweeper releases the rest (see architecture.md).

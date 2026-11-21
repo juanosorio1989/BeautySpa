@@ -9,6 +9,10 @@ export const APPOINTMENT_INCLUDE = {
 
 export type AppointmentRow = Prisma.AppointmentGetPayload<{ include: typeof APPOINTMENT_INCLUDE }>;
 
+/** Earliest segment start (epoch ms) of an appointment, as in the DTO's `startsAt`. */
+export const startOf = (row: Pick<AppointmentRow, "segments">): number =>
+  Math.min(...row.segments.map((s) => s.startsAt.getTime()));
+
 const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d ? d.toISOString() : null);
 

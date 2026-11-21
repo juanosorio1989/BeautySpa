@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context, PlannedSegment, PlanRejection } from "@beautyspa/availability";
 import { AppointmentWriter } from "./appointment-writer.js";
+import type { BookingContextService } from "./booking-context.service.js";
 
 const { validatePlan } = vi.hoisted(() => ({ validatePlan: vi.fn() }));
 vi.mock("@beautyspa/availability", () => ({ validatePlan }));
@@ -17,11 +18,13 @@ const segment: PlannedSegment = {
   priceCents: 2500,
 };
 const ctx = {} as Context;
+/** `validateOrThrow` never touches the context loader. */
+const newWriter = () => new AppointmentWriter({} as BookingContextService);
 
 const thrown = (reason: PlanRejection): unknown => {
   validatePlan.mockReturnValueOnce({ ok: false, reason });
   try {
-    new AppointmentWriter().validateOrThrow(ctx, [segment]);
+    newWriter().validateOrThrow(ctx, [segment]);
   } catch (err) {
     return err;
   }
@@ -33,7 +36,7 @@ describe("AppointmentWriter.validateOrThrow", () => {
 
   it("passes the concrete choices and segments to validatePlan and returns on success", () => {
     validatePlan.mockReturnValueOnce({ ok: true });
-    expect(() => new AppointmentWriter().validateOrThrow(ctx, [segment])).not.toThrow();
+    expect(() => newWriter().validateOrThrow(ctx, [segment])).not.toThrow();
     expect(validatePlan).toHaveBeenCalledWith(
       ctx,
       [{ serviceId: segment.serviceId, employeeId: segment.employeeId }],

@@ -106,6 +106,11 @@ employee, shown before confirming.
 segments inside a transaction, then inserts. The exclusion constraints are the
 final guard for races.
 
+Expired holds: reads ignore them; every write that claims time (hold, staff
+booking, walk-in, reschedule, move) first releases the organization's expired
+holds. Status changes and cancels do not release them, because they only free
+time and never claim it (ruling R6).
+
 ## Required tests (table-driven, Vitest)
 
 - Single service, single employee, with and without buffer.

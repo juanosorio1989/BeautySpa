@@ -17,6 +17,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import {
   APPOINTMENT_INCLUDE,
+  startOf,
   toAppointmentDto,
   toStaffAppointmentDto,
   type AppointmentRow,
@@ -40,8 +41,6 @@ const EMPLOYEE_STATUSES: ReadonlySet<StatusChange["status"]> = new Set(["CHECKED
 /** Statuses that free the appointment's time (segments stop occupying). */
 const RELEASING: ReadonlySet<StatusChange["status"]> = new Set(["CANCELLED", "NO_SHOW"]);
 const MOVABLE: ReadonlySet<AppointmentStatus> = new Set(["BOOKED", "CHECKED_IN"]);
-
-const startOf = (row: AppointmentRow) => Math.min(...row.segments.map((s) => s.startsAt.getTime()));
 
 /** Throws 400 on `customerId` unless it is a customer of the organization that is not deleted. */
 export async function assertActiveCustomer(
@@ -152,17 +151,11 @@ export class StaffAppointmentsService {
         select: { id: true, organizationId: true, timezone: true },
       });
 
-      await releaseExpiredHolds(tx, orgId, new Date(now));
-      const earliest = Math.min(...segments.map((s) => s.start));
-      const ctx = await this.context.load(tx, orgId, location, {
-        mode: "STAFF",
-        now,
-        date: utcToWall(earliest, location.timezone).date,
-        excludeAppointmentId: id,
-        override: patch.override,
-      });
-      this.writer.validateOrThrow(ctx, segments);
-      await this.writer.replaceSegments(tx, { id, organizationId: location.organizationId }, segments);
+      await this.writer.replacePlan(
+        tx,
+        { orgId, location, appointmentId: id, mode: "STAFF", now, override: patch.override },
+        segments,
+      );
 
       const updated = await tx.appointment.update({
         where: { id, organizationId: orgId },

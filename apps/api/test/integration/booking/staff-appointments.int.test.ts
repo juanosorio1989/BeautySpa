@@ -72,6 +72,47 @@ describe("staff appointments: create, move, status", () => {
     (await ctx.app.get(TokenService).issueAccess({ sub: staffUserId, typ: "staff", org: f.orgId, role: "EMPLOYEE" }))
       .token;
 
+  /** A BOOKED appointment in a second organization (own location, staff and service); returns its id. */
+  const seedOtherOrgAppointment = async () => {
+    const org = await ctx.prisma.organization.create({
+      data: { name: "Other", slug: "other-salon", defaultLocale: "en" },
+    });
+    const location = await ctx.prisma.location.create({
+      data: { organizationId: org.id, name: "Other main", timezone: "America/New_York", settings: {} },
+    });
+    const staff = await ctx.prisma.staffUser.create({
+      data: { organizationId: org.id, email: "x@other.dev", role: "EMPLOYEE", locale: "en" },
+    });
+    const service = await ctx.prisma.service.create({
+      data: { organizationId: org.id, name: { en: "Cut", es: "Corte" }, durationMin: 60, priceCents: 3000 },
+    });
+    const startsAt = new Date(local("10:00"));
+    const endsAt = new Date(local("11:00"));
+    const appt = await ctx.prisma.appointment.create({
+      data: {
+        organizationId: org.id,
+        locationId: location.id,
+        status: "BOOKED",
+        source: "ONLINE",
+        segments: {
+          create: {
+            organizationId: org.id,
+            serviceId: service.id,
+            staffUserId: staff.id,
+            startsAt,
+            endsAt,
+            blockEndsAt: endsAt,
+            durationMin: 60,
+            priceCents: 3000,
+            occupies: true,
+          },
+        },
+      },
+      select: { id: true },
+    });
+    return appt.id;
+  };
+
   const auditsOf = (action: string) => ctx.prisma.auditLog.findMany({ where: { action }, orderBy: { id: "asc" } });
 
   beforeAll(async () => {
@@ -260,6 +301,15 @@ describe("staff appointments: create, move, status", () => {
       const employee = await move(id, { segments: [pedi(local("11:00"))] }, await employeeToken(f.staffA));
       expect(employee.status).toBe(403);
     });
+
+    it("moves a CHECKED_IN appointment", async () => {
+      const { id } = await seedPedi();
+      await ctx.prisma.appointment.update({ where: { id }, data: { status: "CHECKED_IN" } });
+      const res = await move(id, { segments: [pedi(local("10:15"))] });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: "CHECKED_IN", startsAt: iso(local("10:15")) });
+      expect(events.changed).toHaveBeenCalledWith(id);
+    });
   });
 
   describe("POST /staff/appointments/:id/status", () => {
@@ -352,6 +402,67 @@ describe("staff appointments: create, move, status", () => {
     it("answers 404 for an unknown appointment id", async () => {
       const res = await setStatus("00000000-0000-4000-8000-000000000000", { status: "CHECKED_IN" });
       expect(res.status).toBe(404);
+    });
+
+    it("goes CHECKED_IN -> CANCELLED, freeing the time and notifying once", async () => {
+      const { id } = await seedPedi();
+      await ctx.prisma.appointment.update({ where: { id }, data: { status: "CHECKED_IN" } });
+      const res = await setStatus(id, { status: "CANCELLED" });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ status: "CANCELLED", cancelledBy: "STAFF", cancelReason: null });
+      const segs = await ctx.prisma.appointmentSegment.findMany({ where: { appointmentId: id } });
+      expect(segs.every((s) => !s.occupies)).toBe(true);
+      expect(events.cancelled).toHaveBeenCalledTimes(1);
+      expect(events.cancelled).toHaveBeenCalledWith(id);
+    });
+
+    it("completes a BOOKED appointment directly", async () => {
+      const { id } = await seedPedi();
+      const res = await setStatus(id, { status: "COMPLETED" });
+      expect(res.status).toBe(200);
+      expect((res.body as StaffAppointment).status).toBe("COMPLETED");
+      const segs = await ctx.prisma.appointmentSegment.findMany({ where: { appointmentId: id } });
+      expect(segs.every((s) => s.occupies)).toBe(true);
+    });
+
+    it("lets an EMPLOYEE complete their own appointment but not mark another's as NO_SHOW", async () => {
+      const own = await seedPedi(f.staffA);
+      const others = await bookSegment(ctx.prisma, f, {
+        staffUserId: f.staffB,
+        startsAt: "15:00",
+        endsAt: "16:00",
+        resourceId: f.resource2,
+      });
+      clock.set(local("10:30"));
+      const token = await employeeToken(f.staffA);
+
+      const completed = await setStatus(own.id, { status: "COMPLETED" }, token);
+      expect(completed.status).toBe(200);
+      expect((completed.body as StaffAppointment).status).toBe("COMPLETED");
+      expect((await setStatus(others.id, { status: "NO_SHOW" }, token)).status).toBe(403);
+      expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: others.id } })).status).toBe("BOOKED");
+    });
+
+    it("answers 404 on PATCH and on status for another organization's appointment and leaves it unchanged", async () => {
+      const otherId = await seedOtherOrgAppointment();
+      const before = await ctx.prisma.appointment.findUniqueOrThrow({
+        where: { id: otherId },
+        include: { segments: true },
+      });
+
+      const moved = await move(otherId, { segments: [pedi(local("11:00"))] });
+      expect(moved.status).toBe(404);
+      const status = await setStatus(otherId, { status: "CANCELLED" });
+      expect(status.status).toBe(404);
+
+      const after = await ctx.prisma.appointment.findUniqueOrThrow({
+        where: { id: otherId },
+        include: { segments: true },
+      });
+      expect(after).toEqual(before);
+      expect(await ctx.prisma.auditLog.count()).toBe(0);
+      expect(events.changed).not.toHaveBeenCalled();
+      expect(events.cancelled).not.toHaveBeenCalled();
     });
   });
 });

@@ -8,15 +8,13 @@ import type {
   Repeat,
   RescheduleInput,
 } from "@beautyspa/contracts";
-import { utcToWall } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { conflict, invalidRef, notFound, outsideCancelWindow } from "../common/http-errors.js";
 import { readLocationSettings } from "../common/location-settings.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { APPOINTMENT_INCLUDE, toAppointmentDto, type AppointmentRow } from "./appointment-mapping.js";
-import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHolds } from "./appointment-writer.js";
-import { BookingContextService } from "./booking-context.service.js";
+import { APPOINTMENT_INCLUDE, startOf, toAppointmentDto, type AppointmentRow } from "./appointment-mapping.js";
+import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings } from "./appointment-writer.js";
 import { BookingEvents, notifyAfterCommit } from "./booking-events.js";
 import { toEngineSegments } from "./plan-mapping.js";
 
@@ -24,7 +22,6 @@ const PAST_LIMIT = 50;
 const UPCOMING_STATUSES = new Set(["BOOKED", "CHECKED_IN"]);
 const HOUR = 3_600_000;
 
-const startOf = (row: AppointmentRow) => Math.min(...row.segments.map((s) => s.startsAt.getTime()));
 const endOf = (row: AppointmentRow) => Math.max(...row.segments.map((s) => s.endsAt.getTime()));
 const sortedServiceIds = (segments: { serviceId: string }[]) => segments.map((s) => s.serviceId).sort();
 
@@ -40,7 +37,6 @@ export class MyAppointmentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly context: BookingContextService,
     private readonly writer: AppointmentWriter,
     private readonly audit: AuditService,
     private readonly events: BookingEvents,
@@ -131,16 +127,7 @@ export class MyAppointmentsService {
         throw invalidRef("segments", "Reschedule cannot change services");
       }
 
-      await releaseExpiredHolds(tx, orgId, new Date(now));
-      const earliest = Math.min(...segments.map((s) => s.start));
-      const ctx = await this.context.load(tx, orgId, location, {
-        mode: "ONLINE",
-        now,
-        date: utcToWall(earliest, location.timezone).date,
-        excludeAppointmentId: id,
-      });
-      this.writer.validateOrThrow(ctx, segments);
-      await this.writer.replaceSegments(tx, { id, organizationId: location.organizationId }, segments);
+      await this.writer.replacePlan(tx, { orgId, location, appointmentId: id, mode: "ONLINE", now }, segments);
 
       const updated = await tx.appointment.update({
         where: { id, organizationId: orgId },
