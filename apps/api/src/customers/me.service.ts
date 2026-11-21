@@ -17,6 +17,23 @@ const ALL_REVOKED = { WHATSAPP: false, SMS: false, EMAIL: false } as const;
 const unauthorized = () => new UnauthorizedException({ code: "UNAUTHORIZED" });
 
 /**
+ * Sets the `notes` key to JSON null in `before`/`after` of the org's `appointment` audit rows for
+ * `appointmentIds` (only where the key exists; null `before`/`after` stay null). The one documented
+ * exception to audit_log being append-only: free-text notes may hold the customer's personal data.
+ */
+async function scrubAuditNotes(tx: Prisma.TransactionClient, orgId: string, appointmentIds: string[]): Promise<void> {
+  if (appointmentIds.length === 0) return;
+  await tx.$executeRaw`
+    UPDATE audit_log SET
+      before = CASE WHEN before ? 'notes' THEN jsonb_set(before, '{notes}', 'null'::jsonb) ELSE before END,
+      after = CASE WHEN after ? 'notes' THEN jsonb_set(after, '{notes}', 'null'::jsonb) ELSE after END
+    WHERE organization_id = ${orgId}::uuid
+      AND entity = 'appointment'
+      AND entity_id = ANY(${appointmentIds}::text[])
+      AND (before ? 'notes' OR after ? 'notes')`;
+}
+
+/**
  * The signed-in customer's own profile: read, update, data export and account deletion. Every
  * method answers 401 `UNAUTHORIZED` once the customer is deleted (`deleted_at` set), because the
  * access token stays valid until it expires.
@@ -107,7 +124,7 @@ export class MeService {
 
   /**
    * Deletes the account (design call 11) in one transaction, org booking lock first: every
-   * appointment of the customer loses its notes; future `BOOKED` ones (earliest segment start
+   * appointment of the customer loses its notes (also inside its earlier audit rows); future `BOOKED` ones (earliest segment start
    * after now) become `CANCELLED` by `CUSTOMER` with reason `ACCOUNT_DELETED`, stop occupying time,
    * get `manage_version` + 1 and one `appointment.cancel` audit each; each granted channel gets a
    * `granted:false` consent row (`PROFILE`); name, email and private notes become null, the phone
@@ -125,7 +142,16 @@ export class MeService {
       const customerId = customer.id;
 
       // Notes go first, so the cancel audits below never carry them.
-      await tx.appointment.updateMany({ where: { organizationId: orgId, customerId }, data: { notes: null } });
+      const notesCleared = await tx.appointment.updateManyAndReturn({
+        where: { organizationId: orgId, customerId },
+        data: { notes: null },
+        select: { id: true },
+      });
+      await scrubAuditNotes(
+        tx,
+        orgId,
+        notesCleared.map((a) => a.id),
+      );
 
       const booked = await tx.appointment.findMany({
         where: { organizationId: orgId, customerId, status: "BOOKED" },

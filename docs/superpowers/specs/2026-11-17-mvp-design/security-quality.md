@@ -34,7 +34,10 @@
   first): `name`, `email` and `private_notes_enc` become null, `phone_e164`
   becomes `deleted:<customerId>` (frees the number, so the same phone signs up
   as a new customer), `deleted_at` is set; every appointment of the customer
-  loses its `notes`; future `BOOKED` appointments (earliest segment start after
+  loses its `notes`, and the `notes` key is set to null inside `before`/`after`
+  of the org's earlier `appointment` audit rows for those appointments (the one
+  documented exception to `audit_log` being append-only: free-text notes may
+  hold personal data); future `BOOKED` appointments (earliest segment start after
   now) are cancelled by `CUSTOMER` with reason `ACCOUNT_DELETED`; each granted
   channel gets a `granted:false` consent row (source `PROFILE`); every refresh
   token is revoked. Appointment rows stay attached to the anonymized customer

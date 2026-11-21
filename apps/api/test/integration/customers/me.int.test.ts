@@ -1,12 +1,13 @@
 import { Logger } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CustomerExport, Me } from "@beautyspa/contracts";
+import type { CustomerExport, Me, Slot } from "@beautyspa/contracts";
 import { RefreshTokenService } from "../../../src/auth/refresh-token.service.js";
 import { BookingEvents } from "../../../src/booking/booking-events.js";
 import { CLOCK } from "../../../src/common/clock.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import {
+  BOOKING_DATE,
   BOOKING_NOW,
   bookSegment,
   customerSession,
@@ -310,6 +311,43 @@ describe("/me profile, export and deletion", () => {
       expect(freshMe.status).toBe(200);
       expect((freshMe.body as Me).id).not.toBe(f.customerId);
       expect((freshMe.body as Me).phoneE164).toBe(ANA_PHONE);
+    });
+
+    it("scrubs the appointment notes from earlier audit rows", async () => {
+      const NOTES = "Call me at 305 555 0100, Ana";
+      const slots = await http().get(`/v1/availability?services=${f.pediId}:ANY&date=${BOOKING_DATE}`);
+      const slot = (slots.body as Slot[])[0]!;
+      const hold = await http().post("/v1/holds").send({ segments: slot.segments });
+      expect(hold.status).toBe(201);
+      const booked = await http()
+        .post("/v1/appointments")
+        .set(auth(token))
+        .send({ holdId: hold.body.holdId as string, notes: NOTES });
+      expect(booked.status).toBe(201);
+      const appointmentId = booked.body.id as string;
+      const [createBefore] = await auditRows("appointment.create");
+      expect(JSON.stringify(createBefore?.after)).toContain(NOTES);
+
+      expect((await deleteMe()).status).toBe(204);
+
+      const leaks = await ctx.prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM audit_log
+        WHERE organization_id = ${f.orgId}::uuid
+          AND (coalesce(before::text, '') LIKE '%305 555 0100%' OR coalesce(after::text, '') LIKE '%305 555 0100%')`;
+      expect(Number(leaks[0]!.n)).toBe(0);
+
+      const [createAfter] = await auditRows("appointment.create");
+      expect(createAfter).toMatchObject({
+        id: createBefore!.id,
+        action: "appointment.create",
+        entityId: appointmentId,
+        actorType: "CUSTOMER",
+        before: createBefore!.before,
+        after: { ...(createBefore!.after as Record<string, unknown>), notes: null },
+      });
+      expect((createAfter!.after as { status: string }).status).toBe("BOOKED");
+      const [holdAudit] = await auditRows("appointment.hold");
+      expect(holdAudit?.entityId).toBe(appointmentId);
     });
 
     it("leaves a BOOKED appointment that already started alone", async () => {
