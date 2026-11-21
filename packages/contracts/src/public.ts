@@ -16,6 +16,11 @@ export const PublicLocationSchema = z.object({
   phone: PhoneE164Schema.nullable(),
   timezone: TimezoneSchema,
   hours: z.array(DayHoursSchema),
+  booking: z.object({
+    bookingHorizonDays: z.number().int(),
+    cancelWindowHours: z.number().int(),
+    holdMinutes: z.number().int(),
+  }),
 });
 export type PublicLocation = z.infer<typeof PublicLocationSchema>;
 

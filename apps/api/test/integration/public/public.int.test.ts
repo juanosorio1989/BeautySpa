@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
-import { seedFixture, type Fixture } from "../helpers.js";
+import { seedFixture, staffSession, type Fixture } from "../helpers.js";
 
 describe("public catalog reads", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -161,6 +161,19 @@ describe("public catalog reads", () => {
     expect(res.status).toBe(200);
     expect(res.body.map((l: { name: string }) => l.name)).toEqual(["Aaa", "Main"]);
     expect(res.body[1].hours).toEqual([{ weekday: 1, start: "09:00", end: "24:00" }]);
+  });
+
+  it("exposes booking settings: defaults, then stored values", async () => {
+    const defaults = { bookingHorizonDays: 60, cancelWindowHours: 24, holdMinutes: 5 };
+    expect((await get("/public/locations")).body[0].booking).toEqual(defaults);
+    const owner = await staffSession(ctx.app, ctx.prisma, f, "OWNER");
+    const stored = { bookingHorizonDays: 30, cancelWindowHours: 12, holdMinutes: 7 };
+    const patch = await request(ctx.app.getHttpServer())
+      .patch("/v1/staff/settings")
+      .set("Authorization", `Bearer ${owner.token}`)
+      .send({ settings: stored });
+    expect(patch.status).toBe(200);
+    expect((await get("/public/locations")).body[0].booking).toEqual(stored);
   });
 
   it.each(["/public/services", "/public/employees"])("rejects a non-UUID locationId on %s with 400", async (path) => {
