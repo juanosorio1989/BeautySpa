@@ -1,45 +1,50 @@
 # Handoff
 
-Updated: 2026-11-18 (end of day)
+Updated: 2026-11-21
 
 ## Done
 
-- Plan 01 — foundation and availability engine — merged to `main` via PR #1.
-- Plan 02 — auth — merged to `main` (branch `feat/mvp-02-auth`):
-  - Customer phone OTP (Twilio Verify, WhatsApp → SMS fallback; `console`/`fake` providers for dev/test), US NANP numbers only.
-  - Staff email + password (argon2id) + mandatory TOTP, 10 recovery codes, race-safe lockout.
-  - Invite / password-reset links by email (console or Resend mailer), OWNER invite and reset-2FA endpoints, `create-owner` CLI.
-  - EdDSA access JWT (15 min) + opaque rotating refresh tokens (absolute lifetime per login, family revoked on reuse); web uses cookie `bs_refresh`, native uses body transport.
-  - Fail-closed RBAC guard (undecorated route → 403), Redis fixed-window rate limiter, audit writer, typed env + `secrets:gen`.
-  - `@beautyspa/api-client` with `TokenStore`, single-flight refresh, optional `refreshLock` hook.
-- Plan 03 — catalog, staff, schedules API — merged to `main` (branch `feat/mvp-03-catalog-staff`):
-  - OWNER CRUD for categories, levels, resource types, resources, services with per-level prices; employees (profile, services, locations, invite, deactivate; role/email/access changes revoke refresh tokens and spend pending invite/reset links); working hours (replace per location) and time off; location settings, hours and closures; audit log read.
-  - Public reads `/v1/public/locations|services|employees`; RBAC matrix test over every route; schedule/amount `CHECK` migration; shared helpers (`IdPipe`, `recordStaffAudit`, `assertInstantRange`, wall-time, db-errors, `LocationService`).
-  - Business scope widened: the spa also offers facials, massages and body treatments in a limited number of treatment cabins (a resource type like pedicure chairs). Seed: 5 categories, 20 services, 3 chairs + 2 cabins, 5 employees.
-- Chore — Prettier applied repo-wide (`printWidth` 120, matching existing code; Markdown excluded because table padding hurts readability) and `pnpm format:check` added to CI (PR #4, merged).
-- CI flakiness fixed on the same branch: ESLint ignores tsup's temporary `*.bundled_*.mjs` config (it raced the package build, ENOENT), and the availability P1/P2 perf tests warm up first and allow 1000 ms (GitHub runners took 207-227 ms vs ~20 ms locally).
+- Plan 01 — foundation and availability engine — merged (PR #1).
+- Plan 02 — auth — merged: customer phone OTP (Twilio Verify; `console`/`fake` in dev/test), staff password + TOTP + recovery codes, invites/reset, EdDSA access JWT + rotating refresh tokens, fail-closed RBAC guard, rate limiter, audit writer, `api-client`.
+- Plan 03 — catalog, staff, schedules API — merged: OWNER CRUD for catalog/employees/schedules/settings, public reads, RBAC matrix, seeds (5 categories, 20 services, 3 chairs + 2 cabins, 5 employees).
+- Chore — Prettier repo-wide + `pnpm format:check` in CI (PR #4).
+- Plan 04 — booking API — branch `feat/mvp-04-booking` (see "Next" for merge status):
+  - `GET /availability` (optional auth: staff token → STAFF mode), anonymous holds `POST /holds`, `POST /appointments` (confirm a hold after OTP), `GET /me/appointments`, customer cancel / reschedule / repeat.
+  - Staff: create, move, status changes, walk-in, day agenda, customer search/create with consent records.
+  - Customer `/me` profile, export, account deletion (anonymization; phone freed for a new signup).
+  - Every booking write serializes per org with a Postgres advisory lock, re-validates the plan in the transaction, and keeps the exclusion constraints as the final guard. In-process hold sweeper (`HOLD_SWEEP_INTERVAL_MS`).
+  - `BookingEvents` port (booked/changed/cancelled) is a logging no-op until notifications land.
+  - Execution rulings R1–R16 are listed at the end of `docs/superpowers/plans/2026-11-17-mvp/04-booking.md`.
 - Frontend mockups approved: https://claude.ai/artifact/3zfpH45c9UxwhiMPDWGjNi (base for plans 06/07).
 
 ## Next
 
-1. Plan 04 (booking API) is written: `docs/superpowers/plans/2026-11-17-mvp/04-booking.md`, on branch `feat/mvp-04-booking` (not pushed). Waiting for the owner's review of the plan (routing table and design calls 1-13).
-2. After approval: execute it subagent-driven from Task 1; the ledger goes in `.superpowers/sdd/04-booking/progress.md`.
+1. If plan 04 is not merged yet: push `feat/mvp-04-booking`, open the PR, merge (use `gh api` REST for edit/merge — `gh pr edit/merge` fail on a GraphQL deprecation).
+2. **Plan 06 (web: public site and booking) comes before plan 05** (owner decision 2026-11-21, so there is something to see in the browser first). Write it with brainstorming → writing-plans, from the approved mockups. Use `excludeAppointmentId` for reschedule; booking works without notifications.
+3. Then plan 05 with the reduced scope below, then 07, 08.
+
+## Owner decisions (2026-11-21)
+
+- Plan order: 06 before 05.
+- Plan 05 notification channels: **email (Resend) + `.ics` calendar invite + web push (PWA)**. SMS (Twilio, Sole Proprietor A2P 10DLC) and the WhatsApp Business API wait until the business is incorporated; keep channels pluggable.
+- Design calls are decided by Claude and recorded in the plan/ledger; the owner does not review them one by one.
+
+## Owner to-dos (pending)
+
+- Twilio: the owner has a trial account. Upgrade (card, pay-as-you-go), create a Verify service, and put `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` in the root `.env` (gitignored; never pasted in chat). Not needed before deploy or a real-SMS test; dev stays `OTP_PROVIDER=console`.
+- Before deploy: confirm Twilio Verify works on an individual account without A2P registration; if not, add an email OTP fallback.
+- Decide whether IP addresses count as personal data on account deletion: `audit_log.ip`, `refresh_token.ip` and `user_agent` are kept today.
 
 ## Carried into later plans
 
-- Plan 04 (from plan 03): build the engine `Context` from `readLocationSettings` (in `locations/settings.service.ts` — import `LocationsModule` or move it to `common/`), `dayHoursFromRows`, and `PublicCatalogService.bookableEmployees` / `listedServices`. These apply ONLINE rules only (`bookableOnline`, `onlineBookable`); reception booking needs its own loader. `bookableEmployees.serviceIds` is unfiltered. Public `durationMin` is the base duration; slots must use the assigned employee's level duration. Closures have no range loader (query `location_closure` directly). A time-off row with null location applies to all locations.
-- Plan 06: public employees list can include professionals whose listed `serviceIds` is empty; decide whether to hide them. `PATCH /staff/employees/:id { profile }` replaces the whole profile (send it in full).
-- Plan 07: deactivating an employee leaves their future appointments in place — surface them. `api-client` methods for plan 03 endpoints come with plans 06/07.
-- Before first production deploy: guard so demoting/deactivating an OWNER never leaves zero active OWNERs (lock the org's OWNER rows, re-read the caller's own row, 409 on zero). Access tokens stay valid up to 15 min after revocation.
-- Deferred minors from plan 03 reviews (non-blocking): duplicated range/nonEmpty helpers in contracts; `TimezoneSchema` case; constraint tests pin by name only; `mapUnique` labels any unique violation as email; redundant queries (employee create location count, working-hours PUT, public employees list); a few test-precision gaps (seed weekday skip and snapshot values, audit row asserts).
-- Plan 04: map `00:00` end times to the engine's `"24:00"` (use `dayHoursFromRows`); `customer.name` may be null.
-- Plan 04: map `23P01` to `SLOT_TAKEN` (`pgCode` now lives in `src/common/db-errors.ts`); store `blockEnd` from the validated plan; convert engine epoch-ms to ISO at the API edge. `DELETE /me` anonymization must free `customer.phone_e164` (OTP verify refuses a soft-deleted customer with 401).
-- Plan 06 (web): use `api-client` with `createCookieTokenStore()` and `refreshLock: (fn) => navigator.locks.request("bs-refresh", fn)` so two tabs never refresh at once (a concurrent refresh is treated as token reuse and logs the user out). Decide whether one browser may hold a customer and a staff session at the same time (both use cookie `bs_refresh`). Pages `/[locale]/staff/invite?token=` and `/[locale]/staff/reset?token=`.
-- Before any deploy: set `TRUST_PROXY=1` behind Railway/Fly (never `true`, which is now rejected); `OTP_PROVIDER=twilio`, `EMAIL_PROVIDER=resend`; configure Twilio Geo Permissions / Fraud Guard.
-- Deferred minors from plan 02 reviews (non-blocking): Redis client has no `error` listener; `secrets.ts` ignores `export KEY=` forms; `base32Decode` accepts impossible lengths; `Encryptor` has no AAD and one key id (add a key ring when rotating); forgot-password and login audit timing differences; logout racing a refresh can log a false `auth.refresh_reuse`; `RateLimitService.peek` unused; CLI boot failure prints a stack; a few missing tests (listed in the PR description).
-- Unexplained, seen once locally: `contracts#typecheck` failed inside `pnpm turbo run lint typecheck test build` right after the Prettier run (tsc does not read the tsup temp `.mjs`; maybe a mislabelled lint failure). Also: no availability test fails if the lower-bound prune in `plan.ts` is disabled — add one when touching the engine.
-- Earlier deferred minors: eslint platform rule misses subpath imports; Postgres healthcheck `-h localhost`; mailpit image unpinned; no `engines.node`; `check-drift.sh` compares raw URLs; RFC 7807 titles from enum names.
+- Plan 05: implement `BookingEvents`; move `HoldSweeper` to the BullMQ `maintenance` queue (the worker must keep taking `lockOrgBookings`); manage links using `manage_version`; `notification_log.error` must never echo the phone.
+- Plan 06 (web): `api-client` with `createCookieTokenStore()` and `refreshLock: (fn) => navigator.locks.request("bs-refresh", fn)`; decide whether one browser may hold a customer and a staff session (both use cookie `bs_refresh`); pages `/[locale]/staff/invite?token=` and `/[locale]/staff/reset?token=`; post-booking consent offer via `PATCH /me { consents }`; the public employees list can include professionals with empty `serviceIds` (decide whether to hide them). Appointment `notes`/`cancelReason` are customer-visible (R11).
+- Plan 07: show override and `NO_SHOW` rules; deactivating an employee leaves their future appointments (surface them); staff-only customer notes (`private_notes_enc`) have no endpoint yet; `PATCH /staff/employees/:id { profile }` replaces the whole profile; `api-client` methods for plan 03/04 endpoints.
+- Open: availability by date range (one `date` per call today).
+- Before first production deploy: never leave zero active OWNERs (lock the org's OWNER rows, 409 on zero); access tokens stay valid up to 15 min after revocation; `TRUST_PROXY=1` behind Railway/Fly; `EMAIL_PROVIDER=resend`.
+- Deferred minors from plan 04 reviews (non-blocking): `/me/appointments` loads all rows then slices (no SQL limit); export reads are not one snapshot; `revokedAt`/consent `changedAt` don't come from `Clock`; customer search runs one consent query per result (≤ 20); `ReplacePlanTarget` carries the org id twice; RBAC `tokenFor` matches by literal path; unit-test output has a stack trace from an existing e2e test; test gaps: sweeper timer lifecycle, walk-in where local date ≠ UTC date, 50-row past cap, 20-row search cap, concurrent double-book of one hold, multi-service reschedule reorder.
+- Deferred minors from plans 02–03 (non-blocking): Redis client has no `error` listener; `secrets.ts` ignores `export KEY=`; `base32Decode` accepts impossible lengths; `Encryptor` has no AAD and one key id; forgot-password/login timing differences; logout racing refresh can log a false `auth.refresh_reuse`; `RateLimitService.peek` unused; CLI boot failure prints a stack; duplicated range helpers in contracts; `TimezoneSchema` case; `mapUnique` labels any unique violation as email; redundant queries in plan 03 services; eslint platform rule misses subpath imports; Postgres healthcheck `-h localhost`; mailpit image unpinned; no `engines.node`; `check-drift.sh` compares raw URLs; RFC 7807 titles from enum names; no availability test fails if the lower-bound prune in `plan.ts` is disabled.
 
 ## Open questions
 
-- Owner review of plan 04 design calls, especially: reschedule/move deletes the old segments (spec said `occupies = false`); hold sweeper in-process until plan 05; walk-in window; account-deletion details.
+- IP retention on account deletion (see owner to-dos).

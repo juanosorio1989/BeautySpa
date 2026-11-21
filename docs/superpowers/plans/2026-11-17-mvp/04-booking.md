@@ -408,3 +408,24 @@ Rules:
 
 - Two independent final branch reviews (`reviewer-opus`, fresh context each), fixes, re-review.
 - Push, PR, merge (use `gh api` REST for edit/merge). Mark plan 04 merged in `README.md`; update `docs/handoff.md` (done; carried: plan 05 implements `BookingEvents`, moves `HoldSweeper` to BullMQ `maintenance`, adds manage links using `manage_version`; plan 06 uses `excludeAppointmentId` for reschedule and the post-booking WhatsApp offer via `PATCH /me { consents }`; plan 07 shows override and `NO_SHOW` rules; availability by date range is still open; private customer notes have no endpoint yet).
+
+## Rulings made during execution
+
+Decisions taken while executing (spec docs were updated in the same commits). Each says what it costs if wrong.
+
+- **R1** Hold sweeper audits one `appointment.hold_release` row per org (audit rows need an org). Cost: small sweeper refactor.
+- **R2** `Me`/`StaffCustomer` keep the E.164 phone type; deleted customers never reach those responses. Cost: a response parse error → switch to `z.string()`.
+- **R3** Every booking write transaction first takes a per-org advisory lock (`lockOrgBookings`), reads `now` after it, and uses `BOOKING_TX_OPTIONS`; exclusion constraints (23P01) and deadlocks (40P01) still map to `SLOT_TAKEN`. Per org, not per location, because an employee's busy time spans locations. Cost: serialized writes per org (negligible at one-spa volume).
+- **R4** Audit `before` of a booking confirmed from a hold is the `HELD` appointment; staff create and walk-in use `before: null`. Cost: one line.
+- **R5** Customer reschedule keeps the same services (employees and times may change); staff move may change services. Cost: drop one check.
+- **R6** Status changes and cancels do not release expired holds (they free time, never claim it). Cost: one line per method.
+- **R7 / R7b** Account deletion also nulls free-text `notes` and customer-written `cancelReason` on the customer's appointments and inside their earlier audit rows (system reasons kept) — the one documented exception to `audit_log` being append-only. Cost: drop the scrub.
+- **R8** Every `/me` and `/me/appointments` route answers 401 for a deleted customer. Cost: one read per request.
+- **R9** Staff can move an appointment already in progress while keeping its original start. Cost: one line.
+- **R10** `POST /appointments` answers 401 for a deleted customer.
+- **R11** Appointment `notes` and `cancelReason` are visible to the customer; staff-only remarks belong in customer private notes (endpoint later). Cost: a later `staff_notes` split.
+- **R12** Blank notes and reasons are stored as null.
+- **R13** `CHECKED_IN` / `COMPLETED` only from the appointment's local day on. Cost: drop one check.
+- **R14** Every expired-hold release inside a write records an `appointment.hold_release` audit row.
+- **R15** The sweeper continues with the next org when one org fails.
+- **R16** The R9 clamp also lets staff move a past, never-checked-in appointment to an earlier time (staff-only, audited; useful to reconcile records). Cost: clamp only while the appointment is in progress.
