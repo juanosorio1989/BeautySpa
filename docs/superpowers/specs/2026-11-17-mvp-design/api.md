@@ -61,9 +61,9 @@ obeys the same `cancelWindowHours` as the app; inside the window the page shows
 
 | Method | Path | Roles |
 |---|---|---|
-| GET | `/staff/agenda?date=&locationId=` | all (EMPLOYEE: own only) |
-| GET | `/staff/customers?q=` | OWNER, RECEPTION; EMPLOYEE: only customers with an appointment with them |
-| POST | `/staff/customers` | OWNER, RECEPTION — `{ name, phone, locale, consents }` |
+| GET | `/staff/agenda?date=&locationId=&employeeId=` | all (EMPLOYEE: own only; another `employeeId` is 403) |
+| GET | `/staff/customers?q=` | all; EMPLOYEE: only customers with a non-held appointment with them. `q` 2-80 chars; name match, plus phone match with 4+ digits; 20 max |
+| POST | `/staff/customers` | OWNER, RECEPTION — `{ name, phone, locale, email?, consents }`; 201; duplicate phone 409 `CONFLICT`; audit `customer.create` lists keys only |
 | POST | `/staff/appointments` | OWNER, RECEPTION — `{ customerId, locationId?, segments, notes?, override? }` → 201 `StaffAppointment` (`BOOKED`, source `RECEPTION`, `createdByStaffId` = caller). Skips the hold; validated in STAFF mode (no lead time or horizon); `override: true` also ignores working hours, time off, location hours and closures, never overlaps (409 `SLOT_TAKEN`). `customerId` not an active customer of the org → 400 `VALIDATION_FAILED` path `customerId`. |
 | POST | `/staff/walk-in` | OWNER, RECEPTION — `{ customerId?, locationId?, services, notes? }` → 201 `StaffAppointment` (`CHECKED_IN`, source `WALK_IN`; `customerId` may be null). Takes the first STAFF-mode slot of today (location timezone) starting no later than now rounded down to the slot grid + `slotIntervalMin`; none → 409 `SLOT_TAKEN` (design call 9). |
 | PATCH | `/staff/appointments/:id` | OWNER, RECEPTION — `{ segments, override? }` → `StaffAppointment`. `BOOKED` or `CHECKED_IN` only (else 409 `CONFLICT`); services may change; same validation as staff create with its own segments excluded; no cancel window; old segments replaced, `manage_version` + 1; taken time → 409 `SLOT_TAKEN` with the old time kept. |

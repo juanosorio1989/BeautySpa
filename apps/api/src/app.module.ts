@@ -5,6 +5,7 @@ import { BookingModule } from "./booking/booking.module.js";
 import { CatalogModule } from "./catalog/catalog.module.js";
 import { CommonModule } from "./common/common.module.js";
 import { ConfigModule } from "./config/config.module.js";
+import { CustomersModule } from "./customers/customers.module.js";
 import { HealthModule } from "./health/health.module.js";
 import { LocationsModule } from "./locations/locations.module.js";
 import { MailModule } from "./mail/mail.module.js";
@@ -31,6 +32,7 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
     LocationsModule,
     PublicModule,
     BookingModule,
+    CustomersModule,
     HealthModule,
   ],
 })

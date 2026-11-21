@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuditModule } from "../audit/audit.module.js";
+import { AgendaController } from "./agenda.controller.js";
+import { AgendaService } from "./agenda.service.js";
 import { AppointmentWriter } from "./appointment-writer.js";
 import { AppointmentsController } from "./appointments.controller.js";
 import { AppointmentsService } from "./appointments.service.js";
@@ -24,6 +26,7 @@ import { WalkInService } from "./walk-in.service.js";
     AppointmentsController,
     MyAppointmentsController,
     StaffAppointmentsController,
+    AgendaController,
   ],
   providers: [
     BookingContextService,
@@ -35,6 +38,7 @@ import { WalkInService } from "./walk-in.service.js";
     MyAppointmentsService,
     StaffAppointmentsService,
     WalkInService,
+    AgendaService,
     { provide: BookingEvents, useClass: LoggingBookingEvents },
   ],
   exports: [BookingContextService, AppointmentWriter],
