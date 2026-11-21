@@ -41,6 +41,6 @@ import { WalkInService } from "./walk-in.service.js";
     AgendaService,
     { provide: BookingEvents, useClass: LoggingBookingEvents },
   ],
-  exports: [BookingContextService, AppointmentWriter],
+  exports: [BookingContextService, AppointmentWriter, BookingEvents],
 })
 export class BookingModule {}

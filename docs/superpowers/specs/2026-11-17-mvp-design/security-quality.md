@@ -28,8 +28,24 @@
 
 - Explicit, unticked consent per channel; history kept in
   `notification_consent`; inbound STOP/BAJA revokes WhatsApp/SMS.
-- `GET /me/export` (JSON) and `DELETE /me` (anonymize name/phone/email/notes,
-  keep appointment rows for the salon's records with the customer detached).
+- `GET /me/export` (JSON): the profile, the full consent history (oldest
+  first) and every appointment except holds (earliest first).
+- `DELETE /me` anonymizes the account in one transaction (org booking lock
+  first): `name`, `email` and `private_notes_enc` become null, `phone_e164`
+  becomes `deleted:<customerId>` (frees the number, so the same phone signs up
+  as a new customer), `deleted_at` is set; every appointment of the customer
+  loses its `notes`; future `BOOKED` appointments (earliest segment start after
+  now) are cancelled by `CUSTOMER` with reason `ACCOUNT_DELETED`; each granted
+  channel gets a `granted:false` consent row (source `PROFILE`); every refresh
+  token is revoked. Appointment rows stay attached to the anonymized customer
+  for the salon's records. The access token stays valid until it expires (up
+  to 15 min), but every `/me` route answers 401 for a deleted customer.
+- Customer audit rows hold no personal data: `customer.*` audits store
+  `before: null` and `after: { fields: [changed keys] }` (consents as
+  `consents.<CHANNEL>`), and an update that changes nothing writes no audit
+  row. Appointment audits use the customer-facing shape, which carries no
+  customer name or phone, so a deletion leaves no name, phone or email of the
+  customer in `audit_log`.
 - Sensitive fields encrypted at the application level (see data-model.md).
 - NY SHIELD Act: reasonable safeguards; breach-notification runbook noted in
   docs (phase 2).

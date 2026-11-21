@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { ConsentSource, Prisma } from "@prisma/client";
 import type { Channel, Consents, StaffCustomer } from "@beautyspa/contracts";
 
 const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL"];
@@ -32,7 +32,7 @@ export async function recordConsents(
   orgId: string,
   customerId: string,
   wanted: Partial<Consents>,
-  source: "BOOKING_FORM" | "PROFILE" | "RECEPTION" | "INBOUND_STOP",
+  source: ConsentSource,
 ): Promise<Channel[]> {
   const current = await currentConsents(tx, customerId);
   const changed = CHANNELS.filter((c) => wanted[c] !== undefined && wanted[c] !== current[c]);
