@@ -27,9 +27,9 @@
    appointment is released exactly like an expired hold, through the same
    writer in `appointment-writer.ts` (`CANCELLED`, `cancelledBy SYSTEM`, reason
    `HOLD_EXPIRED`, segments stop occupying), so a later `POST /appointments`
-   with it answers `HOLD_EXPIRED` as today; audited
-   (`appointment.hold_release`, actor `SYSTEM` with `after: { released: 1,
-   by: "customer" }`). Already released or expired → 204 (idempotent);
+   with it answers `HOLD_EXPIRED` as today; audited like the hold itself
+   (`appointment.hold_release`, `actorType "CUSTOMER"`, `actorId null`,
+   `entityId` = hold id, `after: { released: 1 }`). Already released or expired → 204 (idempotent);
    unknown or another org's → 404; booked → 409 `CONFLICT`. Shares the `POST
    /holds` rate limit. Booking write → Opus task.
 
