@@ -10,6 +10,7 @@ export const en = {
     services: "Services",
     team: "Team",
     location: "Location",
+    logout: "Log out",
     myAppointments: "My appointments",
   },
   home: {

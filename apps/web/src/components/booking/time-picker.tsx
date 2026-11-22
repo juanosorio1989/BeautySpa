@@ -20,6 +20,12 @@ import { SlotGrid } from "./slot-grid";
 
 const NEXT_DAY_LIMIT = 14;
 
+/** Pick errors have no field on screen, so a validation error reads as the generic copy. */
+const pickErrorKey = (err: unknown) => {
+  const key = errorMessageKey(err);
+  return key === "errors.VALIDATION_FAILED" ? "errors.generic" : key;
+};
+
 export interface TimePickerProps {
   locale: Locale;
   location: PublicLocation;
@@ -174,7 +180,7 @@ export function TimePicker({
         getBrowserApi(),
         { hold: store.hold, setHold: store.setHold, clearHold: store.clearHold },
         selected,
-        { locationId: location.id, onError: (err) => setPickError(errorMessageKey(err)) },
+        { locationId: location.id, onError: (err) => setPickError(pickErrorKey(err)) },
       );
       if (outcome === "held") {
         store.setDate(active); // clears the slot, so set the slot after
@@ -183,7 +189,7 @@ export function TimePicker({
       } else if (outcome === "taken") taken();
     } catch (err) {
       if (err instanceof ApiError && err.problem.code === "SLOT_TAKEN") taken();
-      else setPickError(errorMessageKey(err));
+      else setPickError(pickErrorKey(err));
     } finally {
       setBusy(false);
     }

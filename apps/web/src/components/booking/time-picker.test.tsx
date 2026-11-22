@@ -37,7 +37,7 @@ const slotA = slot("2026-11-19T16:00:00.000Z", "2026-11-19T16:45:00.000Z", [
   seg(2, 12, "2026-11-19T16:00:00.000Z", "2026-11-19T16:45:00.000Z", 4100),
 ]);
 const slotB = slot("2026-11-19T16:15:00.000Z", "2026-11-19T17:00:00.000Z");
-const apiError = (status: number, code: "SLOT_TAKEN" | "RATE_LIMITED") =>
+const apiError = (status: number, code: "SLOT_TAKEN" | "RATE_LIMITED" | "VALIDATION_FAILED") =>
   new ApiError(status, { type: "about:blank", title: "x", status, code });
 
 const mount = (props: Partial<React.ComponentProps<typeof TimePicker>> = {}) => {
@@ -192,6 +192,15 @@ describe("TimePicker", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^11:00\sAM$/ }));
     fireEvent.click(screen.getByRole("button", { name: "Hold this time" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(en.errors.RATE_LIMITED);
+  });
+
+  it("a pick VALIDATION_FAILED shows the generic copy", async () => {
+    availability.mockResolvedValue([slotA]);
+    createHold.mockRejectedValue(apiError(400, "VALIDATION_FAILED"));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^11:00\sAM$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Hold this time" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(en.errors.generic);
   });
 
   it("shows RATE_LIMITED when availability is throttled", async () => {

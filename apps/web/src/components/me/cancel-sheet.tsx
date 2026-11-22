@@ -23,14 +23,29 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tooLate, setTooLate] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
   const first = useRef<HTMLTextAreaElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  // Native modal: focus trap and inert background. Focus goes to the reason once, and back to the opener on unmount.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const el = dialog.current;
+    el?.showModal();
+    first.current?.focus();
+    return () => {
+      if (el?.open) el.close();
+      opener?.focus();
+    };
+  }, []);
 
   useEffect(() => {
-    first.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    if (tooLate) closeButton.current?.focus();
+  }, [tooLate]);
 
   async function submit() {
     setBusy(true);
@@ -47,21 +62,26 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 sm:items-center">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cancel-title"
-        className="flex w-full max-w-[480px] flex-col gap-3.5 rounded-t-[22px] bg-card p-5 sm:rounded-[22px]"
-      >
+    <dialog
+      ref={dialog}
+      aria-labelledby="cancel-title"
+      onCancel={(e) => {
+        // Escape: ignored while the request runs
+        if (busy) e.preventDefault();
+        else onCloseRef.current();
+      }}
+      className="m-0 mt-auto w-full max-w-none bg-transparent p-0 backdrop:bg-ink/50 sm:m-auto sm:max-w-[480px]"
+    >
+      <div className="flex w-full flex-col gap-3.5 rounded-t-[22px] bg-card p-5 sm:rounded-[22px]">
         <h2 id="cancel-title" className="font-heading text-xl font-semibold">
           {t("title")}
         </h2>
         {tooLate ? (
           <>
-            <CallSalon phone={location.phone} />
+            <CallSalon phone={location.phone} alert />
             <button
               type="button"
+              ref={closeButton}
               onClick={onClose}
               className="min-h-[52px] rounded-[14px] bg-plum text-base font-semibold text-white hover:bg-plum-hover"
             >
@@ -107,6 +127,6 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
           </>
         )}
       </div>
-    </div>
+    </dialog>
   );
 }

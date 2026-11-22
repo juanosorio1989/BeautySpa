@@ -26,7 +26,7 @@ export function DownloadData() {
       document.body.append(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 0); // after the browser has started the download
     } catch (err) {
       setError(errorText(err));
     } finally {

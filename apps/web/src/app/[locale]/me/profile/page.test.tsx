@@ -109,6 +109,51 @@ describe("/me/profile", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/me/profile", { locale: "es" }));
   });
 
+  it("stored es + URL en: pick Spanish sends no locale and switches the URL", async () => {
+    api.me.get.mockResolvedValue(saved({ locale: "es" }));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Spanish" }));
+    expect(screen.getByRole("button", { name: "Spanish" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/me/profile", { locale: "es" }));
+    expect(api.me.patch).not.toHaveBeenCalled();
+  });
+
+  it("editing only the name with stored es on /en sends no locale", async () => {
+    api.me.get.mockResolvedValue(saved({ locale: "es" }));
+    api.me.patch.mockResolvedValue(saved({ locale: "es", name: "Ana" }));
+    mount();
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.me.patch).toHaveBeenCalledWith({ name: "Ana" }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/me/profile", { locale: "es" }));
+  });
+
+  it("clearing the email while consent is on sends consents.EMAIL false", async () => {
+    api.me.get.mockResolvedValue(saved({ consents: { WHATSAPP: false, SMS: false, EMAIL: true } }));
+    api.me.patch.mockResolvedValue(saved({ email: null }));
+    mount();
+    fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(api.me.patch).toHaveBeenCalledWith({ email: null, consents: { EMAIL: false } }));
+  });
+
+  it("a session error shows the network copy and retry loads the profile", async () => {
+    api.auth.refresh.mockRejectedValueOnce(new TypeError("offline"));
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByLabelText("Your name")).toBeInTheDocument();
+  });
+
+  it("delete moves focus to the confirm heading and back to the trigger on keep", async () => {
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete my account" }));
+    expect(screen.getByRole("heading", { name: "Delete your account?" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Keep my account" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Delete my account" })).toHaveFocus());
+  });
+
   it("a name validation error shows localized copy under the field, not the API message", async () => {
     api.me.patch.mockRejectedValue(problem(400, "VALIDATION_FAILED", [{ path: "name", message: "RAW" }]));
     mount();
@@ -144,7 +189,7 @@ describe("/me/profile", () => {
     });
     expect(JSON.parse(text)).toEqual(exported);
     expect(click.mock.contexts[0]).toMatchObject({ download: "beautyspa-my-data.json", href: "blob:test" });
-    expect(revoke).toHaveBeenCalledWith("blob:test");
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith("blob:test"));
     click.mockRestore();
   });
 

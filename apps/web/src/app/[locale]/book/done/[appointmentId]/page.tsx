@@ -2,16 +2,16 @@
 
 import { ApiError } from "@beautyspa/api-client";
 import { useLocale, useTranslations } from "next-intl";
-import { useParams, useRouter as useAppRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { useState } from "react";
 import type { Appointment, Me, PublicEmployee, PublicLocation, PublicService } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
 import { AppointmentSummary } from "@/components/booking/appointment-summary";
+import { LoadError } from "@/components/me/load-error";
 import { EmailOffer } from "@/components/booking/email-offer";
 import { Link } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
-import { useSession } from "@/lib/session/use-session";
-import { useErrorText } from "@/lib/use-error-text";
+import { useAuthedLoad } from "@/lib/session/use-authed-load";
 
 interface Loaded {
   me: Me;
@@ -25,70 +25,30 @@ const linkButton = "flex items-center justify-center rounded-[14px] font-semibol
 
 export default function DonePage() {
   const t = useTranslations("booking.done");
-  const tAll = useTranslations();
   const locale = useLocale() as Locale;
   const { appointmentId } = useParams<{ appointmentId: string }>();
-  const appRouter = useAppRouter();
-  const session = useSession();
-  const errorText = useErrorText();
-  const [data, setData] = useState<Loaded | null>(null);
-  const [failure, setFailure] = useState<{ error: unknown } | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const { data, error, failed, retry } = useAuthedLoad(`/${locale}/book/done/${appointmentId}`, async () => {
+    const api = getBrowserApi();
+    const [me, mine, locations, services, employees] = await Promise.all([
+      api.me.get(),
+      api.me.appointments(),
+      api.public.locations(),
+      api.public.services(),
+      api.public.employees(),
+    ]);
+    const appointment = [...mine.upcoming, ...mine.past].find((a) => a.id === appointmentId);
+    if (!appointment)
+      throw new ApiError(404, { type: "about:blank", title: "Not found", status: 404, code: "NOT_FOUND" });
+    const location = locations.find((l) => l.id === appointment.locationId);
+    if (!location) throw new Error("no location");
+    return { me, appointment, location, services: services.services, employees } satisfies Loaded;
+  });
   const [offerDone, setOfferDone] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const signedIn = await session.ensure();
-      if (cancelled) return;
-      if (!signedIn) {
-        const here = `/${locale}/book/done/${appointmentId}`;
-        appRouter.replace(`/${locale}/login?next=${encodeURIComponent(here)}`);
-        return;
-      }
-      const api = getBrowserApi();
-      const [me, mine, locations, services, employees] = await Promise.all([
-        api.me.get(),
-        api.me.appointments(),
-        api.public.locations(),
-        api.public.services(),
-        api.public.employees(),
-      ]);
-      if (cancelled) return;
-      const appointment = [...mine.upcoming, ...mine.past].find((a) => a.id === appointmentId);
-      const location = locations.find((l) => l.id === appointment?.locationId);
-      if (!appointment)
-        setFailure({
-          error: new ApiError(404, { type: "about:blank", title: "Not found", status: 404, code: "NOT_FOUND" }),
-        });
-      else if (!location) setFailure({ error: new Error("no location") });
-      else setData({ me, appointment, location, services: services.services, employees });
-    })().catch((err: unknown) => {
-      if (!cancelled) setFailure({ error: err });
-    });
-    return () => {
-      cancelled = true;
-    };
-    // `session.ensure` is stable; translations are static for the page lifetime
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attempt, appointmentId, locale]);
-
-  if (failure) {
+  if (failed) {
     return (
       <main className="px-5 pt-12">
-        <div role="alert" className="text-warn">
-          <p>{errorText(failure.error)}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setFailure(null);
-              setAttempt((n) => n + 1);
-            }}
-            className="mt-3 min-h-11 rounded-full border border-plum px-5 font-medium"
-          >
-            {tAll("common.retry")}
-          </button>
-        </div>
+        <LoadError error={error} onRetry={retry} />
       </main>
     );
   }

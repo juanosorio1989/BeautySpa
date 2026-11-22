@@ -145,3 +145,6 @@ Implementation (`app/[locale]/me/`, `components/me/`, `lib/me/window.ts`):
   (`DeletedNotice` on the home page).
 - Validation errors never show API text: the field copy (`errors.field.*`) for fields on screen, else
   `errors.generic` (`useFallbackErrorText`).
+- Profile language starts from the stored `me.locale`; `locale` is patched only when it differs from it, and the URL
+  switches whenever the selection differs from the page locale. The header shows "Log out" (`LogoutButton`) when
+  signed in. The cancel sheet is a native modal `<dialog>`. The Done page also loads through `useAuthedLoad`.

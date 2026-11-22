@@ -27,12 +27,13 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
   const [name, setName] = useState(me.name ?? "");
   const [email, setEmail] = useState(me.email ?? "");
   const [consent, setConsent] = useState(me.consents.EMAIL);
-  const [locale, setLocale] = useState<Locale>(pageLocale);
+  const [locale, setLocale] = useState<Locale>(me.locale);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({});
 
   const trimmedEmail = email.trim();
+  // Consent without an email is not possible: an empty email switches it off (and sends EMAIL false if it was on).
   const emailConsent = consent && trimmedEmail !== "";
 
   async function submit() {
@@ -50,8 +51,10 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
     if (trimmedEmail !== (me.email ?? "")) patch.email = trimmedEmail || null;
     if (emailConsent !== me.consents.EMAIL) patch.consents = { EMAIL: emailConsent };
     if (locale !== me.locale) patch.locale = locale;
+    const switchUrl = locale !== pageLocale;
     if (Object.keys(patch).length === 0) {
-      setStatus({ kind: "unchanged" });
+      if (switchUrl) router.replace(pathname, { locale });
+      else setStatus({ kind: "unchanged" });
       return;
     }
     setBusy(true);
@@ -59,7 +62,7 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
       const updated = await getBrowserApi().me.patch(patch);
       onSaved(updated);
       setStatus({ kind: "saved" });
-      if (patch.locale && patch.locale !== pageLocale) router.replace(pathname, { locale: patch.locale });
+      if (switchUrl) router.replace(pathname, { locale });
     } catch (err) {
       const fields = fieldText(err, ["name", "email"]);
       if (fields.name || fields.email) setFieldErrors(fields);

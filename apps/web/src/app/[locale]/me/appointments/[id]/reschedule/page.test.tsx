@@ -1,5 +1,5 @@
 import { ApiError } from "@beautyspa/api-client";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { en } from "@beautyspa/i18n";
@@ -116,6 +116,33 @@ describe("/me/appointments/:id/reschedule", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm new time" }));
     expect(await screen.findByText(/too late to change this online/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Call/ })).toHaveAttribute("href", "tel:+17185550100");
+  });
+
+  it("choosing another date queries that date", async () => {
+    mount();
+    await screen.findByRole("button", { name: /\d:\d\d/ }, { timeout: 5000 });
+    const dates = api.booking.availability.mock.calls.map((c) => (c[0] as { date: string }).date);
+    const first = dates[0]!;
+    fireEvent.click(within(screen.getByRole("group", { name: "Date" })).getAllByRole("button", { pressed: false })[0]!);
+    await waitFor(() =>
+      expect(api.booking.availability.mock.calls.some((c) => (c[0] as { date: string }).date !== first)).toBe(true),
+    );
+  });
+
+  it("a session error shows the network copy and retry loads the page", async () => {
+    api.auth.refresh.mockRejectedValueOnce(new TypeError("offline"));
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: /\d:\d\d/ }, { timeout: 5000 })).toBeInTheDocument();
+  });
+
+  it("a validation error on confirm shows the generic copy", async () => {
+    api.me.reschedule.mockRejectedValue(problem(400, "VALIDATION_FAILED"));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /\d:\d\d/ }, { timeout: 5000 }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm new time" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong. Please try again.");
   });
 
   it("shows not found when the appointment is not upcoming for this customer", async () => {

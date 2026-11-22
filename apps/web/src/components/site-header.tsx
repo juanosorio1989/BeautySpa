@@ -1,6 +1,7 @@
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { LocaleSwitch } from "./locale-switch";
+import { LogoutButton } from "./logout-button";
 
 const NAV = [
   { href: "/services", key: "services" },
@@ -27,6 +28,7 @@ export function SiteHeader({ locationName }: { locationName: string }) {
             {t(key)}
           </Link>
         ))}
+        <LogoutButton />
       </nav>
     </header>
   );

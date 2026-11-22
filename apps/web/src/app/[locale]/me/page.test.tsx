@@ -92,7 +92,42 @@ describe("/me", () => {
     );
     expect(within(closed!).queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     expect(within(closed!).queryByRole("link", { name: "Change time" })).not.toBeInTheDocument();
-    expect(within(closed!).getByRole("link", { name: /Call/ })).toHaveAttribute("href", "tel:+17185550100");
+    expect(within(closed!).getByRole("link", { name: "Call (718) 555-0100" })).toHaveAttribute(
+      "href",
+      "tel:+17185550100",
+    );
+    // the actions are described by their card's date
+    expect(within(open!).getByRole("button", { name: "Cancel" })).toHaveAccessibleDescription(/2026|Nov|Dec/);
+  });
+
+  it("the cancel sheet is a modal dialog; Escape is ignored while cancelling and the too-late message is announced", async () => {
+    let reject!: (e: unknown) => void;
+    api.me.cancel.mockReturnValue(new Promise((_, r) => (reject = r)));
+    mount();
+    const opener = await screen.findByRole("button", { name: "Cancel" });
+    opener.focus(); // a real click focuses the button
+    fireEvent.click(opener);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.tagName).toBe("DIALOG");
+    expect(screen.getByLabelText("Reason (optional)")).toHaveFocus();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel appointment" }));
+    const busyEscape = new Event("cancel", { cancelable: true });
+    dialog.dispatchEvent(busyEscape);
+    expect(busyEscape.defaultPrevented).toBe(true);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    reject(problem(409, "OUTSIDE_CANCEL_WINDOW"));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/too late to change this online/);
+    expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(opener).toHaveFocus();
+  });
+
+  it("Escape closes an idle cancel sheet", async () => {
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    screen.getByRole("dialog").dispatchEvent(new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("OUTSIDE_CANCEL_WINDOW shows the call-the-salon message with a tel: link", async () => {

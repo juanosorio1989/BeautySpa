@@ -3,6 +3,7 @@ import type { Appointment, PublicEmployee, PublicLocation, PublicService } from 
 import type { Locale } from "@beautyspa/i18n";
 import { AppointmentSummary } from "@/components/booking/appointment-summary";
 import { Link } from "@/i18n/navigation";
+import { formatDate, formatTimeRange } from "@/lib/format";
 import { canChangeOnline } from "@/lib/me/window";
 import { CallSalon } from "./call-salon";
 
@@ -35,9 +36,14 @@ export function AppointmentCard({
   bookingAgain,
 }: Props) {
   const t = useTranslations("me");
+  const descId = `appt-${appointment.id}`;
   const changeable = canChangeOnline(appointment.startsAt, location.booking.cancelWindowHours, nowMs);
   return (
     <article className="flex flex-col gap-3">
+      <span id={descId} className="sr-only">
+        {formatDate(appointment.startsAt, location.timezone, locale, "long")},{" "}
+        {formatTimeRange(appointment.startsAt, appointment.endsAt, location.timezone, locale)}
+      </span>
       {kind === "past" ? (
         <span className="self-start rounded-full bg-chip px-3 py-1 text-[13px] font-semibold text-ink">
           {t(`status.${appointment.status}`)}
@@ -59,6 +65,7 @@ export function AppointmentCard({
           <div className="flex gap-2.5">
             <button
               type="button"
+              aria-describedby={descId}
               onClick={() => onCancel(appointment)}
               className={`${BUTTON} border border-plum bg-card text-plum`}
             >
@@ -66,6 +73,7 @@ export function AppointmentCard({
             </button>
             <Link
               href={`/me/appointments/${appointment.id}/reschedule`}
+              aria-describedby={descId}
               className={`${BUTTON} bg-plum text-white no-underline hover:bg-plum-hover hover:text-white`}
             >
               {t("changeTime")}
@@ -77,6 +85,7 @@ export function AppointmentCard({
       ) : (
         <button
           type="button"
+          aria-describedby={descId}
           disabled={bookingAgain}
           onClick={() => onBookAgain(appointment)}
           className={`${BUTTON} self-start border border-plum bg-card text-plum disabled:cursor-not-allowed disabled:opacity-60`}

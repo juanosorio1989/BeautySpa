@@ -12,6 +12,7 @@ export const es: Messages = {
     services: "Servicios",
     team: "Equipo",
     location: "Ubicación",
+    logout: "Cerrar sesión",
     myAppointments: "Mis citas",
   },
   home: {
