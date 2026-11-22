@@ -15,13 +15,13 @@ Updated: 2026-11-22
   - Every booking write serializes per org with a Postgres advisory lock, re-validates the plan in the transaction, and keeps the exclusion constraints as the final guard. In-process hold sweeper (`HOLD_SWEEP_INTERVAL_MS`).
   - `BookingEvents` port (booked/changed/cancelled) is a logging no-op until notifications land.
   - Execution rulings R1–R16 are listed at the end of `docs/superpowers/plans/2026-11-17-mvp/04-booking.md`.
-- Plan 06 — web public site and booking — implemented on branch `feat/mvp-06-web` (tasks 1-11 plus OTP channels), pending final reviews: next-intl EN/ES, SEO pages, booking flow with holds and OTP, client area (`/me`), Playwright e2e smoke tests and the CI `e2e` job.
+- Plan 06 — web public site and booking — merged (branch `feat/mvp-06-web`, two independent final reviews + fix round): next-intl EN/ES, SEO pages, booking flow with holds and OTP (hold countdown from device receipt time + `holdMinutes`; own hold released when returning to step 2), client area (`/me`), header Log out only signs out after the server confirms, staff cancel reasons hidden from customers, `OTP_CHANNELS` (default `sms`), Playwright e2e smoke tests and the CI `e2e` job.
 - Frontend mockups approved: https://claude.ai/artifact/3zfpH45c9UxwhiMPDWGjNi (base for plans 06/07).
 
 ## Next
 
-1. Plan 06: two independent final branch reviews (fresh context), fix round (deferred minors are in `.superpowers/sdd/06-web-public-booking/progress.md`), then push, PR and merge to `main` (use `gh api` REST for edit/merge: `gh pr edit/merge` fail on a GraphQL deprecation).
-2. Then plan 05 (notifications) with the reduced scope below, then 07, 08.
+1. Plan 05 (notifications) with the reduced scope below, then 07, 08. For PRs use `gh api` REST for edit/merge (`gh pr edit/merge` fail on a GraphQL deprecation).
+2. Watch the first CI run of the `e2e` job on GitHub (never run there before plan 06 merged).
 
 ## Owner decisions (2026-11-21)
 
@@ -31,9 +31,10 @@ Updated: 2026-11-22
 
 ## Owner to-dos (pending)
 
-- Twilio (2026-11-21): Verify service created (SMS + RCS, landline validation, geo permissions US only); credentials in the root `.env`, dev keeps `OTP_PROVIDER=console`. Real test passed: start → SMS delivered (WhatsApp attempt fails 400 first, then falls back to SMS), verify → 200. The account can only send to verified caller IDs for now (error 21608).
+- Twilio (2026-11-21): Verify service created (SMS + RCS, landline validation, geo permissions US only); credentials in the root `.env`, dev keeps `OTP_PROVIDER=console`. Real test passed: start → SMS delivered, verify → 200. The account can only send to verified caller IDs for now (error 21608).
+- Twilio (2026-11-22): Primary Compliance Profile submitted as an individual. Pending: Twilio approval, then upgrade the account out of trial; then re-test with an unverified number.
 - No IRS EIN yet (business not incorporated): anything that needs an EIN (A2P 10DLC brand, WhatsApp Business API, business-type Twilio profiles) waits. Choose individual / sole-proprietor options where offered.
-- Before deploy: get Twilio's **Primary Compliance Profile** (Trust Hub) approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Done: `OTP_CHANNELS` (default `sms`) skips the WhatsApp attempt; set `whatsapp,sms` once WhatsApp is enabled on the Verify service.
+- Before deploy: Twilio's **Primary Compliance Profile** must be approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Done: `OTP_CHANNELS` (default `sms`) skips the WhatsApp attempt; set `whatsapp,sms` once WhatsApp is enabled on the Verify service.
 - Decide whether IP addresses count as personal data on account deletion: `audit_log.ip`, `refresh_token.ip` and `user_agent` are kept today.
 
 ## Carried into later plans
@@ -43,6 +44,7 @@ Updated: 2026-11-22
 - Plan 07: show override and `NO_SHOW` rules; deactivating an employee leaves their future appointments (surface them); staff-only customer notes (`private_notes_enc`) have no endpoint yet; `PATCH /staff/employees/:id { profile }` replaces the whole profile; `api-client` methods for plan 03/04 endpoints.
 - Open: availability by date range (one `date` per call today).
 - Before first production deploy: never leave zero active OWNERs (lock the org's OWNER rows, 409 on zero); access tokens stay valid up to 15 min after revocation; `TRUST_PROXY=1` behind Railway/Fly; `EMAIL_PROVIDER=resend`.
+- Deferred nits from plan 06 final re-review (non-blocking): `cancel-sheet.tsx` `unmounting` ref never reset, so under React strict mode (dev only) the native dialog `onClose` sync never fires — reset it at the start of the effect and ignore close events when the dialog is open again; `profile-form.tsx` `languageTouched` not reset after save (cosmetic). Header quiet `ensure()` costs one refresh request (401) per anonymous page load. Customer `Appointment` contract has no `cancelledBy`; web hides system cancel codes.
 - Deferred minors from plan 04 reviews (non-blocking): `/me/appointments` loads all rows then slices (no SQL limit); export reads are not one snapshot; `revokedAt`/consent `changedAt` don't come from `Clock`; customer search runs one consent query per result (≤ 20); `ReplacePlanTarget` carries the org id twice; RBAC `tokenFor` matches by literal path; unit-test output has a stack trace from an existing e2e test; test gaps: sweeper timer lifecycle, walk-in where local date ≠ UTC date, 50-row past cap, 20-row search cap, concurrent double-book of one hold, multi-service reschedule reorder.
 - Deferred minors from plans 02–03 (non-blocking): Redis client has no `error` listener; `secrets.ts` ignores `export KEY=`; `base32Decode` accepts impossible lengths; `Encryptor` has no AAD and one key id; forgot-password/login timing differences; logout racing refresh can log a false `auth.refresh_reuse`; `RateLimitService.peek` unused; CLI boot failure prints a stack; duplicated range helpers in contracts; `TimezoneSchema` case; `mapUnique` labels any unique violation as email; redundant queries in plan 03 services; eslint platform rule misses subpath imports; Postgres healthcheck `-h localhost`; mailpit image unpinned; no `engines.node`; `check-drift.sh` compares raw URLs; RFC 7807 titles from enum names; no availability test fails if the lower-bound prune in `plan.ts` is disabled.
 
