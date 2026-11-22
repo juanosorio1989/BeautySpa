@@ -54,10 +54,10 @@ describe("customer phone OTP (fake provider)", () => {
     await ctx?.close();
   });
 
-  it("start answers 200 with channel whatsapp", async () => {
+  it("start answers 200 with channel sms (default OTP_CHANNELS)", async () => {
     const res = await start("+13055550100");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ channel: "whatsapp" });
+    expect(res.body).toEqual({ channel: "sms" });
   });
 
   it("start rejects a non-US phone with VALIDATION_FAILED on path phone", async () => {
@@ -211,8 +211,15 @@ describe("customer phone OTP (fake provider)", () => {
 describe("customer phone OTP channel fallback", () => {
   let ctx: Ctx | undefined;
 
-  const withProvider = async (provider: OtpProvider) => {
-    ctx = await createIntegrationApp({ override: (b) => b.overrideProvider(OTP_PROVIDER).useValue(provider) });
+  // The fallback rules are exercised with both channels enabled; the default (sms only) has its own test.
+  const withProvider = async (
+    provider: OtpProvider,
+    env: Record<string, string> = { OTP_CHANNELS: "whatsapp,sms" },
+  ) => {
+    ctx = await createIntegrationApp({
+      env,
+      override: (b) => b.overrideProvider(OTP_PROVIDER).useValue(provider),
+    });
     await resetState(ctx.prisma, ctx.redis);
     await seedFixture(ctx.prisma);
     return ctx;
@@ -222,6 +229,45 @@ describe("customer phone OTP channel fallback", () => {
 
   afterAll(async () => {
     await ctx?.close();
+  });
+
+  it("with default OTP_CHANNELS calls the provider once, over sms", async () => {
+    const calls: string[] = [];
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          calls.push(channel);
+        },
+        check: async () => false,
+      },
+      {},
+    );
+    const res = await start(c);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ channel: "sms" });
+    expect(calls).toEqual(["sms"]);
+    await c.close();
+    ctx = undefined;
+  });
+
+  it("with default OTP_CHANNELS a 400 on sms is VALIDATION_FAILED and whatsapp is never tried", async () => {
+    const calls: string[] = [];
+    const c = await withProvider(
+      {
+        start: async (_phone, channel) => {
+          calls.push(channel);
+          throw new OtpInvalidRecipientError("start: 400");
+        },
+        check: async () => false,
+      },
+      {},
+    );
+    const res = await start(c);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(calls).toEqual(["sms"]);
+    await c.close();
+    ctx = undefined;
   });
 
   it("falls back to sms when whatsapp throws", async () => {

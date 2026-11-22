@@ -32,7 +32,24 @@ describe("loadEnv", () => {
     expect(env.OTP_PROVIDER).toBe("console");
     expect(env.EMAIL_PROVIDER).toBe("console");
     expect(env.TRUST_PROXY).toBe(false);
+    expect(env.OTP_CHANNELS).toEqual(["sms"]);
   });
+
+  it("OTP_CHANNELS is a trimmed, ordered list", () => {
+    expect(loadEnv({ ...base, OTP_CHANNELS: "whatsapp, sms" }).OTP_CHANNELS).toEqual(["whatsapp", "sms"]);
+    expect(loadEnv({ ...base, OTP_CHANNELS: "sms,whatsapp" }).OTP_CHANNELS).toEqual(["sms", "whatsapp"]);
+  });
+
+  it.each(["", "  "])("OTP_CHANNELS blank %j counts as unset (default sms)", (value) => {
+    expect(loadEnv({ ...base, OTP_CHANNELS: value }).OTP_CHANNELS).toEqual(["sms"]);
+  });
+
+  it.each([",", " , ", "email", "sms,email", "sms,sms", "whatsapp, sms, whatsapp", "sms,"])(
+    "OTP_CHANNELS %j is rejected and named",
+    (value) => {
+      expect(() => loadEnv({ ...base, OTP_CHANNELS: value })).toThrow(/OTP_CHANNELS/);
+    },
+  );
 
   it("parses COOKIE_SECURE", () => {
     expect(loadEnv({ ...base, COOKIE_SECURE: "true" }).COOKIE_SECURE).toBe(true);
