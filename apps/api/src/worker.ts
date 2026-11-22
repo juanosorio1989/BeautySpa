@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { Logger } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { WorkerModule } from "./worker/worker.module.js";
 
@@ -8,4 +9,8 @@ async function main(): Promise<void> {
   app.enableShutdownHooks();
 }
 
-void main();
+main().catch((err: unknown) => {
+  const e = err instanceof Error ? err : new Error(String(err));
+  new Logger("Worker").error(`Worker failed to start: ${e.message}`, e.stack);
+  process.exit(1);
+});

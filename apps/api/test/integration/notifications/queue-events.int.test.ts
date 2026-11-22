@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { Slot } from "@beautyspa/contracts";
 import { CLOCK } from "../../../src/common/clock.js";
 import { NOTIFICATIONS_QUEUE_TOKEN } from "../../../src/queue/queue.module.js";
-import { SEND_JOB_OPTIONS, sendJobId, type SendJob } from "../../../src/queue/queue-names.js";
+import { ENQUEUE_TIMEOUT_MS, SEND_JOB_OPTIONS, sendJobId, type SendJob } from "../../../src/queue/queue-names.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import {
   BOOKING_DATE,
@@ -175,5 +175,45 @@ describe("QueueBookingEvents: queue failure", () => {
     expect(res.status).toBe(201);
     expect(add).toHaveBeenCalledTimes(1);
     expect(await ctx.prisma.appointment.count({ where: { status: "BOOKED" } })).toBe(1);
+  });
+});
+
+describe("QueueBookingEvents: queue that never answers", () => {
+  const clock = fixedClock(BOOKING_NOW);
+  const add = vi.fn(() => new Promise<never>(() => undefined));
+  let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
+
+  beforeAll(async () => {
+    ctx = await createIntegrationApp({
+      override: (b) =>
+        b
+          .overrideProvider(CLOCK)
+          .useValue(clock)
+          .overrideProvider(NOTIFICATIONS_QUEUE_TOKEN)
+          .useValue({ add, close: () => Promise.resolve() }),
+    });
+  });
+  afterAll(async () => {
+    await ctx.close();
+  });
+
+  it("a hanging queue add does not hang the booking response", async () => {
+    await resetState(ctx.prisma, ctx.redis);
+    resetTenancyCache(ctx.app);
+    const f = await seedBookingFixture(ctx.prisma);
+    const { token } = await customerSession(ctx.app, f);
+    const http = () => request(ctx.app.getHttpServer());
+    const slots = await http().get(`/v1/availability?services=${f.pediId}:ANY&date=${BOOKING_DATE}`);
+    const slot = (slots.body as Slot[])[0]!;
+    const hold = await http().post("/v1/holds").send({ segments: slot.segments });
+    const started = Date.now();
+    const res = await http()
+      .post("/v1/appointments")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ holdId: hold.body.holdId as string })
+      .timeout(10_000);
+    expect(res.status).toBe(201);
+    expect(Date.now() - started).toBeLessThan(ENQUEUE_TIMEOUT_MS + 3_000);
+    expect(add).toHaveBeenCalledTimes(1);
   });
 });

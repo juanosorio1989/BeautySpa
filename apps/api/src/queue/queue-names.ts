@@ -1,4 +1,4 @@
-import type { JobsOptions } from "bullmq";
+import type { Job, JobsOptions, Queue } from "bullmq";
 import type { TemplateKey } from "../notifications/templates/types.js";
 
 /** Queue of `send` (router) and `deliver` (one channel) notification jobs. */
@@ -44,3 +44,23 @@ export const DELIVER_JOB_OPTIONS = {
   backoff: { type: "exponential", delay: 30_000 },
   ...RETENTION,
 } satisfies JobsOptions;
+
+/** Longest the API waits for a `Queue.add`: with Redis down it never settles (`maxRetriesPerRequest: null`). */
+export const ENQUEUE_TIMEOUT_MS = 2000;
+
+/**
+ * `queue.add(name, data, opts)` bounded by `ENQUEUE_TIMEOUT_MS`: rejects with `Error("QUEUE_TIMEOUT")` when the add
+ * has not settled by then, so an API request awaiting it (through `notifyAfterCommit`) never hangs. The timer is
+ * cleared as soon as the add settles. Use it for every enqueue from the API process.
+ */
+export function enqueueBounded<T>(queue: Queue, name: string, data: T, opts?: JobsOptions): Promise<Job> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("QUEUE_TIMEOUT")), ENQUEUE_TIMEOUT_MS);
+  });
+  // `new Promise` turns a synchronous throw of `add` into a rejection, so the timer is still cleared.
+  const added = new Promise<Job>((resolve) => resolve(queue.add(name, data, opts) as Promise<Job>)).finally(() =>
+    clearTimeout(timer),
+  );
+  return Promise.race([added, timeout]);
+}

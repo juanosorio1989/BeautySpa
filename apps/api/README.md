@@ -257,7 +257,9 @@ Tests: `test/integration/public/public.int.test.ts`, `test/integration/audit-rea
 
 `QueueBookingEvents` (`src/notifications/`, provided by `NotificationsModule`) adds a `send` job for
 `appointment.confirmed` / `.changed` / `.cancelled` with the appointment's `manageVersion` read after commit; walk-ins and
-appointments without a customer are skipped. Errors are swallowed by `notifyAfterCommit`. `LoggingBookingEvents` stays
+appointments without a customer are skipped. Every API enqueue goes through `enqueueBounded(queue, name, data, opts)`
+(`queue-names.ts`), which rejects with `QUEUE_TIMEOUT` after `ENQUEUE_TIMEOUT_MS` (2000) because `add` never settles while
+Redis is down; errors are swallowed by `notifyAfterCommit`. `LoggingBookingEvents` stays
 for unit tests.
 
 The worker process (`worker:dev` with watch, `worker:start` from `dist/worker.js`) boots `WorkerModule` as an application
