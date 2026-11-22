@@ -24,7 +24,7 @@ catch-up: for each of the customer's `BOOKED` appointments starting in the
 future that has no `notification_log` row on that channel at its current
 `manage_version` for `appointment.confirmed` or `appointment.changed`, a
 `send` job for `appointment.confirmed` limited to that channel (job field
-`channels: ["EMAIL"]`, job id suffix `:grant:<channel>:<consent row id>`). The
+`channels: ["EMAIL"]`, job id suffix `|grant|<channel>|<consent row id>`). The
 log unique key still prevents a double send. The offer's wording ("your
 confirmation and reminders") stays true.
 
@@ -33,7 +33,7 @@ confirmation and reminders") stays true.
 1. The API's `QueueBookingEvents` (replaces `LoggingBookingEvents`) adds a job
    `send` to queue `notifications` with `{ appointmentId, templateKey,
    manageVersion, channels? }`, where `manageVersion` is read right after commit. Job id
-   `send:<appointmentId>:<templateKey>:<manageVersion>` (BullMQ drops duplicate
+   `send|<appointmentId>|<templateKey>|<manageVersion>` (BullMQ drops duplicate
    ids). Enqueue errors are swallowed by `notifyAfterCommit` as today.
 2. The worker's `send` handler loads the appointment with customer, segments,
    services, employees and location. It **stops silently** (debug log, no log
@@ -48,7 +48,7 @@ confirmation and reminders") stays true.
 4. For each channel it inserts a `notification_log` row (`QUEUED`) under the
    unique key `(appointment_id, template_key, manage_version, channel)`.
    Insert conflict → that channel was already handled; skip it. Then it adds a
-   `deliver` job `{ logId }` (job id `deliver:<logId>`).
+   `deliver` job `{ logId }` (job id `deliver|<logId>`; BullMQ 5 rejects `:` in custom job ids).
 5. `deliver` renders the template (customer locale, location timezone), sends
    through the channel's provider, and updates the row: `SENT` +
    `providerMessageId` + `sentAt`, or on error `attempts + 1`, `error`, and
