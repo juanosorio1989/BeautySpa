@@ -166,3 +166,32 @@ describe("schedule checks", () => {
     expect(code).toBe("23514");
   });
 });
+
+describe("notification_log dedupe", () => {
+  it("notification_log_dedupe rejects a duplicate row", async () => {
+    const appt = await bookSegment(prisma, f, { staffUserId: f.staffA, startsAt: "10:00", endsAt: "11:00" });
+    const row = {
+      organizationId: f.orgId,
+      appointmentId: appt.id,
+      customerId: f.customerId,
+      templateKey: "appointment.confirmed",
+      manageVersion: 0,
+      channel: "EMAIL" as const,
+      locale: "en",
+      provider: "fake",
+      status: "QUEUED" as const,
+    };
+    await prisma.notificationLog.create({ data: row });
+    const code = await prisma.notificationLog.create({ data: row }).then(
+      () => undefined,
+      (err: { code?: string; meta?: { target?: unknown } }) => err.code,
+    );
+    expect(code).toBe("P2002");
+    // A new manage version or another channel is a different notification.
+    await prisma.notificationLog.create({ data: { ...row, manageVersion: 1 } });
+    await prisma.notificationLog.create({ data: { ...row, channel: "PUSH" } });
+    const index = await prisma.$queryRaw<{ indexname: string }[]>`
+      SELECT indexname::text FROM pg_indexes WHERE indexname = 'notification_log_dedupe'`;
+    expect(index).toHaveLength(1);
+  });
+});

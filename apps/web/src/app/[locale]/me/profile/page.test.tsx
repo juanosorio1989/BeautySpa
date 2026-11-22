@@ -82,7 +82,7 @@ describe("/me/profile", () => {
   });
 
   it("the email consent switch sends consents with no consentSource (API default PROFILE)", async () => {
-    api.me.patch.mockResolvedValue(saved({ consents: { WHATSAPP: false, SMS: false, EMAIL: true } }));
+    api.me.patch.mockResolvedValue(saved({ consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false } }));
     mount();
     fireEvent.click(await screen.findByRole("switch", { name: "Email me my confirmation and reminders" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -137,7 +137,7 @@ describe("/me/profile", () => {
   });
 
   it("clearing the email while consent is on sends consents.EMAIL false", async () => {
-    api.me.get.mockResolvedValue(saved({ consents: { WHATSAPP: false, SMS: false, EMAIL: true } }));
+    api.me.get.mockResolvedValue(saved({ consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false } }));
     api.me.patch.mockResolvedValue(saved({ email: null }));
     mount();
     fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "" } });

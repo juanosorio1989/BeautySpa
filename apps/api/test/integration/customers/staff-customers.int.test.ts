@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { StaffCustomer } from "@beautyspa/contracts";
 import { TokenService } from "../../../src/auth/token.service.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
-import { bookSegment, seedBookingFixture, staffSession, type BookingFixture } from "../helpers.js";
+import { bookSegment, seedBookingFixture, SEEDED_TIMES_SET_AT, staffSession, type BookingFixture } from "../helpers.js";
 
 describe("staff customers", () => {
   let ctx: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -42,7 +42,7 @@ describe("staff customers", () => {
         id: f.customerId,
         name: "Ana",
         phoneE164: "+13055550100",
-        consents: { WHATSAPP: false, SMS: false, EMAIL: false },
+        consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
       });
       const byPhone = await search("5550100");
       expect((byPhone.body as StaffCustomer[]).map((c) => c.id)).toEqual([f.customerId]);
@@ -69,6 +69,7 @@ describe("staff customers", () => {
           customerId: other.id,
           status: "HELD",
           source: "ONLINE",
+          timesSetAt: SEEDED_TIMES_SET_AT,
           holdExpiresAt: new Date(Date.now() + 3_600_000),
           segments: {
             create: {
@@ -106,7 +107,7 @@ describe("staff customers", () => {
         phoneE164: "+13055550199",
         email: "bea@example.com",
         locale: "en",
-        consents: { WHATSAPP: true, SMS: false, EMAIL: false },
+        consents: { WHATSAPP: true, SMS: false, EMAIL: false, PUSH: false },
       });
       const row = await ctx.prisma.customer.findUniqueOrThrow({ where: { id: dto.id } });
       expect(row.createdVia).toBe("RECEPTION");

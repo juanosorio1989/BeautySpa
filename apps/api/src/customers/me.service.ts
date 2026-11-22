@@ -13,7 +13,7 @@ import { currentConsents, recordConsents, toCustomerDto } from "./consents.js";
 
 /** Keys listed in the `customer.delete` audit row (design call 10: keys only, never values). */
 const DELETED_FIELDS = ["name", "email", "phoneE164", "privateNotes"];
-const ALL_REVOKED = { WHATSAPP: false, SMS: false, EMAIL: false } as const;
+const ALL_REVOKED = { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false } as const;
 
 /** Cancel reasons the system writes; they hold no personal data and stay in audit rows. */
 const SYSTEM_CANCEL_REASONS = ["ACCOUNT_DELETED", "HOLD_EXPIRED"];

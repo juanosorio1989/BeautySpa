@@ -79,7 +79,9 @@ channel gets nothing; reception sees a "no messages" badge on that appointment.
   the salon's phone.
 - Both run in one transaction that takes the organization's booking lock first
   and locks the appointment row `FOR UPDATE`; `manage_version` increments
-  (old manage links stop working); one audit row (`before` = the appointment
+  (old manage links stop working); a reschedule (and a staff move) also sets
+  `times_set_at = now` and clears `confirmed_by_customer_at`, so the client
+  confirms the new plan (cancel touches neither); one audit row (`before` = the appointment
   before, `after` = after); the notification event runs after commit.
 - Cancel: status `CANCELLED`, `cancelled_by = CUSTOMER`, optional reason,
   segments `occupies = false`, so the time shows again in availability.

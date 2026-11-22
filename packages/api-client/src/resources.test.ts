@@ -40,7 +40,7 @@ const me = {
   name: null,
   email: null,
   locale: "en",
-  consents: { WHATSAPP: false, SMS: false, EMAIL: false },
+  consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
 };
 
 function setup(reply: Reply, token: string | null = "tok") {

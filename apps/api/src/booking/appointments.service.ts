@@ -67,7 +67,13 @@ export class AppointmentsService {
       });
       const row = await tx.appointment.update({
         where: { id: input.holdId, organizationId: orgId },
-        data: { status: "BOOKED", customerId: principal.sub, holdExpiresAt: null, notes: input.notes },
+        data: {
+          status: "BOOKED",
+          customerId: principal.sub,
+          holdExpiresAt: null,
+          timesSetAt: new Date(now),
+          notes: input.notes,
+        },
         include: APPOINTMENT_INCLUDE,
       });
       const after = toAppointmentDto(row);

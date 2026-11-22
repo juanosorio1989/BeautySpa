@@ -64,6 +64,7 @@ export class WalkInService {
           customerId: input.customerId,
           status: "CHECKED_IN",
           source: "WALK_IN",
+          timesSetAt: new Date(now),
           createdByStaffId: principal.sub,
           notes: input.notes,
         },

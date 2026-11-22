@@ -23,7 +23,9 @@ describe("EmailOffer", () => {
   beforeEach(() => patch.mockReset());
 
   it('sends PATCH /me { email, consents: { EMAIL: true }, consentSource: "BOOKING_FORM" } and hides', async () => {
-    patch.mockResolvedValueOnce(me({ email: "a@b.co", consents: { WHATSAPP: false, SMS: false, EMAIL: true } }));
+    patch.mockResolvedValueOnce(
+      me({ email: "a@b.co", consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false } }),
+    );
     const onSaved = mount();
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "a@b.co" } });
     fireEvent.click(screen.getByRole("button", { name: "Yes, email me" }));

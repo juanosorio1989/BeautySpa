@@ -133,7 +133,8 @@ export class MyAppointmentsService {
 
       const updated = await tx.appointment.update({
         where: { id, organizationId: orgId },
-        data: { manageVersion: { increment: 1 } },
+        // A new plan: its times are set now and the customer confirms it again.
+        data: { manageVersion: { increment: 1 }, timesSetAt: new Date(now), confirmedByCustomerAt: null },
         include: APPOINTMENT_INCLUDE,
       });
       const after = toAppointmentDto(updated);

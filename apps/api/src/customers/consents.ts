@@ -1,7 +1,7 @@
 import type { ConsentSource, Prisma } from "@prisma/client";
 import type { Channel, Consents, StaffCustomer } from "@beautyspa/contracts";
 
-const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL"];
+const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL", "PUSH"];
 
 /** Current consent per channel: the latest row of each; no row means false. */
 export async function currentConsents(
@@ -13,7 +13,7 @@ export async function currentConsents(
     orderBy: [{ changedAt: "desc" }, { id: "desc" }],
     select: { channel: true, granted: true },
   });
-  const result: Consents = { WHATSAPP: false, SMS: false, EMAIL: false };
+  const result: Consents = { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false };
   const seen = new Set<Channel>();
   for (const r of rows) {
     if (seen.has(r.channel)) continue;

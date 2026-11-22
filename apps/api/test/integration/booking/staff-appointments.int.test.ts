@@ -11,6 +11,7 @@ import {
   customerSession,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   staffSession,
   type BookingFixture,
 } from "../helpers.js";
@@ -95,6 +96,7 @@ describe("staff appointments: create, move, status", () => {
         locationId: location.id,
         status: "BOOKED",
         source: "ONLINE",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         segments: {
           create: {
             organizationId: org.id,

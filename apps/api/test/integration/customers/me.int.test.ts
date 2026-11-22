@@ -13,6 +13,7 @@ import {
   customerSession,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   type BookingFixture,
 } from "../helpers.js";
 
@@ -58,6 +59,7 @@ describe("/me profile, export and deletion", () => {
         customerId,
         status: "COMPLETED",
         source: "ONLINE",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         notes,
         segments: {
           create: {
@@ -108,7 +110,7 @@ describe("/me profile, export and deletion", () => {
         name: "Ana",
         email: null,
         locale: "es",
-        consents: { WHATSAPP: false, SMS: false, EMAIL: false },
+        consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
       } satisfies Me);
     });
 
@@ -120,7 +122,7 @@ describe("/me profile, export and deletion", () => {
       const res = await patchMe({ name: "Ana María", consents: { WHATSAPP: true } });
       expect(res.status).toBe(200);
       expect((res.body as Me).name).toBe("Ana María");
-      expect((res.body as Me).consents).toEqual({ WHATSAPP: true, SMS: false, EMAIL: false });
+      expect((res.body as Me).consents).toEqual({ WHATSAPP: true, SMS: false, EMAIL: false, PUSH: false });
 
       const rows = await consentRows();
       expect(rows.map((r) => ({ channel: r.channel, granted: r.granted, source: r.source }))).toEqual([

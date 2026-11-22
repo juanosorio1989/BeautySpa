@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MePatchSchema, StaffCustomerCreateSchema } from "./customer";
+import { ChannelSchema, ConsentsSchema, MePatchSchema, StaffCustomerCreateSchema } from "./customer";
 
 describe("MePatchSchema", () => {
   it("rejects an empty update", () => expect(MePatchSchema.safeParse({}).success).toBe(false));
@@ -27,5 +27,13 @@ describe("StaffCustomerCreateSchema", () => {
     const r = StaffCustomerCreateSchema.parse({ name: "Ana", phone: "+13055550100", locale: "en" });
     expect(r.email).toBeNull();
     expect(r.consents).toEqual({});
+  });
+});
+
+describe("ConsentsSchema", () => {
+  it("ConsentsSchema requires PUSH", () => {
+    expect(ConsentsSchema.safeParse({ WHATSAPP: false, SMS: false, EMAIL: true }).success).toBe(false);
+    expect(ConsentsSchema.safeParse({ WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false }).success).toBe(true);
+    expect(ChannelSchema.options).toContain("PUSH");
   });
 });

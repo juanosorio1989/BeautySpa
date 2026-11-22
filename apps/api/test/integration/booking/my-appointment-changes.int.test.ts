@@ -13,6 +13,7 @@ import {
   customerSession,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   type BookingFixture,
 } from "../helpers.js";
 
@@ -60,6 +61,7 @@ describe("POST /me/appointments/:id/cancel | reschedule | repeat", () => {
         customerId: opts.customerId ?? f.customerId,
         status: opts.status ?? "BOOKED",
         source: "ONLINE",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         segments: {
           create: segments.map((s) => {
             const startsAt = new Date(s.startsAt);
