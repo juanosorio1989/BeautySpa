@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const refresh = vi.fn();
 const logout = vi.fn();
+const setHandler = vi.fn();
 vi.mock("@/lib/api/browser", () => ({
   getBrowserApi: () => ({ auth: { refresh, logout } }),
-  setSessionExpiredHandler: vi.fn(),
+  setSessionExpiredHandler: (fn: unknown) => setHandler(fn),
 }));
 
 import { SessionProvider } from "./session-provider";
@@ -32,6 +33,43 @@ describe("SessionProvider", () => {
   beforeEach(() => {
     refresh.mockReset();
     logout.mockReset();
+    setHandler.mockReset();
+  });
+
+  it("ensure() rejects on a network error and sets status error; a later call retries", async () => {
+    refresh.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValueOnce({});
+    const s = setup();
+    await act(async () => {
+      await expect(s.current().ensure()).rejects.toBeInstanceOf(TypeError);
+    });
+    expect(s.current().status).toBe("error");
+    await act(async () => {
+      expect(await s.current().ensure()).toBe(true);
+    });
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("ensure() when signedIn does not refresh again", async () => {
+    refresh.mockResolvedValue({});
+    const s = setup();
+    await act(async () => {
+      await s.current().ensure();
+    });
+    await act(async () => {
+      expect(await s.current().ensure()).toBe(true);
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("the registered session-expired handler flips status to signedOut", async () => {
+    refresh.mockResolvedValue({});
+    const s = setup();
+    await act(async () => {
+      await s.current().ensure();
+    });
+    const handler = setHandler.mock.calls.map((c) => c[0]).find((f): f is () => void => typeof f === "function")!;
+    act(() => handler());
+    expect(s.current().status).toBe("signedOut");
   });
 
   it("ensure() refreshes once for concurrent callers and reports signedOut on 401", async () => {

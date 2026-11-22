@@ -1,7 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { formatDate, formatPrice, formatTime, formatTimeRange } from "./format";
 
+const ORIGINAL_TZ = process.env.TZ;
+
 describe("format", () => {
+  afterEach(() => {
+    if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+    else process.env.TZ = ORIGINAL_TZ;
+  });
+
   it("formatTime uses the location zone, not the process zone", () => {
     process.env.TZ = "America/Los_Angeles";
     expect(formatTime("2026-11-19T16:00:00Z", "America/New_York", "en")).toMatch(/^11:00\sAM$/);

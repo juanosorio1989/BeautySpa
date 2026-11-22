@@ -50,6 +50,7 @@ by `code`, never by message text:
 | `OTP_INVALID` | "That code is not right" under the code field |
 | `RATE_LIMITED` / 429 | "Too many tries, wait a moment" |
 | 401 after refresh failed | to login with `next` |
-| network / 5xx | "Something went wrong, try again" with retry |
+| network (`TypeError`, `errors.network`) | "We could not reach the server, check your connection" with retry; session status becomes `error` |
+| 5xx | "Something went wrong, try again" (`errors.generic`) with retry |
 
 Error copy lives in the catalogs under `errors.<code>`.
