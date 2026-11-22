@@ -10,7 +10,11 @@ vi.mock("@/i18n/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace }),
   Link: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
-vi.mock("next/navigation", () => ({ useParams: () => ({ locale: "en" }) }));
+let search = "";
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ locale: "en" }),
+  useSearchParams: () => new URLSearchParams(search),
+}));
 
 const api = {
   public: {
@@ -36,6 +40,7 @@ describe("/book/time", () => {
     sessionStorage.clear();
     bookingStore.reset();
     replace.mockReset();
+    search = "";
     api.public.locations.mockResolvedValue([location]);
     api.public.services.mockResolvedValue({ categories: [], services: [svc(1)] });
     api.public.employees.mockResolvedValue([emp(11, [id(1)])]);
@@ -66,5 +71,20 @@ describe("/book/time", () => {
     const view = mount();
     await waitFor(() => expect(view.getByRole("heading", { name: "Professional and time" })).toBeInTheDocument());
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("shows the expired-hold message when sent back from details", async () => {
+    search = "notice=expired";
+    bookingStore.toggleService(id(1));
+    const view = mount();
+    expect(await view.findByText("Your hold expired. Please pick a time again.")).toBeInTheDocument();
+  });
+
+  it("shows the conflict message with a link to my appointments", async () => {
+    search = "notice=conflict";
+    bookingStore.toggleService(id(1));
+    const view = mount();
+    expect(await view.findByText("This time is no longer available.")).toBeInTheDocument();
+    expect(view.getByRole("link", { name: "Check my appointments" })).toHaveAttribute("href", "/me");
   });
 });

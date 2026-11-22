@@ -2,11 +2,13 @@
 
 import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import type { PublicEmployee, PublicLocation, PublicService } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
+import { BackHeader } from "@/components/booking/back-header";
+import { TimeNotice } from "@/components/booking/time-notice";
 import { TimePicker } from "@/components/booking/time-picker";
-import { Link, useRouter } from "@/i18n/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { useBookingStore } from "@/lib/booking/store";
 import { errorMessageKey } from "@/lib/errors";
@@ -74,28 +76,10 @@ export default function TimePage() {
 
   return (
     <main>
-      <header className="flex items-center gap-2 px-3 pb-2 pt-4">
-        <Link
-          href="/"
-          aria-label={t("back")}
-          className="flex size-11 items-center justify-center rounded-xl text-ink hover:text-ink"
-        >
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </Link>
-        <h1 className="font-heading text-lg font-semibold">{t("title")}</h1>
-      </header>
+      <BackHeader href="/" backLabel={t("back")} title={t("title")} />
+      <Suspense>
+        <TimeNotice />
+      </Suspense>
       {errorKey ? (
         <div role="alert" className="px-5 text-warn">
           <p>{tAll.has(errorKey as never) ? tAll(errorKey as never) : tAll("errors.generic")}</p>

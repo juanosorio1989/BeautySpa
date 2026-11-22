@@ -74,6 +74,14 @@ reschedule page uses them); by default it holds the slot and goes to Details.
   email?, consents: { EMAIL: true }?, consentSource: "BOOKING_FORM" }` (only
   changed keys; `consentSource` only with `consents`), then book.
 - Returning: show "Booking as <name>" with "Not you?" (logs out, back to phone).
+- Implementation (`app/[locale]/book/details/page.tsx`): `OtpFlow` (phone and code
+  steps, shared with `/login`) uses `useOtpLogin` (`lib/session/use-otp-login.ts`).
+  A hold already past `expiresAt` is sent back by `HoldCountdown` on mount. The
+  way back to step 2 carries `?notice=expired` or `?notice=conflict`
+  (`TimeNotice`). "Not you?" logs out, then restores the booking store (services,
+  slot, hold) so the held time is kept for the next account. A session `error`
+  status shows the network message with a retry that calls `ensure()` again.
+  After booking, `reset()` clears the store and sessionStorage, then Done.
 - Optional "Note for the salon" field (`notes`, ≤ 500 chars, visible to the
   customer later).
 - Confirm → `POST /appointments { holdId, notes? }`:
@@ -94,6 +102,9 @@ reschedule page uses them); by default it holds the slot and goes to Details.
   email me" → `PATCH /me { email, consents: { EMAIL: true }, consentSource:
   "BOOKING_FORM" }`. Shown once per
   booking; hidden after success. (Messages start once plan 05 lands.)
+- Signed-out visitors (reload after the session ended) go to
+  `/<locale>/login?next=<this page>`; `/login` returns to `safeNext(next)`
+  (same-site paths only, else `/<locale>/me`).
 - Links: "See or change my appointments" → `/me`; "Book another".
 
 ## Client area actions
