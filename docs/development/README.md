@@ -65,6 +65,7 @@ Customers and appointments are demo data: never run it against a real database. 
 ## URLs
 
 - API docs (Swagger UI): http://localhost:3001/v1/docs
+- Web (public booking site): http://localhost:3000 (redirects `/` to `/en` or `/es` by `Accept-Language`)
 - Mailpit: http://localhost:8025
 
 ## Commands
@@ -81,6 +82,21 @@ Customers and appointments are demo data: never run it against a real database. 
 | `pnpm --filter @beautyspa/api create-owner --email <e> [--locale en\|es]` | create or reset the OWNER and print a 72 h invite link |
 
 API and database details: [apps/api/README.md](../../apps/api/README.md).
+
+## Web
+
+`apps/web` is a Next.js (App Router) site with `next-intl` (`/en`, `/es`) and Tailwind. UI strings live in
+`packages/i18n` (`en.ts` and `es.ts` must have the same keys; the parity test and `es: Messages` enforce it).
+`pnpm dev` starts it on port 3000 next to the API (the scripts load the repo-root `.env`). Env keys (see `.env.example`):
+
+| Key | Used by |
+|---|---|
+| `API_URL` | server-side calls to the API (`http://localhost:3001`) |
+| `NEXT_PUBLIC_API_URL` | browser calls to the API |
+| `NEXT_PUBLIC_SITE_URL` | public site origin (links, metadata) |
+
+Single app: `pnpm --filter @beautyspa/web dev|build|test`. Colors are Tailwind theme tokens in
+`apps/web/src/app/globals.css` (`plum`, `ink`, `cream`, ...); `components.json` is the shadcn config.
 
 ## CI
 
