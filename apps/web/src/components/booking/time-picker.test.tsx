@@ -158,7 +158,7 @@ describe("TimePicker", () => {
   it("next-day search shows a searching state and does not move the date if the user picked another day", async () => {
     let release!: (v: unknown[]) => void;
     availability.mockImplementation(({ date }: { date: string }) =>
-      date === "2026-11-19" ? Promise.resolve([]) : new Promise((r) => (release = r)),
+      date === "2026-11-20" ? new Promise((r) => (release = r)) : Promise.resolve([]),
     );
     const { onDateChange, rerender } = mount();
     await screen.findByText(en.booking.time.noTimes);
@@ -167,6 +167,22 @@ describe("TimePicker", () => {
     rerender({ date: "2026-11-25" });
     await act(async () => release([slotB]));
     expect(onDateChange).not.toHaveBeenCalled();
+    rerender({ date: "2026-11-19" });
+    expect(await screen.findByRole("button", { name: "Next day with times" })).toBeInTheDocument();
+    expect(screen.queryByText(en.booking.time.searching)).toBeNull();
+  });
+
+  it("returning to the day while its next-day search is still pending offers the button again", async () => {
+    availability.mockImplementation(({ date }: { date: string }) =>
+      date === "2026-11-20" ? new Promise(() => {}) : Promise.resolve([]),
+    );
+    const { rerender } = mount();
+    await screen.findByText(en.booking.time.noTimes);
+    fireEvent.click(screen.getByRole("button", { name: "Next day with times" }));
+    await screen.findByText(en.booking.time.searching);
+    rerender({ date: "2026-11-25" });
+    rerender({ date: "2026-11-19" });
+    expect(await screen.findByRole("button", { name: "Next day with times" })).toBeInTheDocument();
   });
 
   it("shows the rate-limit message when holding is throttled", async () => {

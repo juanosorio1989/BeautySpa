@@ -30,6 +30,7 @@ export interface TimePickerProps {
   choices: ServiceChoice[];
   onChoiceChange: (serviceId: string, employeeId: string | "ANY") => void;
   date: string | null;
+  /** Also called by the next-day search; the found day's slots are cached so the date change does not refetch. */
   onDateChange: (date: string) => void;
   /** Reschedule: the appointment whose own time must not block the search. */
   excludeAppointmentId?: string;
@@ -90,7 +91,11 @@ export function TimePicker({
   };
 
   useEffect(() => {
-    if (cache.current?.key === key) return; // already fetched (next-day search)
+    if (cache.current?.key === key) {
+      // already fetched by the next-day search; show it now that the date really changed
+      setResult(cache.current);
+      return;
+    }
     let cancelled = false;
     getBrowserApi()
       .booking.availability({ locationId: location.id, services: choices, date: active, excludeAppointmentId })
@@ -110,6 +115,7 @@ export function TimePicker({
     const token = searchToken;
     return () => {
       token.current++;
+      setSearchingAt(null);
     };
   }, [viewKey]);
 
@@ -118,6 +124,7 @@ export function TimePicker({
 
   async function nextDay() {
     const token = ++searchToken.current;
+    const startedAt = viewKey;
     setSearchingAt(viewKey);
     const from = strip.indexOf(active);
     const candidates = strip.slice(from + 1, from + 1 + NEXT_DAY_LIMIT);
@@ -131,7 +138,7 @@ export function TimePicker({
         });
         if (token !== searchToken.current) return;
         if (found.length > 0) {
-          save({ key: keyFor(d), slots: found });
+          cache.current = { key: keyFor(d), slots: found };
           onDateChange(d);
           return;
         }
@@ -140,7 +147,7 @@ export function TimePicker({
     } catch (err) {
       if (token === searchToken.current) save({ key, errorKey: errorMessageKey(err) });
     } finally {
-      if (token === searchToken.current) setSearchingAt(null);
+      setSearchingAt((current) => (current === startedAt ? null : current));
     }
   }
 
