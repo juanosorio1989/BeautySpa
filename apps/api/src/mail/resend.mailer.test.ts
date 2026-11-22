@@ -55,4 +55,40 @@ describe("ResendMailer", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toBe("Resend send failed: timeout");
   });
+
+  it("sends html and base64 attachments", async () => {
+    const fetchFn = fakeFetch(200, { id: "abc" });
+    await new ResendMailer(env, fetchFn).send({
+      to: "ana@salon.com",
+      subject: "Hi",
+      text: "Body",
+      html: "<p>Body</p>",
+      attachments: [{ filename: "a.ics", content: "BEGIN:VCALENDAR", contentType: "text/calendar" }],
+    });
+    const body = JSON.parse(String(fetchFn.mock.calls[0]![1].body)) as Record<string, unknown>;
+    expect(body.html).toBe("<p>Body</p>");
+    expect(body.attachments).toEqual([
+      {
+        filename: "a.ics",
+        content: Buffer.from("BEGIN:VCALENDAR", "utf8").toString("base64"),
+        content_type: "text/calendar",
+      },
+    ]);
+  });
+
+  it("returns the message id", async () => {
+    const fetchFn = fakeFetch(200, { id: "msg_123" });
+    const out = await new ResendMailer(env, fetchFn).send({ to: "ana@salon.com", subject: "Hi", text: "Body" });
+    expect(out).toEqual({ id: "msg_123" });
+  });
+
+  it("missing id returns empty", async () => {
+    const fetchFn = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
+      async () => new Response("", { status: 200 }),
+    );
+    const out = await new ResendMailer(env, fetchFn).send({ to: "ana@salon.com", subject: "Hi", text: "Body" });
+    expect(out).toEqual({});
+    const out2 = await new ResendMailer(env, fakeFetch(200, {})).send({ to: "a@b.com", subject: "Hi", text: "Body" });
+    expect(out2).toEqual({});
+  });
 });

@@ -49,8 +49,9 @@ sessions and prints a new link (older links stop working). `--locale` is optiona
 a reset keeps the stored locale unless you pass `--locale`. It refuses an email that belongs to a non-owner.
 The link is a one-time credential: do not paste it into chats or tickets.
 
-In development `EMAIL_PROVIDER=console`: invite and password reset emails are not sent, the API logs them
-(recipient, subject and text with the link) to its console.
+In development `EMAIL_PROVIDER=console`: invite and password reset emails are not sent, the API logs only
+the recipient, subject and attachment names (never the body, which may hold a one-time link). The full
+message is kept in memory in `ConsoleMailer.sent` for tests; use `create-owner` for a login link in development.
 
 ## Development seed
 
