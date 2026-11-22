@@ -32,7 +32,8 @@ Updated: 2026-11-21
 ## Owner to-dos (pending)
 
 - Twilio (2026-11-21): Verify service created (SMS + RCS, landline validation, geo permissions US only); credentials in the root `.env`, dev keeps `OTP_PROVIDER=console`. Real test passed: start → SMS delivered (WhatsApp attempt fails 400 first, then falls back to SMS), verify → 200. The account can only send to verified caller IDs for now (error 21608).
-- Before deploy: get Twilio's **Primary Compliance Profile** (Trust Hub) approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Optional: skip the WhatsApp attempt while that channel is off (saves a failed call per login).
+- No IRS EIN yet (business not incorporated): anything that needs an EIN (A2P 10DLC brand, WhatsApp Business API, business-type Twilio profiles) waits. Choose individual / sole-proprietor options where offered.
+- Before deploy: get Twilio's **Primary Compliance Profile** (Trust Hub) approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Done: `OTP_CHANNELS` (default `sms`) skips the WhatsApp attempt; set `whatsapp,sms` once WhatsApp is enabled on the Verify service.
 - Decide whether IP addresses count as personal data on account deletion: `audit_log.ip`, `refresh_token.ip` and `user_agent` are kept today.
 
 ## Carried into later plans
