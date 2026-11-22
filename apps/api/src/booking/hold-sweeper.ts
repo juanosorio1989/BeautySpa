@@ -1,41 +1,22 @@
-import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
-import { ENV, type Env } from "../config/env.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { BOOKING_TX_OPTIONS, lockOrgBookings, releaseExpiredHoldsAudited } from "./appointment-writer.js";
 
 /**
- * Releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (0 disables it). In-process for now
- * (design call 12); plan 05 moves it to the BullMQ `maintenance` queue.
+ * Releases expired holds. No timer of its own: the worker's repeatable `sweep-holds` job on queue
+ * `maintenance` (`worker/maintenance.processor.ts`) calls `sweep()` every `HOLD_SWEEP_INTERVAL_MS`.
  */
 @Injectable()
-export class HoldSweeper implements OnApplicationBootstrap, OnApplicationShutdown {
+export class HoldSweeper {
   private readonly logger = new Logger(HoldSweeper.name);
-  private timer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
-    @Inject(ENV) private readonly env: Env,
   ) {}
-
-  onApplicationBootstrap(): void {
-    const ms = this.env.HOLD_SWEEP_INTERVAL_MS;
-    if (ms <= 0) return;
-    this.timer = setInterval(() => {
-      this.sweep().catch((err: unknown) =>
-        this.logger.error(`Hold sweep failed: ${(err as Error).message}`, (err as Error).stack),
-      );
-    }, ms);
-    this.timer.unref();
-  }
-
-  onApplicationShutdown(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = undefined;
-  }
 
   /**
    * One run: per organization with expired holds, takes the org booking lock, releases them and writes one

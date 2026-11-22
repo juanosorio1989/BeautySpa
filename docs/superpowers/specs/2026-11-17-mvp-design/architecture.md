@@ -33,17 +33,28 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   types the client.
 - Prisma for data access. Range types and exclusion constraints are written in
   raw SQL inside Prisma migrations (see data-model.md).
-- Workers: BullMQ queues `notifications` and `maintenance` (hold sweeper). Run as
-  a separate process from the same app (`api` and `worker` entrypoints).
-- Hold sweeper **(call, plan 04)**: until the worker entrypoint exists, the API
-  process runs `HoldSweeper` (`apps/api/src/booking/hold-sweeper.ts`), which
-  releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0`
-  disables it, and tests use 0). Each run writes one `appointment.hold_release`
+- Workers **(plan 05)**: BullMQ queues `notifications` and `maintenance` on the
+  same Redis DB as `REDIS_URL` (producers share one dedicated ioredis connection
+  with `maxRetriesPerRequest: null`; `apps/api/src/queue/`). The API process only
+  produces jobs (`Queue`, never a `Worker`): `QueueBookingEvents` adds a `send`
+  job per booking event after commit (job id
+  `send|<appointmentId>|<templateKey>|<manageVersion>`; BullMQ 5 rejects `:` in
+  custom ids). A separate process from the same codebase consumes them:
+  `apps/api/src/worker.ts` (`WorkerModule`, a Nest application context, no HTTP),
+  run with `pnpm --filter @beautyspa/api worker:dev` (watch) or `worker:start`
+  (`dist/worker.js`). `pnpm dev` runs only web and api, so in dev the worker must
+  also run, or expired holds are not swept.
+- Hold sweeper **(call, plan 04; moved in plan 05)**: `HoldSweeper.sweep()`
+  (`apps/api/src/booking/hold-sweeper.ts`) has no timer of its own. At start the
+  worker upserts the job scheduler `sweep-holds` on queue `maintenance` every
+  `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0` removes the scheduler, and tests
+  use 0), and `MaintenanceProcessor` runs `sweep()` for each job; likewise
+  `scan-reminders` every `REMINDER_SCAN_INTERVAL_MS`. Each sweep takes the org
+  booking lock per organization and writes one `appointment.hold_release`
   audit row per organization that had holds released (`actorType "SYSTEM"`,
   `after: { released: n }`); booking writes that release expired holds write the
   same row (`releaseExpiredHoldsAudited`). An organization whose sweep fails is
-  logged and skipped; the others still run. Plan 05 moves it to the BullMQ
-  `maintenance` queue.
+  logged and skipped; the others still run.
 - Booking writes **(call, plan 04)**: each booking write transaction takes the
   organization's booking lock first (`lockOrgBookings`, a transaction-scoped
   Postgres advisory lock), so writes of one organization are serialized and a

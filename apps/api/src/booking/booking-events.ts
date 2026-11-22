@@ -3,7 +3,7 @@ import { Injectable, Logger } from "@nestjs/common";
 /**
  * Notification port for appointment lifecycle events. Callers invoke it only after the write
  * transaction has committed, through `notifyAfterCommit`, so a failing adapter never fails or
- * rolls back the request. Plan 05 replaces the logging adapter with the notification router.
+ * rolls back the request. `BookingModule` binds it to `QueueBookingEvents` (enqueues notification `send` jobs).
  */
 export abstract class BookingEvents {
   abstract booked(appointmentId: string): Promise<void>;
@@ -11,7 +11,7 @@ export abstract class BookingEvents {
   abstract cancelled(appointmentId: string): Promise<void>;
 }
 
-/** No-op adapter: logs `booking.<event> <id>` at debug level. */
+/** No-op adapter for unit tests: logs `booking.<event> <id>` at debug level. */
 @Injectable()
 export class LoggingBookingEvents extends BookingEvents {
   private readonly logger = new Logger(LoggingBookingEvents.name);

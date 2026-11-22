@@ -112,7 +112,7 @@ const EnvSchema = z
     COOKIE_SECURE: bool.optional(),
     COOKIE_DOMAIN: z.string().optional(),
     TRUST_PROXY: trustProxy.default("false"),
-    /** In-process hold sweeper period; 0 disables it (design call 12). */
+    /** Period of the worker's `sweep-holds` job; 0 unschedules it (tests). */
     HOLD_SWEEP_INTERVAL_MS: z.coerce.number().int().min(0).default(60000),
     /** HMAC key for stateless manage-link tokens (`notifications/manage-token.ts`); required in every NODE_ENV. */
     MANAGE_LINK_SECRET: key32PlusB64,

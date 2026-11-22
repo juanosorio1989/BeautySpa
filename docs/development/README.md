@@ -16,9 +16,13 @@ pnpm --filter @beautyspa/api secrets:gen
 pnpm --filter @beautyspa/api db:migrate
 pnpm --filter @beautyspa/api db:seed
 pnpm dev
+pnpm --filter @beautyspa/api worker:dev   # second terminal: BullMQ worker (hold sweep, notifications)
 ```
 
-The API scripts (`dev`, `start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
+`pnpm dev` runs web and api only. Run the worker next to it: without it expired holds are never swept and no
+notification is sent.
+
+The API scripts (`dev`, `start`, `worker:dev`, `worker:start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
 
 `secrets:gen` fills `JWT_PRIVATE_KEY_B64`, `DATA_ENCRYPTION_KEY`, `MANAGE_LINK_SECRET` and the VAPID pair
 (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) in `.env` when they are missing or empty (copying `.env.example` first if

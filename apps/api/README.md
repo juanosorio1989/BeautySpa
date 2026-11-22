@@ -247,8 +247,29 @@ Tests: `test/integration/locations/{settings,closures}.int.test.ts`.
 `AuditModule` also serves `GET /v1/staff/audit?entity=&id=&cursor=&limit=` (OWNER only), newest first by `id` (UUIDv7); `nextCursor` is the last id when the page is full (`limit` items), else null.
 Tests: `test/integration/public/public.int.test.ts`, `test/integration/audit-read.int.test.ts`, `test/integration/rbac-matrix.int.test.ts` (see Booking and customers below).
 
+## Queues and worker (`src/queue/`, `src/worker/`, `src/worker.ts`)
+
+`QueueModule` (global, in the API and the worker): BullMQ producers `NOTIFICATIONS_QUEUE_TOKEN` (`notifications`) and
+`MAINTENANCE_QUEUE_TOKEN` (`maintenance`) on one dedicated ioredis connection from `REDIS_URL`, closed on shutdown.
+`queue-names.ts`: `SendJob`, `DeliverJob`, `sendJobId(job, suffix?)` → `send|<appointmentId>|<templateKey>|<manageVersion>`
+(+ `|<suffix>`; never `:`, which BullMQ 5 rejects), `SEND_JOB_OPTIONS` (3 attempts, exponential from 10 s) and
+`DELIVER_JOB_OPTIONS` (5 attempts, exponential from 30 s), both removing completed jobs after 1 day and failed after 7.
+
+`QueueBookingEvents` (`src/notifications/`, provided by `NotificationsModule`) adds a `send` job for
+`appointment.confirmed` / `.changed` / `.cancelled` with the appointment's `manageVersion` read after commit; walk-ins and
+appointments without a customer are skipped. Errors are swallowed by `notifyAfterCommit`. `LoggingBookingEvents` stays
+for unit tests.
+
+The worker process (`worker:dev` with watch, `worker:start` from `dist/worker.js`) boots `WorkerModule` as an application
+context. The API never starts a BullMQ `Worker`. `MaintenanceProcessor` upserts the job schedulers `sweep-holds`
+(`HOLD_SWEEP_INTERVAL_MS`) and `scan-reminders` (`REMINDER_SCAN_INTERVAL_MS`) at start, removing a scheduler whose
+interval is `0`, then consumes `maintenance`: `handle("sweep-holds")` → `HoldSweeper.sweep()`, `handle("scan-reminders")`
+→ `ReminderScanner.scan()` (stub until Task 7).
+Tests: `src/queue/queue-names.test.ts`, `test/integration/notifications/queue-events.int.test.ts`,
+`test/integration/worker/maintenance.int.test.ts`.
+
 ## Booking and customers (`src/booking/`, `src/customers/`)
 
-`BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` and `DELETE /v1/holds/:holdId` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus the hold sweeper. `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
+`BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` and `DELETE /v1/holds/:holdId` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus `HoldSweeper` (run by the worker's `sweep-holds` job). `BookingEvents` is bound to `QueueBookingEvents` (see Queues and worker). `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
 
 Tests: `test/integration/rbac-matrix.int.test.ts` covers every plan 03 and 04 route: 401 without a token, 403 for each disallowed caller (a CUSTOMER token on a staff route and a staff token on a customer route included); `@Public()` routes answer 200 or at least pass the guard; `GET /availability` needs no token but answers 401 to an invalid one.
