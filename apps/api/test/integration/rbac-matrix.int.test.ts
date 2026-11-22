@@ -158,6 +158,12 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
     });
   });
 
+  describe("DELETE /holds/:holdId (public)", () => {
+    it("needs no token", async () => {
+      expect([401, 403]).not.toContain((await call("delete", "/holds/01934b6e-0000-7000-8000-000000000000")).status);
+    });
+  });
+
   it.each(PUBLIC)("%s %s needs no token", async (method, path) => {
     expect((await call(method, path)).status).toBe(200);
   });

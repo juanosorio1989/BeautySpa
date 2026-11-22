@@ -104,4 +104,5 @@ channel gets nothing; reception sees a "no messages" badge on that appointment.
 
 `HELD` (expires in `holdMinutes`) → `BOOKED` on confirm, or released
 (`occupies = false`, status `CANCELLED`, reason `HOLD_EXPIRED`) by the booking
-transaction or the minute sweeper. Phase 2 payments reuse the same hold.
+transaction, the minute sweeper, or early by the client going back
+(`DELETE /holds/:holdId`). Phase 2 payments reuse the same hold.
