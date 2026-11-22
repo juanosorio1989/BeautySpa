@@ -24,11 +24,19 @@ invalid key names, never values.
 | `OTP_PROVIDER` | `console` (default) / `twilio` / `fake`; `fake` only when `NODE_ENV=test`; `twilio` needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` |
 | `OTP_CHANNELS` | ordered, comma-separated `whatsapp` / `sms` that `OtpService.start` tries (default `sms`); items trimmed; an empty list, unknown values or duplicates fail validation. Use `whatsapp,sms` only once WhatsApp is enabled on the Twilio Verify service |
 | `EMAIL_PROVIDER` | `console` (default) / `resend`; `resend` needs `RESEND_API_KEY`, `EMAIL_FROM` |
+| `MANAGE_LINK_SECRET` | required in every `NODE_ENV`; base64 of at least 32 bytes (`secrets:gen`); HMAC key of manage-link tokens |
+| `PUSH_PROVIDER` | `console` (default) / `webpush` / `fake`; `fake` only when `NODE_ENV=test`; `webpush` needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url pair from `secrets:gen`) and `VAPID_SUBJECT` (`mailto:` or `https:`) |
+| `REMINDER_SCAN_INTERVAL_MS` | reminder scan period, default `60000`; `0` disables it |
 | `COOKIE_SECURE` | `true`/`false`; default `true` only in production |
 | `COOKIE_DOMAIN` | optional |
 | `TRUST_PROXY` | `false` (default) / a positive hop count / comma-separated proxy IPs or CIDRs (e.g. `10.0.0.0/8,127.0.0.1`); use `1` on Railway/Fly. `true` is rejected: it trusts the client-forged left-most `X-Forwarded-For` and bypasses every per-IP limit |
 
-`NODE_ENV=production` requires `OTP_PROVIDER=twilio` and `EMAIL_PROVIDER=resend`.
+`NODE_ENV=production` requires `OTP_PROVIDER=twilio`, `EMAIL_PROVIDER=resend` and `PUSH_PROVIDER=webpush`.
+
+Manage-link token (`src/notifications/manage-token.ts`): `signManageToken(secret, { appointmentId, manageVersion, exp })`
+→ `base64url(JSON {a,v,e}) "." base64url(HMAC-SHA256(base64-decoded secret, payload part))`; `verifyManageToken(secret,
+token, nowMs)` returns the claims or `null` (bad shape, signature mismatch compared in constant time, bad JSON or
+types, `nowMs >= exp * 1000`); `manageUrl(webOrigin, locale, token)` → `${webOrigin}/${locale}/manage/${token}`.
 
 Global providers: `REDIS` (`ioredis` client from `REDIS_URL`, `src/redis/`), `RateLimitService` (`src/rate-limit/`,
 Redis fixed window `rl:<key>`: `consume`, `enforce` → 429 `RATE_LIMITED`, `peek`, `reset`, `hashKeyPart` for putting
@@ -203,7 +211,7 @@ The booking exclusion constraints are raw SQL in `prisma/migrations/*_booking_co
 | `db:drift` | fails if `schema.prisma` and `prisma/migrations` differ (shadow DB: `DATABASE_URL_TEST` + `_shadow`, or `SHADOW_DATABASE_URL`) |
 | `db:generate` | regenerate the Prisma client (also runs on `postinstall`) |
 | `test:int` | integration tests (`vitest.int.config.mts`, `test/integration/**/*.int.test.ts`) against `DATABASE_URL_TEST` and `REDIS_URL_TEST` |
-| `secrets:gen` | add missing `JWT_PRIVATE_KEY_B64` / `DATA_ENCRYPTION_KEY` to the repo-root `.env` (prints key names only) |
+| `secrets:gen` | add missing `JWT_PRIVATE_KEY_B64` / `DATA_ENCRYPTION_KEY` / `MANAGE_LINK_SECRET` / VAPID pair to the repo-root `.env` (prints key names only) |
 
 `dev`, `start`, `db:*` and `test:int` are wrapped in `dotenv -e ../../.env --`: they read the repo-root `.env`, shell/CI variables win, and a missing file is ignored.
 

@@ -20,8 +20,11 @@ pnpm dev
 
 The API scripts (`dev`, `start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
 
-`secrets:gen` fills `JWT_PRIVATE_KEY_B64` and `DATA_ENCRYPTION_KEY` in `.env` when they are missing or empty
-(copying `.env.example` first if there is no `.env`). It never changes existing lines and prints only key names.
+`secrets:gen` fills `JWT_PRIVATE_KEY_B64`, `DATA_ENCRYPTION_KEY`, `MANAGE_LINK_SECRET` and the VAPID pair
+(`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) in `.env` when they are missing or empty (copying `.env.example` first if
+there is no `.env`). It never changes existing lines and prints only key names. The VAPID keys are generated only
+when both are empty; if just one is set it reports the other as skipped (set both or empty both). If your `.env`
+predates plan 05, run `secrets:gen` again: the API refuses to start without `MANAGE_LINK_SECRET`.
 If your `.env` predates plan 02, also add `DEFAULT_ORG_SLUG=demo-salon` and `REDIS_URL_TEST=redis://localhost:6379/1`
 (see `.env.example`).
 
