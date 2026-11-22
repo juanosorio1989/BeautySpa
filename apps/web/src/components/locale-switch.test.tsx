@@ -18,7 +18,7 @@ describe("LocaleSwitch", () => {
         <LocaleSwitch />
       </NextIntlClientProvider>,
     );
-    expect(screen.getByRole("link", { name: "EN" })).toHaveAttribute("href", "/en/services");
-    expect(screen.getByRole("link", { name: "ES" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("link", { name: "Inglés" })).toHaveAttribute("href", "/en/services");
+    expect(screen.getByRole("link", { name: "Español" })).toHaveAttribute("aria-current", "true");
   });
 });

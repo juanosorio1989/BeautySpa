@@ -18,6 +18,7 @@ export function LocaleSwitch() {
           href={pathname}
           locale={locale}
           hrefLang={locale}
+          aria-label={t(locale === "en" ? "english" : "spanish")}
           aria-current={locale === current ? "true" : undefined}
           className={cn(
             "flex min-h-11 min-w-11 items-center justify-center rounded-full px-3 text-[13px] font-semibold",

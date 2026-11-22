@@ -19,16 +19,18 @@
   --font-heading: var(--font-space-grotesk), system-ui, sans-serif;
 }
 
-body {
-  background: var(--color-cream);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
-}
+@layer base {
+  body {
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
 
-a {
-  color: var(--color-plum);
-}
+  a {
+    color: var(--color-plum);
+  }
 
-a:hover {
-  color: var(--color-plum-hover);
+  a:hover {
+    color: var(--color-plum-hover);
+  }
 }
