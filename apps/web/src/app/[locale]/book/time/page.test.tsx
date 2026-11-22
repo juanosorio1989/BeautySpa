@@ -44,6 +44,8 @@ describe("/book/time", () => {
     api.public.locations.mockResolvedValue([location]);
     api.public.services.mockResolvedValue({ categories: [], services: [svc(1)] });
     api.public.employees.mockResolvedValue([emp(11, [id(1)])]);
+    api.booking.availability.mockReset().mockResolvedValue([]);
+    api.booking.releaseHold.mockReset().mockResolvedValue(undefined);
   });
 
   it("/book/time without services redirects to step 1", async () => {
@@ -88,5 +90,29 @@ describe("/book/time", () => {
     const view = mount();
     expect(await view.findByText("This time is no longer available.")).toBeInTheDocument();
     expect(view.getByRole("link", { name: "Check my appointments" })).toHaveAttribute("href", "/me");
+  });
+
+  it("coming back with a stored hold releases it first, so its own slot shows again", async () => {
+    bookingStore.toggleService(id(1));
+    bookingStore.setHold({ holdId: "h-own", expiresAt: "2026-11-19T15:05:00.000Z", localExpiresAt: Date.now() + 1 });
+    let release!: () => void;
+    api.booking.releaseHold.mockReturnValue(new Promise<void>((resolve) => (release = resolve)));
+    mount();
+    await waitFor(() => expect(api.booking.releaseHold).toHaveBeenCalledWith("h-own"));
+    expect(bookingStore.getState().hold).toBeNull();
+    await waitFor(() => expect(api.public.services).toHaveBeenCalled());
+    expect(api.booking.availability).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(api.booking.availability).toHaveBeenCalled());
+    expect(api.booking.releaseHold).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed release still clears the hold and loads availability", async () => {
+    bookingStore.toggleService(id(1));
+    bookingStore.setHold({ holdId: "h-own", expiresAt: "2026-11-19T15:05:00.000Z", localExpiresAt: Date.now() + 1 });
+    api.booking.releaseHold.mockRejectedValue(new TypeError("offline"));
+    mount();
+    await waitFor(() => expect(api.booking.availability).toHaveBeenCalled());
+    expect(bookingStore.getState().hold).toBeNull();
   });
 });

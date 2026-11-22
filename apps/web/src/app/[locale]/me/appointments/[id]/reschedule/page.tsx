@@ -130,6 +130,14 @@ function Picker({
     onDone();
   }
 
+  // A service of this appointment left the public catalog: the picker cannot offer it again.
+  if (fixed.length !== choices.length)
+    return (
+      <div className="mx-auto max-w-[480px] px-5">
+        <CallSalon phone={location.phone} message={t("serviceUnavailable")} />
+      </div>
+    );
+
   if (tooLate)
     return (
       <div className="mx-auto max-w-[480px] px-5">

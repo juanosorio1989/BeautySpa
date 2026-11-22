@@ -16,7 +16,13 @@ export interface Session {
   ensure(): Promise<boolean>;
   /** Call after a successful login. */
   signedIn(): void;
-  logout(): Promise<void>;
+  /**
+   * Revokes the refresh cookie (POST /auth/logout); only on success clears the booking store and
+   * sets status "signedOut". On failure it rejects and the status stays as it was (the cookie is
+   * still valid; callers show errors.network + retry). `local: true` skips the request and only
+   * resets locally (the server already revoked the session, e.g. after DELETE /me).
+   */
+  logout(opts?: { local?: boolean }): Promise<void>;
 }
 
 export const SessionContext = createContext<Session | null>(null);

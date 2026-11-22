@@ -9,11 +9,15 @@ export function dateStrip(todayIso: string, horizonDays: number): string[] {
 }
 
 /** Short weekday and day number of a calendar date; the date has no zone, so format it in UTC. */
-export function dayLabel(date: string, locale: Locale): { weekday: string; day: string } {
+export function dayLabel(date: string, locale: Locale): { weekday: string; day: string; full: string } {
   const instant = new Date(`${date}T12:00:00Z`);
   const intl = locale === "en" ? "en-US" : "es-US";
   return {
     weekday: new Intl.DateTimeFormat(intl, { weekday: "short", timeZone: "UTC" }).format(instant),
     day: new Intl.DateTimeFormat(intl, { day: "numeric", timeZone: "UTC" }).format(instant),
+    // Accessible name: weekday, month and day ("Thursday, November 19").
+    full: new Intl.DateTimeFormat(intl, { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" }).format(
+      instant,
+    ),
   };
 }

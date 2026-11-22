@@ -3,7 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import type { Me } from "@beautyspa/contracts";
-import { Field, INPUT_CLASS } from "./field";
+import { errorProps, Field, INPUT_CLASS } from "./field";
 
 export interface DetailsValues {
   name: string;
@@ -39,6 +39,7 @@ export function DetailsForm({
   const [notes, setNotes] = useState("");
   const [nameMissing, setNameMissing] = useState(false);
   const hasEmail = email.trim() !== "";
+  const nameError = nameMissing ? t("nameRequired") : fieldErrors.name;
 
   return (
     <form
@@ -61,14 +62,14 @@ export function DetailsForm({
       <div className="flex flex-1 flex-col gap-[18px] px-5 pt-5">
         {firstTime ? (
           <>
-            <Field id="name" label={t("name")} error={nameMissing ? t("nameRequired") : fieldErrors.name}>
+            <Field id="name" label={t("name")} error={nameError}>
               <input
                 id="name"
                 type="text"
                 autoComplete="name"
                 maxLength={80}
                 value={name}
-                aria-invalid={nameMissing || Boolean(fieldErrors.name)}
+                {...errorProps("name", nameError)}
                 onChange={(e) => {
                   setNameMissing(false);
                   setName(e.target.value);
@@ -82,7 +83,7 @@ export function DetailsForm({
                 type="email"
                 autoComplete="email"
                 value={email}
-                aria-invalid={Boolean(fieldErrors.email)}
+                {...errorProps("email", fieldErrors.email)}
                 onChange={(e) => setEmail(e.target.value)}
                 className={INPUT_CLASS}
               />
@@ -99,6 +100,7 @@ export function DetailsForm({
         <Field id="notes" label={t("notes")} error={fieldErrors.notes}>
           <textarea
             id="notes"
+            {...errorProps("notes", fieldErrors.notes)}
             maxLength={500}
             rows={3}
             value={notes}

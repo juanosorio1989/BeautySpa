@@ -1,5 +1,5 @@
 import { ApiError } from "@beautyspa/api-client";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { en } from "@beautyspa/i18n";
@@ -72,6 +72,34 @@ describe("/me", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("past cards show the customer's own cancel reason but never a raw system code", async () => {
+    const past = (n: number, cancelReason: string | null) =>
+      appointment({ id: id(n), status: "CANCELLED", cancelledAt: "2026-11-18T17:00:00.000Z", cancelReason });
+    api.me.appointments.mockResolvedValue({
+      upcoming: [],
+      past: [past(420, "Feeling sick"), past(421, "HOLD_EXPIRED"), past(422, "ACCOUNT_DELETED"), past(423, null)],
+    });
+    mount();
+    await screen.findAllByRole("article");
+    expect(screen.getByText(/Feeling sick/)).toBeInTheDocument();
+    expect(screen.queryByText(/HOLD_EXPIRED/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ACCOUNT_DELETED/)).not.toBeInTheDocument();
+  });
+
+  it("a native dialog close (e.g. a second Escape in Chrome) also closes the sheet in the page state", async () => {
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    const dialog = screen.getByRole("dialog");
+    act(() => {
+      (dialog as HTMLDialogElement).close();
+      dialog.dispatchEvent(new Event("close"));
+    });
+    await waitFor(() => expect(document.querySelector("dialog")).toBeNull());
+    // it opens again normally
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("upcoming cards show Cancel and Change time only when canChangeOnline", async () => {

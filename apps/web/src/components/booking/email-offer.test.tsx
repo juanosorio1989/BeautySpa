@@ -61,5 +61,8 @@ describe("EmailOffer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Yes, email me" }));
     expect(await screen.findByText("Please enter a valid email address.")).toBeInTheDocument();
     expect(screen.queryByText("raw api text")).not.toBeInTheDocument();
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription("Please enter a valid email address.");
   });
 });

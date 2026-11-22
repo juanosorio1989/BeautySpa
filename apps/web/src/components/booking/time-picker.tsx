@@ -180,7 +180,11 @@ export function TimePicker({
         getBrowserApi(),
         { hold: store.hold, setHold: store.setHold, clearHold: store.clearHold },
         selected,
-        { locationId: location.id, onError: (err) => setPickError(pickErrorKey(err)) },
+        {
+          locationId: location.id,
+          holdMinutes: location.booking.holdMinutes,
+          onError: (err) => setPickError(pickErrorKey(err)),
+        },
       );
       if (outcome === "held") {
         store.setDate(active); // clears the slot, so set the slot after

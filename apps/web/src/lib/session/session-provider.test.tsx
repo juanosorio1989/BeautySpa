@@ -107,4 +107,35 @@ describe("SessionProvider", () => {
     expect(bookingStore.getState().serviceIds).toEqual([]);
     expect(s.current().status).toBe("signedOut");
   });
+
+  it("logout() failure rethrows, keeps signedIn and leaves the booking store alone", async () => {
+    refresh.mockResolvedValue({});
+    logout.mockRejectedValue(new TypeError("Failed to fetch"));
+    const s = setup();
+    await act(async () => {
+      await s.current().ensure();
+    });
+    bookingStore.toggleService("00000000-0000-4000-8000-000000000002");
+    await act(async () => {
+      await expect(s.current().logout()).rejects.toBeInstanceOf(TypeError);
+    });
+    expect(s.current().status).toBe("signedIn");
+    expect(bookingStore.getState().serviceIds).toContain("00000000-0000-4000-8000-000000000002");
+    expect(sessionStorage.getItem("bs-booking")).not.toBeNull();
+  });
+
+  it("logout({ local: true }) signs out and clears the store without calling the API", async () => {
+    refresh.mockResolvedValue({});
+    const s = setup();
+    await act(async () => {
+      await s.current().ensure();
+    });
+    bookingStore.toggleService("00000000-0000-4000-8000-000000000003");
+    await act(async () => {
+      await s.current().logout({ local: true });
+    });
+    expect(logout).not.toHaveBeenCalled();
+    expect(bookingStore.getState().serviceIds).toEqual([]);
+    expect(s.current().status).toBe("signedOut");
+  });
 });

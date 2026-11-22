@@ -19,13 +19,14 @@ const slotAt = (start: string): Slot => ({
   segments: [seg(start)],
 });
 const NOW = Date.parse("2026-11-19T15:00:00Z");
-const future = "2026-11-19T15:05:00.000Z";
-const past = "2026-11-19T14:59:00.000Z";
+const MIN = 60_000;
+const serverExpiry = "2026-11-19T15:05:00.000Z";
+const opts = { now: NOW, holdMinutes: 5 };
 
 function setup(hold: HoldStore["hold"]) {
   const api = {
     booking: {
-      createHold: vi.fn().mockResolvedValue({ holdId: "new-hold", expiresAt: future }),
+      createHold: vi.fn().mockResolvedValue({ holdId: "new-hold", expiresAt: serverExpiry }),
       releaseHold: vi.fn().mockResolvedValue(undefined),
     },
   };
@@ -34,65 +35,50 @@ function setup(hold: HoldStore["hold"]) {
 }
 
 describe("holdSlot", () => {
-  it("reuses a valid identical hold without calling the API", async () => {
+  it("always creates a new hold, releasing and clearing a still-valid old one first", async () => {
     const slot = slotAt("2026-11-19T16:00:00.000Z");
-    const { api, store } = setup({ holdId: "h1", expiresAt: future, segments: slot.segments });
-    expect(await holdSlot(api, store, slot, { now: NOW })).toBe("held");
-    expect(api.booking.createHold).not.toHaveBeenCalled();
-    expect(api.booking.releaseHold).not.toHaveBeenCalled();
-  });
-
-  it("releases a different valid hold before creating", async () => {
-    const slot = slotAt("2026-11-19T16:00:00.000Z");
-    const { api, store } = setup({
-      holdId: "old",
-      expiresAt: future,
-      segments: slotAt("2026-11-19T16:15:00.000Z").segments,
-    });
-    expect(await holdSlot(api, store, slot, { now: NOW, locationId: "loc" })).toBe("held");
+    const { api, store } = setup({ holdId: "old", expiresAt: serverExpiry, localExpiresAt: NOW + 4 * MIN });
+    expect(await holdSlot(api, store, slot, { ...opts, locationId: "loc" })).toBe("held");
     expect(api.booking.releaseHold).toHaveBeenCalledWith("old");
+    expect(store.clearHold).toHaveBeenCalledTimes(1);
     expect(api.booking.createHold).toHaveBeenCalledWith({ locationId: "loc", segments: slot.segments });
-    expect(store.setHold).toHaveBeenCalledWith({ holdId: "new-hold", expiresAt: future, segments: slot.segments });
+    expect(store.setHold).toHaveBeenCalledWith({
+      holdId: "new-hold",
+      expiresAt: serverExpiry,
+      localExpiresAt: NOW + 5 * MIN,
+    });
   });
 
-  it("does not release an expired hold and ignores release errors", async () => {
+  it("measures the local deadline from the device clock and holdMinutes, not the server expiresAt", async () => {
+    // The device clock runs 10 minutes fast: the server's expiresAt is 5 minutes in the device's past.
+    const fastNow = Date.parse(serverExpiry) + 5 * MIN;
+    const { api, store } = setup(null);
+    await holdSlot(api, store, slotAt("2026-11-19T16:00:00.000Z"), { now: fastNow, holdMinutes: 5 });
+    expect(store.setHold).toHaveBeenCalledWith(expect.objectContaining({ localExpiresAt: fastNow + 5 * MIN }));
+  });
+
+  it("does not release a locally expired hold but still clears it; release errors are ignored", async () => {
     const slot = slotAt("2026-11-19T16:00:00.000Z");
-    const expired = setup({ holdId: "e", expiresAt: past, segments: slot.segments });
-    await holdSlot(expired.api, expired.store, slot, { now: NOW });
+    const expired = setup({ holdId: "e", expiresAt: serverExpiry, localExpiresAt: NOW - 1 });
+    await holdSlot(expired.api, expired.store, slot, opts);
     expect(expired.api.booking.releaseHold).not.toHaveBeenCalled();
+    expect(expired.store.clearHold).toHaveBeenCalledTimes(1);
     expect(expired.api.booking.createHold).toHaveBeenCalled();
 
-    const failing = setup({ holdId: "old", expiresAt: future, segments: slotAt("2026-11-19T16:15:00.000Z").segments });
+    const failing = setup({ holdId: "old", expiresAt: serverExpiry, localExpiresAt: NOW + MIN });
     failing.api.booking.releaseHold.mockRejectedValue(new Error("boom"));
-    expect(await holdSlot(failing.api, failing.store, slot, { now: NOW })).toBe("held");
+    expect(await holdSlot(failing.api, failing.store, slot, opts)).toBe("held");
+    expect(failing.store.clearHold).toHaveBeenCalledTimes(1);
   });
 
-  it("clears the old hold from the store once it was chosen for release, even if the new hold fails", async () => {
-    const slot = slotAt("2026-11-19T16:00:00.000Z");
-    const old = slotAt("2026-11-19T16:15:00.000Z");
-    const { api, store } = setup({ holdId: "old", expiresAt: future, segments: old.segments });
+  it("leaves no old hold behind when the new hold fails", async () => {
+    const { api, store } = setup({ holdId: "old", expiresAt: serverExpiry, localExpiresAt: NOW + MIN });
     api.booking.createHold.mockRejectedValue(
       new ApiError(409, { type: "about:blank", title: "x", status: 409, code: "SLOT_TAKEN" }),
     );
-    expect(await holdSlot(api, store, slot, { now: NOW })).toBe("taken");
+    expect(await holdSlot(api, store, slotAt("2026-11-19T16:00:00.000Z"), opts)).toBe("taken");
     expect(store.clearHold).toHaveBeenCalledTimes(1);
-
-    // the old hold is gone from the store, so re-picking the old slot creates a new hold
-    const again = setup(null);
-    expect(await holdSlot(again.api, again.store, old, { now: NOW })).toBe("held");
-    expect(again.api.booking.createHold).toHaveBeenCalled();
-  });
-
-  it("clears the old hold even when releasing it fails", async () => {
-    const slot = slotAt("2026-11-19T16:00:00.000Z");
-    const { api, store } = setup({
-      holdId: "old",
-      expiresAt: future,
-      segments: slotAt("2026-11-19T16:15:00.000Z").segments,
-    });
-    api.booking.releaseHold.mockRejectedValue(new Error("boom"));
-    await holdSlot(api, store, slot, { now: NOW });
-    expect(store.clearHold).toHaveBeenCalledTimes(1);
+    expect(store.setHold).not.toHaveBeenCalled();
   });
 
   it("maps SLOT_TAKEN to taken and other failures to error", async () => {
@@ -101,13 +87,13 @@ describe("holdSlot", () => {
     taken.api.booking.createHold.mockRejectedValue(
       new ApiError(409, { type: "about:blank", title: "x", status: 409, code: "SLOT_TAKEN" }),
     );
-    expect(await holdSlot(taken.api, taken.store, slot, { now: NOW })).toBe("taken");
+    expect(await holdSlot(taken.api, taken.store, slot, opts)).toBe("taken");
 
     const err = new ApiError(429, { type: "about:blank", title: "x", status: 429, code: "RATE_LIMITED" });
     const other = setup(null);
     other.api.booking.createHold.mockRejectedValue(err);
     const onError = vi.fn();
-    expect(await holdSlot(other.api, other.store, slot, { now: NOW, onError })).toBe("error");
+    expect(await holdSlot(other.api, other.store, slot, { ...opts, onError })).toBe("error");
     expect(onError).toHaveBeenCalledWith(err);
   });
 });

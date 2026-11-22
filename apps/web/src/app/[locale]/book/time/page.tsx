@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { PublicEmployee, PublicLocation, PublicService } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
 import { BackHeader } from "@/components/booking/back-header";
@@ -10,7 +10,7 @@ import { TimeNotice } from "@/components/booking/time-notice";
 import { TimePicker } from "@/components/booking/time-picker";
 import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
-import { useBookingStore } from "@/lib/booking/store";
+import { bookingStore, useBookingStore } from "@/lib/booking/store";
 import { errorMessageKey } from "@/lib/errors";
 
 interface Catalog {
@@ -28,6 +28,8 @@ export default function TimePage() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [released, setReleased] = useState(false);
+  const releasing = useRef<Promise<void> | null>(null);
 
   const empty = store.ready && store.serviceIds.length === 0;
   useEffect(() => {
@@ -51,6 +53,30 @@ export default function TimePage() {
       cancelled = true;
     };
   }, [empty, attempt]);
+
+  // Back from details: availability hides live holds, our own included, so the stored hold is
+  // released (best effort) and forgotten before any slot loads. Once per mount (a ref, not state,
+  // so a re-run effect waits for the same release).
+  useEffect(() => {
+    if (!store.ready) return;
+    if (!releasing.current) {
+      const hold = bookingStore.getState().hold;
+      if (hold) bookingStore.clearHold();
+      releasing.current = hold
+        ? getBrowserApi()
+            .booking.releaseHold(hold.holdId)
+            .then(
+              () => undefined,
+              () => undefined, // it expires by itself
+            )
+        : Promise.resolve();
+    }
+    let cancelled = false;
+    void releasing.current.then(() => !cancelled && setReleased(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [store.ready]);
 
   // Stored services that left the catalog are dropped; only if none remain do we go back to step 1.
   const missing = catalog ? store.serviceIds.filter((id) => !catalog.services.some((s) => s.id === id)) : [];
@@ -95,7 +121,7 @@ export default function TimePage() {
           </button>
         </div>
       ) : null}
-      {catalog && selected.length > 0 ? (
+      {catalog && released && selected.length > 0 ? (
         <TimePicker
           locale={locale}
           location={catalog.location}

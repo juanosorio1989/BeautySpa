@@ -7,6 +7,7 @@ export const en = {
   },
   nav: {
     label: "Main",
+    home: "Home",
     services: "Services",
     team: "Team",
     location: "Location",
@@ -172,6 +173,8 @@ export const en = {
       confirm: "Confirm new time",
       confirming: "Saving…",
       notFound: "We could not find an upcoming appointment to change.",
+      serviceUnavailable:
+        "One of these services can no longer be booked online. Please call the salon to change this appointment.",
     },
   },
   profile: {

@@ -13,7 +13,7 @@ import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { bookingStore, useBookingStore } from "@/lib/booking/store";
 import { useSession } from "@/lib/session/use-session";
-import { useErrorText, useFieldErrorText, type FormField } from "@/lib/use-error-text";
+import { useFallbackErrorText, useFieldErrorText, type FormField } from "@/lib/use-error-text";
 
 const TIME = "/book/time";
 const noop = () => undefined;
@@ -25,7 +25,7 @@ export default function DetailsPage() {
   const router = useRouter();
   const store = useBookingStore();
   const session = useSession();
-  const errorText = useErrorText();
+  const errorText = useFallbackErrorText();
   const fieldText = useFieldErrorText();
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
@@ -45,7 +45,7 @@ export default function DetailsPage() {
     router.replace(`${TIME}?notice=expired`);
   }, [router]);
 
-  // A stored hold that is already past expiresAt is sent back by HoldCountdown on mount.
+  // A stored hold already past its localExpiresAt is sent back by HoldCountdown on mount.
   useEffect(() => {
     if (ready && hold === null && !quiet.current) router.replace(TIME);
   }, [ready, hold, router]);
@@ -77,10 +77,12 @@ export default function DetailsPage() {
     const snapshot = bookingStore.getState();
     quiet.current = true;
     setMeError(null);
+    setLogoutError(false);
     try {
       await session.logout();
     } catch {
-      // logout() already cleared the store; keep quiet and say why the customer is stuck here.
+      // Still signed in and the store is untouched (hold included); say why and offer a retry.
+      quiet.current = false;
       setLogoutError(true);
       return;
     }
@@ -147,9 +149,16 @@ export default function DetailsPage() {
   let body: React.ReactNode = null;
   if (logoutError) {
     body = (
-      <p role="alert" className="px-5 pt-5 text-warn">
-        {tAll("errors.network")}
-      </p>
+      <div role="alert" className="px-5 pt-5 text-warn">
+        <p>{tAll("errors.network")}</p>
+        <button
+          type="button"
+          onClick={() => void notYou()}
+          className="mt-3 min-h-11 rounded-full border border-plum px-5 font-medium"
+        >
+          {tAll("common.retry")}
+        </button>
+      </div>
     );
   } else if (ready && hold) {
     if (session.status === "loading" || (session.status === "signedIn" && !current && !meError)) {
@@ -196,7 +205,7 @@ export default function DetailsPage() {
   return (
     <main className="flex min-h-dvh flex-col">
       <BackHeader href={TIME} backLabel={t("back")} title={t("title")} />
-      {ready && hold ? <HoldCountdown expiresAt={hold.expiresAt} onExpire={backExpired} /> : null}
+      {ready && hold ? <HoldCountdown localExpiresAt={hold.localExpiresAt} onExpire={backExpired} /> : null}
       {body}
     </main>
   );

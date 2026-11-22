@@ -150,4 +150,12 @@ describe("/me/appointments/:id/reschedule", () => {
     mount();
     expect(await screen.findByText("We could not find an upcoming appointment to change.")).toBeInTheDocument();
   });
+
+  it("a service that is no longer public shows the call-the-salon message instead of the picker", async () => {
+    api.public.services.mockResolvedValue({ categories: [], services: [svc(1)] });
+    mount();
+    expect(await screen.findByText(en.me.reschedule.serviceUnavailable)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Call (718) 555-0100" })).toHaveAttribute("href", "tel:+17185550100");
+    expect(api.booking.availability).not.toHaveBeenCalled();
+  });
 });

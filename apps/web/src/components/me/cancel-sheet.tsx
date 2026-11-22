@@ -27,6 +27,7 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
   const first = useRef<HTMLTextAreaElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
+  const unmounting = useRef(false);
   useEffect(() => {
     onCloseRef.current = onClose;
   });
@@ -38,6 +39,7 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
     el?.showModal();
     first.current?.focus();
     return () => {
+      unmounting.current = true; // our own close() below must not close the next sheet
       if (el?.open) el.close();
       opener?.focus();
     };
@@ -69,6 +71,10 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
         // Escape: ignored while the request runs
         if (busy) e.preventDefault();
         else onCloseRef.current();
+      }}
+      onClose={() => {
+        // The browser closed it anyway (Chrome lets a second Escape through): keep the page in sync.
+        if (!unmounting.current) onCloseRef.current();
       }}
       className="m-0 mt-auto w-full max-w-none bg-transparent p-0 backdrop:bg-ink/50 sm:m-auto sm:max-w-[480px]"
     >

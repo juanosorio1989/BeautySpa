@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 import type { Me, MePatch } from "@beautyspa/contracts";
 import { LOCALES, type Locale } from "@beautyspa/i18n";
-import { Field, INPUT_CLASS } from "@/components/booking/field";
+import { errorProps, Field, INPUT_CLASS } from "@/components/booking/field";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { useFallbackErrorText, useFieldErrorText } from "@/lib/use-error-text";
@@ -28,6 +28,8 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
   const [email, setEmail] = useState(me.email ?? "");
   const [consent, setConsent] = useState(me.consents.EMAIL);
   const [locale, setLocale] = useState<Locale>(me.locale);
+  // The page language follows the control only when it was used in this edit.
+  const [languageTouched, setLanguageTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({});
@@ -51,7 +53,7 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
     if (trimmedEmail !== (me.email ?? "")) patch.email = trimmedEmail || null;
     if (emailConsent !== me.consents.EMAIL) patch.consents = { EMAIL: emailConsent };
     if (locale !== me.locale) patch.locale = locale;
-    const switchUrl = locale !== pageLocale;
+    const switchUrl = languageTouched && locale !== pageLocale;
     if (Object.keys(patch).length === 0) {
       if (switchUrl) router.replace(pathname, { locale });
       else setStatus({ kind: "unchanged" });
@@ -85,6 +87,7 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
       <Field id="profile-name" label={t("name")} error={fieldErrors.name}>
         <input
           id="profile-name"
+          {...errorProps("profile-name", fieldErrors.name)}
           autoComplete="name"
           value={name}
           maxLength={80}
@@ -95,6 +98,7 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
       <Field id="profile-email" label={t("email")} error={fieldErrors.email}>
         <input
           id="profile-email"
+          {...errorProps("profile-email", fieldErrors.email)}
           type="email"
           autoComplete="email"
           value={email}
@@ -129,7 +133,10 @@ export function ProfileForm({ me, onSaved }: { me: Me; onSaved: (me: Me) => void
               key={l}
               type="button"
               aria-pressed={l === locale}
-              onClick={() => setLocale(l)}
+              onClick={() => {
+                setLocale(l);
+                setLanguageTouched(true);
+              }}
               className={`min-h-11 rounded-full px-4 text-sm ${
                 l === locale
                   ? "bg-ink font-semibold text-white"

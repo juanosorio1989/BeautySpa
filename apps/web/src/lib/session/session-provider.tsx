@@ -46,14 +46,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signedIn = useCallback(() => update("signedIn"), [update]);
 
-  const logout = useCallback(async () => {
-    try {
-      await getBrowserApi().auth.logout();
-    } finally {
+  const logout = useCallback(
+    async (opts: { local?: boolean } = {}) => {
+      // A failed request leaves the refresh cookie alive, so the visitor is still signed in.
+      if (!opts.local) await getBrowserApi().auth.logout();
       bookingStore.reset();
       update("signedOut");
-    }
-  }, [update]);
+    },
+    [update],
+  );
 
   const value = useMemo<Session>(() => ({ status, ensure, signedIn, logout }), [status, ensure, signedIn, logout]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

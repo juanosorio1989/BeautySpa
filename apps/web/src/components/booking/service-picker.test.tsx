@@ -111,4 +111,12 @@ describe("ServicePicker", () => {
     renderPicker();
     expect(screen.getByRole("checkbox", { name: /Svc 6/ })).toBeChecked();
   });
+
+  it("stored services that left the catalog do not count toward the limit", () => {
+    for (const n of [71, 72, 73, 74]) bookingStore.toggleService(id(n));
+    renderPicker();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Svc 1/ }));
+    expect(screen.getByRole("checkbox", { name: /Svc 1/ })).toBeChecked();
+    expect(screen.queryByText(en.booking.services.limit)).toBeNull();
+  });
 });

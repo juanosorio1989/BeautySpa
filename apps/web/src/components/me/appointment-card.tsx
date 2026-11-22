@@ -4,6 +4,7 @@ import type { Locale } from "@beautyspa/i18n";
 import { AppointmentSummary } from "@/components/booking/appointment-summary";
 import { Link } from "@/i18n/navigation";
 import { formatDate, formatTimeRange } from "@/lib/format";
+import { customerCancelReason } from "@/lib/me/cancel-reason";
 import { canChangeOnline } from "@/lib/me/window";
 import { CallSalon } from "./call-salon";
 
@@ -37,6 +38,7 @@ export function AppointmentCard({
 }: Props) {
   const t = useTranslations("me");
   const descId = `appt-${appointment.id}`;
+  const reason = customerCancelReason(appointment);
   const changeable = canChangeOnline(appointment.startsAt, location.booking.cancelWindowHours, nowMs);
   return (
     <article className="flex flex-col gap-3">
@@ -57,9 +59,7 @@ export function AppointmentCard({
         locale={locale}
       />
       {appointment.notes ? <p className="text-sm text-muted">{t("note", { note: appointment.notes })}</p> : null}
-      {appointment.cancelReason ? (
-        <p className="text-sm text-muted">{t("cancelReason", { reason: appointment.cancelReason })}</p>
-      ) : null}
+      {reason ? <p className="text-sm text-muted">{t("cancelReason", { reason })}</p> : null}
       {kind === "upcoming" ? (
         changeable ? (
           <div className="flex gap-2.5">

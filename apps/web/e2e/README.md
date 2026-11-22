@@ -30,7 +30,7 @@ pnpm --filter @beautyspa/web test:e2e
 ```
 
 `test:e2e` loads the root `.env` (shell variables win), then `e2e/prepare.sh` migrates and seeds
-`DATABASE_URL_TEST`, builds the API and the web app, and Playwright runs the specs. Ports 3100 and 3101 must be free.
+`DATABASE_URL_TEST`, builds the workspace packages, the API and the web app, and Playwright runs the specs. Ports 3100 and 3101 must be free.
 
 Notes:
 

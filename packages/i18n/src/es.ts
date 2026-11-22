@@ -9,6 +9,7 @@ export const es: Messages = {
   },
   nav: {
     label: "Principal",
+    home: "Inicio",
     services: "Servicios",
     team: "Equipo",
     location: "Ubicación",
@@ -174,6 +175,8 @@ export const es: Messages = {
       confirm: "Confirmar nueva hora",
       confirming: "Guardando…",
       notFound: "No encontramos una cita próxima para cambiar.",
+      serviceUnavailable:
+        "Uno de estos servicios ya no se puede reservar en línea. Llama al salón para cambiar esta cita.",
     },
   },
   profile: {

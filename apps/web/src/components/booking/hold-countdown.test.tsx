@@ -6,10 +6,10 @@ import { HoldCountdown } from "./hold-countdown";
 
 const NOW = Date.parse("2026-11-19T15:00:00.000Z");
 
-const mount = (expiresAt: string, onExpire = vi.fn()) => {
+const mount = (localExpiresAt: number, onExpire = vi.fn()) => {
   render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <HoldCountdown expiresAt={expiresAt} onExpire={onExpire} />
+      <HoldCountdown localExpiresAt={localExpiresAt} onExpire={onExpire} />
     </NextIntlClientProvider>,
   );
   return onExpire;
@@ -23,8 +23,8 @@ describe("HoldCountdown", () => {
     vi.useRealTimers();
   });
 
-  it("shows m:ss from hold.expiresAt and returns to time at 0 (expired callback)", () => {
-    const onExpire = mount(new Date(NOW + 272_000).toISOString());
+  it("shows m:ss from the local deadline and returns to time at 0 (expired callback)", () => {
+    const onExpire = mount(NOW + 272_000);
     expect(screen.getByText("We're holding your time for 4:32")).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(2_000);
@@ -38,7 +38,7 @@ describe("HoldCountdown", () => {
   });
 
   it("calls onExpire right away for a hold that already expired", () => {
-    const onExpire = mount(new Date(NOW - 1_000).toISOString());
+    const onExpire = mount(NOW - 1_000);
     expect(onExpire).toHaveBeenCalledTimes(1);
   });
 });

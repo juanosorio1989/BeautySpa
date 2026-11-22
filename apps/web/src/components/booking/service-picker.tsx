@@ -40,7 +40,8 @@ function PreselectFromUrl({
     const service = services.find((s) => s.id === preselect);
     if (!service) return;
     handled.current = true;
-    onResult(service, serviceIds.includes(service.id) ? "ok" : toggleService(service.id));
+    const catalogIds = services.map((s) => s.id);
+    onResult(service, serviceIds.includes(service.id) ? "ok" : toggleService(service.id, catalogIds));
     // run once per page load, when the store becomes ready
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, preselect]);
@@ -57,6 +58,7 @@ export function ServicePicker({ data, locale }: { data: PublicServicesResponse; 
   const [limit, setLimit] = useState(false);
 
   const known = new Set(data.categories.map((c) => c.id));
+  const catalogIds = data.services.map((s) => s.id);
   const categoryOf = (s: PublicService) => (s.categoryId && known.has(s.categoryId) ? s.categoryId : OTHER);
   const chips = [
     ...[...data.categories]
@@ -115,7 +117,7 @@ export function ServicePicker({ data, locale }: { data: PublicServicesResponse; 
                 <input
                   type="checkbox"
                   checked={on}
-                  onChange={() => setLimit(store.toggleService(s.id) === "limit")}
+                  onChange={() => setLimit(store.toggleService(s.id, catalogIds) === "limit")}
                   className="size-[22px] accent-plum"
                 />
                 <span className="flex flex-1 flex-col gap-0.5">

@@ -4,7 +4,6 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
-import { bookingStore } from "@/lib/booking/store";
 import { useSession } from "@/lib/session/use-session";
 import { useFallbackErrorText } from "@/lib/use-error-text";
 
@@ -41,9 +40,9 @@ export function DeleteAccount() {
     try {
       await session.logout(); // clears the cookie, the in-memory token and the booking store
     } catch {
-      // the account is gone either way; the session is already treated as signed out
+      // The server already revoked every session of the deleted account: end it here too.
+      await session.logout({ local: true });
     }
-    bookingStore.reset();
     router.replace("/?deleted=1");
   }
 

@@ -22,7 +22,8 @@ describe("todayIn", () => {
 
 describe("dayLabel", () => {
   it("gives the weekday and day number of a calendar date", () => {
-    expect(dayLabel("2026-11-19", "en")).toEqual({ weekday: "Thu", day: "19" });
+    expect(dayLabel("2026-11-19", "en")).toEqual({ weekday: "Thu", day: "19", full: "Thursday, November 19" });
+    expect(dayLabel("2026-11-19", "es").full).toMatch(/jueves.*19.*noviembre/i);
     expect(dayLabel("2026-11-19", "es").day).toBe("19");
   });
 });

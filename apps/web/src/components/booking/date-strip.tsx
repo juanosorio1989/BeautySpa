@@ -22,14 +22,14 @@ export function DateStrip({
       className="grid snap-x auto-cols-[max(44px,calc((100%-48px)/7))] grid-flow-col gap-2 overflow-x-auto pb-2"
     >
       {dates.map((date, i) => {
-        const { weekday, day } = dayLabel(date, locale);
+        const { weekday, day, full } = dayLabel(date, locale);
         const active = date === selected;
         return (
           <button
             key={date}
             type="button"
             aria-pressed={active}
-            aria-label={`${weekday} ${day}`}
+            aria-label={full}
             onClick={() => onSelect(date)}
             className={`flex min-h-[60px] min-w-11 snap-start flex-col items-center justify-center gap-0.5 rounded-[14px] py-2 ${
               active ? "bg-plum text-white" : "border border-line-strong bg-card text-ink"

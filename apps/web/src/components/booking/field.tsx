@@ -3,6 +3,13 @@ import type { ReactNode } from "react";
 export const INPUT_CLASS =
   "min-h-[52px] w-full rounded-xl border border-line-strong bg-card px-3.5 text-base text-ink placeholder:text-muted";
 
+/** Props for the control inside `Field`: invalid state, described by the error that `Field` renders. */
+export function errorProps(id: string, error: string | undefined) {
+  return error
+    ? ({ "aria-invalid": true, "aria-describedby": `${id}-error` } as const)
+    : ({ "aria-invalid": false } as const);
+}
+
 /** A labelled form field with an optional inline error (announced via `role="alert"`). */
 export function Field({
   id,

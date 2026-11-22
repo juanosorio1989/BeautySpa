@@ -9,9 +9,8 @@ function nationalDigits(input: string): string {
 /** US only: 10 digits, or 11 starting with 1, valid NANP. Returns E.164 or null. */
 export function toE164(input: string): string | null {
   if (!ALLOWED.test(input)) return null;
-  const digits = input.replace(/\D/g, "");
-  if (digits.length !== 10 && !(digits.length === 11 && digits.startsWith("1"))) return null;
-  const national = digits.length === 11 ? digits.slice(1) : digits;
+  // NANP matches exactly 10 digits, so anything but 10, or 11 with a leading 1, is refused here.
+  const national = nationalDigits(input);
   return NANP.test(national) ? `+1${national}` : null;
 }
 

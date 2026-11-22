@@ -17,6 +17,7 @@ export function SiteHeader({ locationName }: { locationName: string }) {
     <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 pb-3 pt-5">
       <Link
         href="/"
+        aria-label={locationName ? undefined : t("home")}
         className="inline-flex min-h-11 items-center font-heading text-xl font-bold text-ink hover:text-ink"
       >
         {locationName}

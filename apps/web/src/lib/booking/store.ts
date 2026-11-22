@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { ServiceChoice, Slot } from "@beautyspa/contracts";
+import { getBrowserApi } from "@/lib/api/browser";
 import type { StoredHold } from "./hold-slot";
 
 export const BOOKING_STORE_KEY = "bs-booking";
@@ -17,6 +18,15 @@ export interface BookingState {
 
 const EMPTY: BookingState = { serviceIds: [], choices: [], date: null, slot: null, hold: null };
 
+/** Holds stored before `localExpiresAt` existed are not trusted (their expiry was the server's clock). */
+function storedHold(v: unknown): StoredHold | null {
+  if (!v || typeof v !== "object") return null;
+  const h = v as Partial<StoredHold>;
+  return typeof h.holdId === "string" && typeof h.expiresAt === "string" && typeof h.localExpiresAt === "number"
+    ? { holdId: h.holdId, expiresAt: h.expiresAt, localExpiresAt: h.localExpiresAt }
+    : null;
+}
+
 function parse(raw: string | null): BookingState {
   if (!raw) return EMPTY;
   try {
@@ -27,15 +37,19 @@ function parse(raw: string | null): BookingState {
       choices: v.choices,
       date: typeof v.date === "string" ? v.date : null,
       slot: v.slot ?? null,
-      hold: v.hold ?? null,
+      hold: storedHold(v.hold),
     };
   } catch {
     return EMPTY;
   }
 }
 
-/** A small external store persisted to sessionStorage; `getStorage` may throw (private mode, blocked). */
-export function createBookingStore(getStorage: () => Storage) {
+/**
+ * A small external store persisted to sessionStorage; `getStorage` may throw (private mode, blocked).
+ * Changing the services or professionals (`toggleService`, `setChoice`, `prefill`) drops the hold,
+ * which no longer matches them, and hands it to `onHoldDropped` for a best-effort release.
+ */
+export function createBookingStore(getStorage: () => Storage, onHoldDropped?: (hold: StoredHold) => void) {
   let state: BookingState | null = null;
   const listeners = new Set<() => void>();
 
@@ -58,6 +72,12 @@ export function createBookingStore(getStorage: () => Storage) {
     listeners.forEach((l) => l());
   };
   const update = (patch: Partial<BookingState>): void => set({ ...load(), ...patch });
+  /** `update` for a selection change: the hold goes too. */
+  const changeSelection = (patch: Partial<BookingState>): void => {
+    const dropped = load().hold;
+    update({ ...patch, hold: null });
+    if (dropped) onHoldDropped?.(dropped);
+  };
 
   return {
     getState: load,
@@ -65,18 +85,20 @@ export function createBookingStore(getStorage: () => Storage) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    toggleService(id: string): "ok" | "limit" {
+    /** With `catalogIds`, stored ids missing from the current catalog do not count toward the limit. */
+    toggleService(id: string, catalogIds?: readonly string[]): "ok" | "limit" {
       const s = load();
       if (s.serviceIds.includes(id)) {
-        update({
+        changeSelection({
           serviceIds: s.serviceIds.filter((x) => x !== id),
           choices: s.choices.filter((c) => c.serviceId !== id),
           slot: null,
         });
         return "ok";
       }
-      if (s.serviceIds.length >= MAX_SERVICES) return "limit";
-      update({
+      const counted = catalogIds ? s.serviceIds.filter((x) => catalogIds.includes(x)) : s.serviceIds;
+      if (counted.length >= MAX_SERVICES) return "limit";
+      changeSelection({
         serviceIds: [...s.serviceIds, id],
         choices: [...s.choices, { serviceId: id, employeeId: "ANY" }],
         slot: null,
@@ -84,7 +106,7 @@ export function createBookingStore(getStorage: () => Storage) {
       return "ok";
     },
     setChoice(serviceId: string, employeeId: string | "ANY"): void {
-      update({
+      changeSelection({
         choices: load().choices.map((c) => (c.serviceId === serviceId ? { ...c, employeeId } : c)),
         slot: null,
       });
@@ -94,7 +116,7 @@ export function createBookingStore(getStorage: () => Storage) {
     setHold: (hold: StoredHold): void => update({ hold }),
     clearHold: (): void => update({ hold: null }),
     prefill(services: ServiceChoice[]): void {
-      update({
+      changeSelection({
         serviceIds: services.map((s) => s.serviceId),
         choices: services,
         date: null,
@@ -114,7 +136,15 @@ export function createBookingStore(getStorage: () => Storage) {
   };
 }
 
-export const bookingStore = createBookingStore(() => sessionStorage);
+export const bookingStore = createBookingStore(
+  () => sessionStorage,
+  (hold) => {
+    // best effort: the hold expires by itself
+    Promise.resolve()
+      .then(() => getBrowserApi().booking.releaseHold(hold.holdId))
+      .catch(() => undefined);
+  },
+);
 
 type Snapshot = { state: BookingState; ready: boolean };
 const SERVER_SNAPSHOT: Snapshot = { state: EMPTY, ready: false };

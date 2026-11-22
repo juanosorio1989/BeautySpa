@@ -120,6 +120,7 @@ export default function MePage() {
         </Link>
         {cancelling && locationOf(cancelling) ? (
           <CancelSheet
+            key={cancelling.id}
             appointment={cancelling}
             location={locationOf(cancelling)!}
             onClose={() => setCancelling(null)}

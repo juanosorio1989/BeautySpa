@@ -30,16 +30,22 @@ const api = {
 vi.mock("@/lib/api/browser", () => ({ getBrowserApi: () => api, setSessionExpiredHandler: vi.fn() }));
 
 import { SessionProvider } from "@/lib/session/session-provider";
+import { useSession } from "@/lib/session/use-session";
 import ProfilePage from "./page";
 
 const problem = (status: number, code: string, errors?: { path: string; message: string }[]) =>
   new ApiError(status, { type: "about:blank", title: "x", status, code, errors } as never);
+
+function StatusProbe() {
+  return <output data-testid="session-status">{useSession().status}</output>;
+}
 
 const mount = () =>
   render(
     <NextIntlClientProvider locale="en" messages={en}>
       <SessionProvider>
         <ProfilePage />
+        <StatusProbe />
       </SessionProvider>
     </NextIntlClientProvider>,
   );
@@ -119,14 +125,15 @@ describe("/me/profile", () => {
     expect(api.me.patch).not.toHaveBeenCalled();
   });
 
-  it("editing only the name with stored es on /en sends no locale", async () => {
+  it("editing only the name with stored es on /en sends no locale and keeps the page language", async () => {
     api.me.get.mockResolvedValue(saved({ locale: "es" }));
     api.me.patch.mockResolvedValue(saved({ locale: "es", name: "Ana" }));
     mount();
     fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Ana" } });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.me.patch).toHaveBeenCalledWith({ name: "Ana" }));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/me/profile", { locale: "es" }));
+    expect(await screen.findByText("Your changes were saved.")).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it("clearing the email while consent is on sends consents.EMAIL false", async () => {
@@ -161,6 +168,10 @@ describe("/me/profile", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Please enter a valid name.")).toBeInTheDocument();
     expect(screen.queryByText("RAW")).not.toBeInTheDocument();
+    const input = screen.getByLabelText("Your name");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription("Please enter a valid name.");
+    expect(screen.getByLabelText("Email")).toHaveAttribute("aria-invalid", "false");
   });
 
   it("a validation error for an unrendered field falls back to the generic copy", async () => {
@@ -205,13 +216,17 @@ describe("/me/profile", () => {
     expect(bookingStore.getState().serviceIds).toEqual([]);
   });
 
-  it("delete account lands home even when logout fails afterwards", async () => {
+  it("delete account still ends signed out locally when logout fails afterwards", async () => {
     api.me.remove.mockResolvedValue(undefined);
     api.auth.logout.mockRejectedValue(new TypeError("offline"));
+    bookingStore.toggleService(id(1));
     mount();
     fireEvent.click(await screen.findByRole("button", { name: "Delete my account" }));
+    expect(screen.getByTestId("session-status")).toHaveTextContent("signedIn");
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete my account" }));
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/?deleted=1"));
+    expect(screen.getByTestId("session-status")).toHaveTextContent("signedOut");
+    expect(bookingStore.getState().serviceIds).toEqual([]);
   });
 
   it("a failed delete keeps the account and shows the error", async () => {

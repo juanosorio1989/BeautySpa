@@ -4,7 +4,7 @@ import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { getBrowserApi } from "@/lib/api/browser";
 import { useErrorText, useFieldErrorText } from "@/lib/use-error-text";
-import { Field, INPUT_CLASS } from "./field";
+import { errorProps, Field, INPUT_CLASS } from "./field";
 
 /** "Want your confirmation and reminders by email?" Shown only to customers without EMAIL consent. */
 export function EmailOffer({ email, onSaved }: { email: string | null; onSaved: () => void }) {
@@ -54,6 +54,7 @@ export function EmailOffer({ email, onSaved }: { email: string | null; onSaved: 
         <Field id="offer-email" label={t("emailLabel")} error={fieldError}>
           <input
             id="offer-email"
+            {...errorProps("offer-email", fieldError)}
             type="email"
             autoComplete="email"
             value={value}

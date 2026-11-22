@@ -1,8 +1,12 @@
 import { ApiError, type ApiClient } from "@beautyspa/api-client";
-import type { Hold, PlannedSegment, Slot } from "@beautyspa/contracts";
+import type { Hold, Slot } from "@beautyspa/contracts";
 
-/** The hold plus the segments it was made for, so a later pick of the same slot can reuse it. */
-export type StoredHold = Hold & { segments: PlannedSegment[] };
+/**
+ * The hold plus `localExpiresAt` (epoch ms on the device clock): device receipt time plus the
+ * location's hold length. The countdown and every "still valid" check use it, never the server's
+ * `expiresAt`, so a skewed device clock cannot expire a fresh hold. The API stays the decider.
+ */
+export type StoredHold = Hold & { localExpiresAt: number };
 
 export interface HoldStore {
   hold: StoredHold | null;
@@ -10,37 +14,35 @@ export interface HoldStore {
   clearHold(): void;
 }
 
-const SEGMENT_KEYS = ["serviceId", "employeeId", "resourceId", "startsAt", "endsAt", "blockEndsAt"] as const;
-
-function sameSegments(a: PlannedSegment[], b: PlannedSegment[]): boolean {
-  return a.length === b.length && a.every((seg, i) => SEGMENT_KEYS.every((k) => seg[k] === b[i]![k]));
-}
+const MINUTE = 60_000;
 
 /**
- * Holds `slot`. Reuses a still-valid identical hold; otherwise releases a different valid hold
- * (best effort, it would expire anyway) and creates a new one. `onError` receives non-SLOT_TAKEN failures.
+ * Holds `slot` with a new hold. A stored hold is dropped first: released (best effort, it would
+ * expire anyway) while still locally valid, and cleared from the store either way, so a failed
+ * create never leaves it looking valid. `onError` receives non-SLOT_TAKEN failures.
  */
 export async function holdSlot(
   api: { booking: Pick<ApiClient["booking"], "createHold" | "releaseHold"> },
   store: HoldStore,
   slot: Slot,
-  opts: { locationId?: string; now?: number; onError?: (err: unknown) => void } = {},
+  opts: { holdMinutes: number; locationId?: string; now?: number; onError?: (err: unknown) => void },
 ): Promise<"held" | "taken" | "error"> {
-  const now = opts.now ?? Date.now();
   const current = store.hold;
-  if (current && Date.parse(current.expiresAt) > now) {
-    if (sameSegments(current.segments, slot.segments)) return "held";
-    try {
-      await api.booking.releaseHold(current.holdId);
-    } catch {
-      // best effort: the old hold expires by itself
+  if (current) {
+    if (current.localExpiresAt > (opts.now ?? Date.now())) {
+      try {
+        await api.booking.releaseHold(current.holdId);
+      } catch {
+        // best effort: the old hold expires by itself
+      }
     }
-    // Either way the old hold is no longer ours to reuse (a failed create must not leave it looking valid).
     store.clearHold();
   }
   try {
     const hold = await api.booking.createHold({ locationId: opts.locationId, segments: slot.segments });
-    store.setHold({ ...hold, segments: slot.segments });
+    // Measured from receipt (after the request), so the local deadline never runs ahead of the server's.
+    const receivedAt = opts.now ?? Date.now();
+    store.setHold({ ...hold, localExpiresAt: receivedAt + opts.holdMinutes * MINUTE });
     return "held";
   } catch (err) {
     if (err instanceof ApiError && err.problem.code === "SLOT_TAKEN") return "taken";

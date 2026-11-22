@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { en } from "@beautyspa/i18n";
-import { id, me, seg } from "@/components/booking/test-fixtures";
+import { id, me } from "@/components/booking/test-fixtures";
 import { bookingStore } from "@/lib/booking/store";
 
 const replace = vi.fn();
@@ -33,11 +33,10 @@ const CODE_LABEL = /^We (texted you|sent you) a code/;
 const apiError = (status: number, code: string, errors?: { path: string; message: string }[]) =>
   new ApiError(status, { type: "about:blank", title: "x", status, code, ...(errors ? { errors } : {}) } as never);
 
-const segments = [seg(1, 11, "2026-11-19T16:00:00.000Z", "2026-11-19T16:30:00.000Z")];
 const validHold = () => ({
   holdId: id(500),
   expiresAt: new Date(Date.now() + 300_000).toISOString(),
-  segments,
+  localExpiresAt: Date.now() + 300_000,
 });
 
 const mount = () =>
@@ -67,11 +66,25 @@ describe("/book/details", () => {
   });
 
   it("details with an expired stored hold returns to time with the expired message", async () => {
-    bookingStore.setHold({ ...validHold(), expiresAt: new Date(Date.now() - 1_000).toISOString() });
+    bookingStore.setHold({ ...validHold(), localExpiresAt: Date.now() - 1_000 });
     signedOut();
     mount();
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/book/time?notice=expired"));
     expect(bookingStore.getState().hold).toBeNull();
+  });
+
+  it("a fast device clock does not expire a fresh hold: the countdown follows the local deadline", async () => {
+    // The server's expiresAt is 5 minutes in the device's past; the local deadline is 5 minutes ahead.
+    bookingStore.setHold({
+      ...validHold(),
+      expiresAt: new Date(Date.now() - 300_000).toISOString(),
+      localExpiresAt: Date.now() + 300_000,
+    });
+    signedOut();
+    mount();
+    expect(await screen.findByText(/We're holding your time for (5:00|4:59)/)).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    expect(bookingStore.getState().hold).not.toBeNull();
   });
 
   it("details without a hold returns to time", async () => {
@@ -233,6 +246,8 @@ describe("/book/details", () => {
       fireEvent.click(screen.getByRole("button", { name: "Confirm appointment" }));
       expect(await screen.findByText("Please enter a valid name.")).toBeInTheDocument();
       expect(screen.queryByText("Too long")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Your name")).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByLabelText("Your name")).toHaveAccessibleDescription("Please enter a valid name.");
       expect(api.booking.book).not.toHaveBeenCalled();
       expect(bookingStore.getState().hold).not.toBeNull();
     });
@@ -242,7 +257,7 @@ describe("/book/details", () => {
       api.booking.book.mockRejectedValue(apiError(400, "VALIDATION_FAILED", [{ path: "holdId", message: "bad uuid" }]));
       mount();
       fireEvent.click(await screen.findByRole("button", { name: "Confirm appointment" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent("Please check the highlighted fields.");
+      expect(await screen.findByRole("alert")).toHaveTextContent(en.errors.generic);
       expect(screen.queryByText("bad uuid")).not.toBeInTheDocument();
     });
 
@@ -251,7 +266,7 @@ describe("/book/details", () => {
       api.booking.book.mockRejectedValue(apiError(400, "VALIDATION_FAILED", [{ path: "email", message: "bad" }]));
       mount();
       fireEvent.click(await screen.findByRole("button", { name: "Confirm appointment" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent("Please check the highlighted fields.");
+      expect(await screen.findByRole("alert")).toHaveTextContent(en.errors.generic);
     });
 
     it("a PATCH /me conflict does not run the booking conflict handling and keeps the hold", async () => {
@@ -266,16 +281,24 @@ describe("/book/details", () => {
       expect(api.booking.book).not.toHaveBeenCalled();
     });
 
-    it("Not you? with a failing logout shows the network message and does not restore or re-ensure", async () => {
+    it("Not you? with a failing logout keeps the hold, shows the network message and retries", async () => {
       api.me.get.mockResolvedValue(me({ name: "Ana" }));
-      api.auth.logout.mockRejectedValue(new TypeError("Failed to fetch"));
+      api.auth.logout.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockImplementationOnce(async () => {
+        signedOut();
+      });
       mount();
       await screen.findByText("Booking as Ana");
       const refreshCalls = api.auth.refresh.mock.calls.length;
       fireEvent.click(screen.getByRole("button", { name: "Not you?" }));
       expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server");
-      expect(bookingStore.getState().hold).toBeNull();
+      expect(bookingStore.getState().hold?.holdId).toBe(id(500));
       expect(api.auth.refresh.mock.calls.length).toBe(refreshCalls);
+      expect(replace).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await screen.findByLabelText("Your mobile number")).toBeInTheDocument();
+      expect(api.auth.logout).toHaveBeenCalledTimes(2);
+      expect(bookingStore.getState().hold?.holdId).toBe(id(500));
       expect(replace).not.toHaveBeenCalled();
     });
 
