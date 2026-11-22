@@ -97,7 +97,7 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
 
 | Who | How |
 |---|---|
-| Client | Phone + OTP via Twilio Verify (channel WhatsApp, fallback SMS). First verification silently creates a `customer`. |
+| Client | Phone + OTP via Twilio Verify, over the channels from `OTP_CHANNELS` (default `sms`). First verification silently creates a `customer`. |
 | Staff | Email + password (argon2id) + TOTP 2FA, mandatory for all staff who log in **(call)**. |
 
 Staff lifecycle **(call)**:

@@ -46,9 +46,9 @@ finding the salon on Google (owner picked option A on 2026-11-21).
   web and API must share a registrable domain (dev: `localhost:3000` web,
   `localhost:3001` API, CORS allows `WEB_ORIGIN` only).
 - WhatsApp messaging is deferred (owner decision 2026-11-21): the only consent
-  channel offered is EMAIL. The OTP itself still goes WhatsApp-first with SMS
-  fallback (Twilio Verify decides; the API returns `channel`), so the code step
-  has copy for both channels.
+  channel offered is EMAIL. The OTP goes over the channels from `OTP_CHANNELS`
+  (default `sms`; the API returns the `channel` used), so the code step has copy
+  for both WhatsApp and SMS.
 - English code and docs; UI strings EN/ES in catalogs, none hard-coded.
 
 ## Approaches considered

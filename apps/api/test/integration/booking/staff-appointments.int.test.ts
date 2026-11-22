@@ -1,6 +1,6 @@
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Appointment, PlannedSegment, StaffAppointment } from "@beautyspa/contracts";
+import type { Appointment, CustomerExport, PlannedSegment, StaffAppointment } from "@beautyspa/contracts";
 import { TokenService } from "../../../src/auth/token.service.js";
 import { BookingEvents } from "../../../src/booking/booking-events.js";
 import { CLOCK } from "../../../src/common/clock.js";
@@ -8,6 +8,7 @@ import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import {
   BOOKING_NOW,
   bookSegment,
+  customerSession,
   fixedClock,
   seedBookingFixture,
   staffSession,
@@ -416,6 +417,27 @@ describe("staff appointments: create, move, status", () => {
       expect((audits[0]!.before as Appointment).status).toBe("BOOKED");
       expect((audits[0]!.after as Appointment).status).toBe("CANCELLED");
       expect(events.cancelled).toHaveBeenCalledWith(id);
+    });
+
+    it("keeps a staff cancel reason from the customer but not from staff or the audit", async () => {
+      const { id } = await seedPedi();
+      const cancelled = await setStatus(id, { status: "CANCELLED", reason: "Staff sick" });
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.body as StaffAppointment).toMatchObject({ cancelledBy: "STAFF", cancelReason: "Staff sick" });
+
+      const customer = await customerSession(ctx.app, f);
+      const mine = await authed(http().get("/v1/me/appointments"), customer.token);
+      expect(mine.status).toBe(200);
+      const listed = [...mine.body.upcoming, ...mine.body.past] as Appointment[];
+      expect(listed.find((a) => a.id === id)).toMatchObject({ status: "CANCELLED", cancelReason: null });
+
+      const exported = await authed(http().get("/v1/me/export"), customer.token);
+      expect(exported.status).toBe(200);
+      const inExport = (exported.body as CustomerExport).appointments.find((a) => a.id === id);
+      expect(inExport).toMatchObject({ status: "CANCELLED", cancelReason: null });
+
+      const audits = await auditsOf("appointment.status");
+      expect((audits[0]!.after as Appointment).cancelReason).toBe("Staff sick");
     });
 
     it("refuses any change of a HELD or cancelled appointment", async () => {

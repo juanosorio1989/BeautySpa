@@ -16,8 +16,12 @@ export const startOf = (row: Pick<AppointmentRow, "segments">): number =>
 const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d ? d.toISOString() : null);
 
-/** Customer-facing shape: `startsAt` = earliest segment start, `endsAt` = latest segment end. */
-export function toAppointmentDto(row: AppointmentRow): Appointment {
+/**
+ * The full `Appointment` shape, staff cancel reasons included: audit snapshots and the base of
+ * the staff DTO. Never send it to a customer (use `toAppointmentDto`).
+ * `startsAt` = earliest segment start, `endsAt` = latest segment end.
+ */
+export function toAppointmentRecord(row: AppointmentRow): Appointment {
   if (row.segments.length === 0) throw new Error(`Appointment ${row.id} has no segments`);
   const starts = row.segments.map((s) => s.startsAt.getTime());
   const ends = row.segments.map((s) => s.endsAt.getTime());
@@ -48,10 +52,19 @@ export function toAppointmentDto(row: AppointmentRow): Appointment {
   };
 }
 
-/** Staff shape: the customer summary and who created or cancelled it. */
+/**
+ * Customer-facing shape: like `toAppointmentRecord`, but a reason written by staff
+ * (`cancelledBy` `STAFF`) is internal and reads as `cancelReason: null`.
+ */
+export function toAppointmentDto(row: AppointmentRow): Appointment {
+  const dto = toAppointmentRecord(row);
+  return row.cancelledBy === "STAFF" ? { ...dto, cancelReason: null } : dto;
+}
+
+/** Staff shape: the real cancel reason, the customer summary and who created or cancelled it. */
 export function toStaffAppointmentDto(row: AppointmentRow): StaffAppointment {
   return {
-    ...toAppointmentDto(row),
+    ...toAppointmentRecord(row),
     customer: row.customer ? { id: row.customer.id, name: row.customer.name, phoneE164: row.customer.phoneE164 } : null,
     createdByStaffId: row.createdByStaffId,
     cancelledBy: row.cancelledBy,
