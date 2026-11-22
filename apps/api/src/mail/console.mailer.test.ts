@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConsoleMailer } from "./console.mailer.js";
 
 describe("ConsoleMailer", () => {
-  it("logs subject and attachment names, never the body", async () => {
+  it("logs subject, text and attachment names, never html or attachment content", async () => {
     const log = vi.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
     const out = await new ConsoleMailer().send({
       to: "ana@salon.com",
@@ -15,7 +15,7 @@ describe("ConsoleMailer", () => {
     const logged = log.mock.calls.map((c) => String(c[0])).join("\n");
     expect(logged).toContain("Hello");
     expect(logged).toContain("a.ics");
-    expect(logged).not.toContain("secret-text-body");
+    expect(logged).toContain("secret-text-body");
     expect(logged).not.toContain("secret-html-body");
     expect(logged).not.toContain("secret-ics");
     expect(out).toEqual({});
