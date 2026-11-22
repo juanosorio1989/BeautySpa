@@ -78,6 +78,8 @@ describe("/book/time", () => {
     bookingStore.toggleService(id(1));
     const view = mount();
     expect(await view.findByText("Your hold expired. Please pick a time again.")).toBeInTheDocument();
+    // the notice is dropped from the URL so a reload does not show it again
+    expect(replace).toHaveBeenCalledWith("/book/time");
   });
 
   it("shows the conflict message with a link to my appointments", async () => {

@@ -15,6 +15,7 @@ import { OtpFlow } from "./otp-flow";
 const apiError = (status: number, code: "OTP_INVALID" | "RATE_LIMITED") =>
   new ApiError(status, { type: "about:blank", title: "x", status, code });
 
+const CODE_LABEL = /^We (texted you|sent you) a code/;
 const onVerified = vi.fn();
 const mount = (locale: "en" | "es" = "en") =>
   render(
@@ -27,7 +28,7 @@ async function sendCode(channel: "sms" | "whatsapp" = "sms") {
   otpStart.mockResolvedValueOnce({ channel });
   fireEvent.change(screen.getByLabelText("Your mobile number"), { target: { value: "7185550123" } });
   fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-  await screen.findByLabelText("6-digit code");
+  await screen.findByLabelText(CODE_LABEL);
 }
 
 describe("OtpFlow", () => {
@@ -48,7 +49,7 @@ describe("OtpFlow", () => {
     expect(input.value).toBe("(718) 555-0123");
     otpStart.mockResolvedValueOnce({ channel: "sms" });
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-    await screen.findByLabelText("6-digit code");
+    await screen.findByLabelText(CODE_LABEL);
     expect(otpStart).toHaveBeenCalledWith({ phone: "+17185550123", locale: "en" });
   });
 
@@ -67,7 +68,8 @@ describe("OtpFlow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change number" }));
     await sendCode("sms");
     expect(screen.getByText("We texted you a code")).toBeInTheDocument();
-    const code = screen.getByLabelText("6-digit code");
+    const code = screen.getByRole("textbox", { name: "We texted you a code" });
+    expect(code).toHaveAccessibleDescription("6-digit code");
     expect(code).toHaveAttribute("inputmode", "numeric");
     expect(code).toHaveAttribute("autocomplete", "one-time-code");
   });
@@ -76,7 +78,7 @@ describe("OtpFlow", () => {
     mount();
     await sendCode();
     otpVerify.mockResolvedValueOnce({ isNew: true });
-    fireEvent.change(screen.getByLabelText("6-digit code"), { target: { value: "481923" } });
+    fireEvent.change(screen.getByLabelText(CODE_LABEL), { target: { value: "481923" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
     await waitFor(() => expect(onVerified).toHaveBeenCalled());
     expect(otpVerify).toHaveBeenCalledWith({ phone: "+17185550123", code: "481923", locale: "en" });
@@ -87,7 +89,7 @@ describe("OtpFlow", () => {
     mount();
     await sendCode();
     otpVerify.mockRejectedValueOnce(apiError(400, "OTP_INVALID"));
-    fireEvent.change(screen.getByLabelText("6-digit code"), { target: { value: "000000" } });
+    fireEvent.change(screen.getByLabelText(CODE_LABEL), { target: { value: "000000" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
     expect(await screen.findByText("That code is not right.")).toBeInTheDocument();
     expect(onVerified).not.toHaveBeenCalled();

@@ -53,13 +53,15 @@ export function CodeStep({
           autoComplete="one-time-code"
           maxLength={6}
           value={code}
-          aria-label={t("codeAria")}
           aria-invalid={Boolean(error)}
-          aria-describedby={error ? "code-error" : undefined}
+          aria-describedby={error ? "code-hint code-error" : "code-hint"}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
           className={`${INPUT_CLASS} text-center text-xl font-semibold tracking-[0.4em]`}
         />
       </Field>
+      <p id="code-hint" className="-mt-1 text-sm text-muted">
+        {t("codeAria")}
+      </p>
       <button
         type="submit"
         disabled={busy || code.length !== 6}

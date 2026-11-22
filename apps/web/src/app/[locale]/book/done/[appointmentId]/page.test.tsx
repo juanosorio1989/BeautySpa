@@ -84,6 +84,12 @@ describe("/book/done/:appointmentId", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("We could not find that.");
   });
 
+  it("an appointment whose location is not public uses the failure path", async () => {
+    api.me.appointments.mockResolvedValue({ upcoming: [appointment({ locationId: id(999) })], past: [] });
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong");
+  });
+
   it("signed-out visitors go to login with next", async () => {
     api.auth.refresh.mockRejectedValue(
       new ApiError(401, { type: "about:blank", title: "x", status: 401, code: "UNAUTHORIZED" }),

@@ -18,6 +18,7 @@ vi.mock("@/lib/session/use-session", () => ({ useSession: () => ({ status: "sign
 
 import LoginPage from "./page";
 
+const CODE_LABEL = /^We (texted you|sent you) a code/;
 async function login() {
   render(
     <NextIntlClientProvider locale="en" messages={en}>
@@ -28,7 +29,7 @@ async function login() {
   api.auth.otpVerify.mockResolvedValue({ isNew: false });
   fireEvent.change(screen.getByLabelText("Your mobile number"), { target: { value: "7185550123" } });
   fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-  fireEvent.change(await screen.findByLabelText("6-digit code"), { target: { value: "123456" } });
+  fireEvent.change(await screen.findByLabelText(CODE_LABEL), { target: { value: "123456" } });
   fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
 }
 

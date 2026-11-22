@@ -81,7 +81,12 @@ reschedule page uses them); by default it holds the slot and goes to Details.
   (`TimeNotice`). "Not you?" logs out, then restores the booking store (services,
   slot, hold) so the held time is kept for the next account. A session `error`
   status shows the network message with a retry that calls `ensure()` again.
-  After booking, `reset()` clears the store and sessionStorage, then Done.
+  `PATCH /me` and `POST /appointments` have separate error handling: a profile
+  error keeps the hold; `HOLD_EXPIRED` and `NOT_FOUND` on book clear the hold and
+  go back with the expired notice; `CONFLICT` only applies to the book call.
+  Field errors show localized copy (`errors.field.*`) only for fields on screen,
+  else `errors.VALIDATION_FAILED`. `TimeNotice` drops `?notice=` from the URL
+  after the first render. After booking, `reset()` clears the store and sessionStorage, then Done.
 - Optional "Note for the salon" field (`notes`, ≤ 500 chars, visible to the
   customer later).
 - Confirm → `POST /appointments { holdId, notes? }`:

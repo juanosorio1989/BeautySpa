@@ -3,14 +3,14 @@
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { getBrowserApi } from "@/lib/api/browser";
-import { fieldErrors } from "@/lib/errors";
-import { useErrorText } from "@/lib/use-error-text";
+import { useErrorText, useFieldErrorText } from "@/lib/use-error-text";
 import { Field, INPUT_CLASS } from "./field";
 
 /** "Want your confirmation and reminders by email?" Shown only to customers without EMAIL consent. */
 export function EmailOffer({ email, onSaved }: { email: string | null; onSaved: () => void }) {
   const t = useTranslations("booking.done");
   const errorText = useErrorText();
+  const fieldText = useFieldErrorText();
   const [value, setValue] = useState(email ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -32,7 +32,7 @@ export function EmailOffer({ email, onSaved }: { email: string | null; onSaved: 
       setSaved(true);
       onSaved();
     } catch (err) {
-      const field = fieldErrors(err).email;
+      const field = fieldText(err, ["email"]).email;
       if (field) setFieldError(field);
       else setError(errorText(err));
     } finally {

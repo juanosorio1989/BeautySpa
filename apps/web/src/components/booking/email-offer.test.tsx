@@ -46,4 +46,20 @@ describe("EmailOffer", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Too many tries");
     expect(screen.getByText("Want your confirmation and reminders by email?")).toBeInTheDocument();
   });
+
+  it("maps an email validation error to localized copy", async () => {
+    patch.mockRejectedValueOnce(
+      new ApiError(400, {
+        type: "about:blank",
+        title: "x",
+        status: 400,
+        code: "VALIDATION_FAILED",
+        errors: [{ path: "email", message: "raw api text" }],
+      } as never),
+    );
+    mount("bad");
+    fireEvent.click(screen.getByRole("button", { name: "Yes, email me" }));
+    expect(await screen.findByText("Please enter a valid email address.")).toBeInTheDocument();
+    expect(screen.queryByText("raw api text")).not.toBeInTheDocument();
+  });
 });

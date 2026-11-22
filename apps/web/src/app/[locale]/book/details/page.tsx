@@ -12,9 +12,8 @@ import { OtpFlow } from "@/components/booking/otp-flow";
 import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { bookingStore, useBookingStore } from "@/lib/booking/store";
-import { fieldErrors } from "@/lib/errors";
 import { useSession } from "@/lib/session/use-session";
-import { useErrorText } from "@/lib/use-error-text";
+import { useErrorText, useFieldErrorText, type FormField } from "@/lib/use-error-text";
 
 const TIME = "/book/time";
 const noop = () => undefined;
@@ -27,17 +26,24 @@ export default function DetailsPage() {
   const store = useBookingStore();
   const session = useSession();
   const errorText = useErrorText();
+  const fieldText = useFieldErrorText();
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [fields, setFields] = useState<Record<string, string>>({});
+  const [fields, setFields] = useState<Partial<Record<FormField, string>>>({});
+  const [logoutError, setLogoutError] = useState(false);
   // Set while the booking finishes or "Not you?" swaps the session, so the store changes don't redirect.
   const quiet = useRef(false);
 
   const { hold, ready } = store;
-  const expire = useCallback(() => router.replace(`${TIME}?notice=expired`), [router]);
+  // The hold is gone for good: forget it, then send the customer back with the expired notice.
+  const backExpired = useCallback(() => {
+    quiet.current = true;
+    bookingStore.clearHold();
+    router.replace(`${TIME}?notice=expired`);
+  }, [router]);
 
   // A stored hold that is already past expiresAt is sent back by HoldCountdown on mount.
   useEffect(() => {
@@ -61,6 +67,7 @@ export default function DetailsPage() {
       );
     return () => {
       cancelled = true;
+      setMe(null); // never show the previous customer's profile
     };
     // errorText is recreated every render; the request depends on the session and retries only
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,37 +76,53 @@ export default function DetailsPage() {
   async function notYou() {
     const snapshot = bookingStore.getState();
     quiet.current = true;
-    setMe(null);
     setMeError(null);
     try {
-      await session.logout().catch(noop);
-      // logout() clears the booking store; the customer keeps the held time, only the account changes.
-      bookingStore.prefill(snapshot.choices);
-      bookingStore.setDate(snapshot.date);
-      bookingStore.setSlot(snapshot.slot);
-      if (snapshot.hold) bookingStore.setHold(snapshot.hold);
-    } finally {
-      quiet.current = false;
+      await session.logout();
+    } catch {
+      // logout() already cleared the store; keep quiet and say why the customer is stuck here.
+      setLogoutError(true);
+      return;
     }
+    // logout() clears the booking store; the customer keeps the held time, only the account changes.
+    bookingStore.prefill(snapshot.choices);
+    bookingStore.setDate(snapshot.date);
+    bookingStore.setSlot(snapshot.slot);
+    if (snapshot.hold) bookingStore.setHold(snapshot.hold);
+    quiet.current = false;
+  }
+
+  /** Shows an API error under the fields on screen, else as one message. */
+  function showError(err: unknown, firstTime: boolean) {
+    const byField = fieldText(err, firstTime ? ["name", "email", "notes"] : ["notes"]);
+    if (Object.keys(byField).length > 0) setFields(byField);
+    else setError(errorText(err));
+    setBusy(false);
   }
 
   async function confirm(v: DetailsValues) {
     if (!me || !hold) return;
+    const firstTime = me.name === null;
     setBusy(true);
     setError(undefined);
     setFields({});
-    try {
-      const api = getBrowserApi();
-      if (me.name === null) {
-        const patch: MePatch = { name: v.name };
-        if (me.locale !== locale) patch.locale = locale;
-        if (v.email && v.email !== me.email) patch.email = v.email;
-        if (v.emailConsent) {
-          patch.consents = { EMAIL: true };
-          patch.consentSource = "BOOKING_FORM";
-        }
-        setMe(await api.me.patch(patch));
+    const api = getBrowserApi();
+    if (firstTime) {
+      const patch: MePatch = { name: v.name };
+      if (me.locale !== locale) patch.locale = locale;
+      if (v.email && v.email !== me.email) patch.email = v.email;
+      if (v.emailConsent) {
+        patch.consents = { EMAIL: true };
+        patch.consentSource = "BOOKING_FORM";
       }
+      try {
+        setMe(await api.me.patch(patch));
+      } catch (err) {
+        showError(err, true); // the hold stays; only the profile failed
+        return;
+      }
+    }
+    try {
       const appointment = await api.booking.book(
         v.notes ? { holdId: hold.holdId, notes: v.notes } : { holdId: hold.holdId },
       );
@@ -108,25 +131,28 @@ export default function DetailsPage() {
       router.replace(`/book/done/${appointment.id}`);
     } catch (err) {
       const code = err instanceof ApiError ? err.problem.code : null;
-      if (code === "HOLD_EXPIRED") {
-        quiet.current = true;
-        router.replace(`${TIME}?notice=expired`);
+      if (code === "HOLD_EXPIRED" || code === "NOT_FOUND") {
+        backExpired();
       } else if (code === "CONFLICT") {
         quiet.current = true;
         store.clearHold();
         router.replace(`${TIME}?notice=conflict`);
       } else {
-        const byField = fieldErrors(err);
-        if (Object.keys(byField).length > 0) setFields(byField);
-        else setError(errorText(err));
-        setBusy(false);
+        showError(err, false);
       }
     }
   }
 
+  const current = session.status === "signedIn" ? me : null;
   let body: React.ReactNode = null;
-  if (ready && hold) {
-    if (session.status === "loading" || (session.status === "signedIn" && !me && !meError)) {
+  if (logoutError) {
+    body = (
+      <p role="alert" className="px-5 pt-5 text-warn">
+        {tAll("errors.network")}
+      </p>
+    );
+  } else if (ready && hold) {
+    if (session.status === "loading" || (session.status === "signedIn" && !current && !meError)) {
       body = <p className="px-5 pt-5 text-muted">{tAll("login.checking")}</p>;
     } else if (session.status === "error" || meError) {
       body = (
@@ -153,10 +179,10 @@ export default function DetailsPage() {
           <OtpFlow onVerified={noop} />
         </div>
       );
-    } else if (me) {
+    } else if (current) {
       body = (
         <DetailsForm
-          me={me}
+          me={current}
           busy={busy}
           error={error}
           fieldErrors={fields}
@@ -170,7 +196,7 @@ export default function DetailsPage() {
   return (
     <main className="flex min-h-dvh flex-col">
       <BackHeader href={TIME} backLabel={t("back")} title={t("title")} />
-      {ready && hold ? <HoldCountdown expiresAt={hold.expiresAt} onExpire={expire} /> : null}
+      {ready && hold ? <HoldCountdown expiresAt={hold.expiresAt} onExpire={backExpired} /> : null}
       {body}
     </main>
   );

@@ -56,7 +56,7 @@ export default function DonePage() {
       ]);
       if (cancelled) return;
       const appointment = [...mine.upcoming, ...mine.past].find((a) => a.id === appointmentId);
-      const location = locations.find((l) => l.id === appointment?.locationId) ?? locations[0];
+      const location = locations.find((l) => l.id === appointment?.locationId);
       if (!appointment)
         setFailure({
           error: new ApiError(404, { type: "about:blank", title: "Not found", status: 404, code: "NOT_FOUND" }),

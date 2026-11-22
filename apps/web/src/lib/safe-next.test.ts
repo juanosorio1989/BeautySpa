@@ -23,4 +23,9 @@ describe("safeNext", () => {
       expect(safeNext(raw, "en")).toBe("/en/me");
     }
   });
+
+  it("keeps an encoded slash path relative and rejects control characters", () => {
+    expect(safeNext("/%2F%2Fevil.example", "en")).toBe("/%2F%2Fevil.example");
+    expect(safeNext("/\n/evil.example", "en")).toBe("/en/me");
+  });
 });

@@ -150,6 +150,11 @@ export const es: Messages = {
     CONFLICT: "Esta cita no se puede cambiar o ya está reservada.",
     BAD_REQUEST: "Algo salió mal. Inténtalo de nuevo.",
     INTERNAL: "Algo salió mal. Inténtalo de nuevo.",
+    field: {
+      name: "Escribe un nombre válido.",
+      email: "Escribe un correo válido.",
+      notes: "Acorta tu nota.",
+    },
     generic: "Algo salió mal. Inténtalo de nuevo.",
     network: "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.",
   },

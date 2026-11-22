@@ -29,6 +29,7 @@ vi.mock("@/lib/api/browser", () => ({
 import { SessionProvider } from "@/lib/session/session-provider";
 import DetailsPage from "./page";
 
+const CODE_LABEL = /^We (texted you|sent you) a code/;
 const apiError = (status: number, code: string, errors?: { path: string; message: string }[]) =>
   new ApiError(status, { type: "about:blank", title: "x", status, code, ...(errors ? { errors } : {}) } as never);
 
@@ -70,6 +71,7 @@ describe("/book/details", () => {
     signedOut();
     mount();
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/book/time?notice=expired"));
+    expect(bookingStore.getState().hold).toBeNull();
   });
 
   it("details without a hold returns to time", async () => {
@@ -105,7 +107,7 @@ describe("/book/details", () => {
     mount();
     fireEvent.change(await screen.findByLabelText("Your mobile number"), { target: { value: "7185550123" } });
     fireEvent.click(screen.getByRole("button", { name: "Send code" }));
-    fireEvent.change(await screen.findByLabelText("6-digit code"), { target: { value: "123456" } });
+    fireEvent.change(await screen.findByLabelText(CODE_LABEL), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
     expect(await screen.findByLabelText("Your name")).toBeInTheDocument();
   });
@@ -202,6 +204,16 @@ describe("/book/details", () => {
       mount();
       fireEvent.click(await screen.findByRole("button", { name: "Confirm appointment" }));
       await waitFor(() => expect(replace).toHaveBeenCalledWith("/book/time?notice=expired"));
+      expect(bookingStore.getState().hold).toBeNull();
+    });
+
+    it("NOT_FOUND on confirm (hold gone) is treated like HOLD_EXPIRED", async () => {
+      api.me.get.mockResolvedValue(me({ name: "Ana" }));
+      api.booking.book.mockRejectedValue(apiError(404, "NOT_FOUND"));
+      mount();
+      fireEvent.click(await screen.findByRole("button", { name: "Confirm appointment" }));
+      await waitFor(() => expect(replace).toHaveBeenCalledWith("/book/time?notice=expired"));
+      expect(bookingStore.getState().hold).toBeNull();
     });
 
     it("CONFLICT on confirm clears the hold and returns to time with the my-appointments notice", async () => {
@@ -213,14 +225,77 @@ describe("/book/details", () => {
       expect(bookingStore.getState().hold).toBeNull();
     });
 
-    it("a name validation error from the API shows under the name field", async () => {
+    it("a name validation error shows localized copy, not the API message", async () => {
       api.me.get.mockResolvedValue(me());
       api.me.patch.mockRejectedValue(apiError(400, "VALIDATION_FAILED", [{ path: "name", message: "Too long" }]));
       mount();
       fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Maria" } });
       fireEvent.click(screen.getByRole("button", { name: "Confirm appointment" }));
-      expect(await screen.findByText("Too long")).toBeInTheDocument();
+      expect(await screen.findByText("Please enter a valid name.")).toBeInTheDocument();
+      expect(screen.queryByText("Too long")).not.toBeInTheDocument();
       expect(api.booking.book).not.toHaveBeenCalled();
+      expect(bookingStore.getState().hold).not.toBeNull();
+    });
+
+    it("a validation error on a field that is not on screen shows the generic message", async () => {
+      api.me.get.mockResolvedValue(me({ name: "Ana" }));
+      api.booking.book.mockRejectedValue(apiError(400, "VALIDATION_FAILED", [{ path: "holdId", message: "bad uuid" }]));
+      mount();
+      fireEvent.click(await screen.findByRole("button", { name: "Confirm appointment" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Please check the highlighted fields.");
+      expect(screen.queryByText("bad uuid")).not.toBeInTheDocument();
+    });
+
+    it("an email error for a returning customer (no email field) shows the generic message", async () => {
+      api.me.get.mockResolvedValue(me({ name: "Ana" }));
+      api.booking.book.mockRejectedValue(apiError(400, "VALIDATION_FAILED", [{ path: "email", message: "bad" }]));
+      mount();
+      fireEvent.click(await screen.findByRole("button", { name: "Confirm appointment" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Please check the highlighted fields.");
+    });
+
+    it("a PATCH /me conflict does not run the booking conflict handling and keeps the hold", async () => {
+      api.me.get.mockResolvedValue(me());
+      api.me.patch.mockRejectedValue(apiError(409, "CONFLICT"));
+      mount();
+      fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Maria" } });
+      fireEvent.click(screen.getByRole("button", { name: "Confirm appointment" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("cannot be changed");
+      expect(replace).not.toHaveBeenCalled();
+      expect(bookingStore.getState().hold).not.toBeNull();
+      expect(api.booking.book).not.toHaveBeenCalled();
+    });
+
+    it("Not you? with a failing logout shows the network message and does not restore or re-ensure", async () => {
+      api.me.get.mockResolvedValue(me({ name: "Ana" }));
+      api.auth.logout.mockRejectedValue(new TypeError("Failed to fetch"));
+      mount();
+      await screen.findByText("Booking as Ana");
+      const refreshCalls = api.auth.refresh.mock.calls.length;
+      fireEvent.click(screen.getByRole("button", { name: "Not you?" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("We could not reach the server");
+      expect(bookingStore.getState().hold).toBeNull();
+      expect(api.auth.refresh.mock.calls.length).toBe(refreshCalls);
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("never shows the previous customer's name to the next one while their profile loads", async () => {
+      api.me.get.mockResolvedValueOnce(me({ name: "Ana" }));
+      api.auth.logout.mockImplementation(async () => {
+        signedOut();
+      });
+      api.auth.otpStart.mockResolvedValue({ channel: "sms" });
+      api.auth.otpVerify.mockResolvedValue({ isNew: false });
+      mount();
+      await screen.findByText("Booking as Ana");
+      fireEvent.click(screen.getByRole("button", { name: "Not you?" }));
+      api.me.get.mockReturnValue(new Promise(() => undefined));
+      fireEvent.change(await screen.findByLabelText("Your mobile number"), { target: { value: "7185550124" } });
+      fireEvent.click(screen.getByRole("button", { name: "Send code" }));
+      fireEvent.change(await screen.findByLabelText(CODE_LABEL), { target: { value: "123456" } });
+      fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
+      expect(await screen.findByText("Checking your session…")).toBeInTheDocument();
+      expect(screen.queryByText("Booking as Ana")).not.toBeInTheDocument();
     });
   });
 });

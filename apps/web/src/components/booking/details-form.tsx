@@ -27,7 +27,7 @@ export function DetailsForm({
   me: Me;
   busy: boolean;
   error?: string | undefined;
-  fieldErrors: Record<string, string>;
+  fieldErrors: Partial<Record<"name" | "email" | "notes", string>>;
   onSubmit: (values: DetailsValues) => void;
   onNotYou: () => void;
 }) {

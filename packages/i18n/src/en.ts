@@ -148,6 +148,11 @@ export const en = {
     CONFLICT: "This appointment cannot be changed or is already booked.",
     BAD_REQUEST: "Something went wrong. Please try again.",
     INTERNAL: "Something went wrong. Please try again.",
+    field: {
+      name: "Please enter a valid name.",
+      email: "Please enter a valid email address.",
+      notes: "Please shorten your note.",
+    },
     generic: "Something went wrong. Please try again.",
     network: "We could not reach the server. Check your connection and try again.",
   },
