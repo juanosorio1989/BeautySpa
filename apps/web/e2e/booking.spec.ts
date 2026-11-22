@@ -39,6 +39,7 @@ test("book manicure + pedicure in Spanish, then cancel from My appointments", as
 
   // Done shows both services
   await expect(page).toHaveURL(/\/es\/book\/done\//);
+  const appointmentId = new URL(page.url()).pathname.split("/").pop()!;
   await expect(page.getByText("Manicura clásica")).toBeVisible();
   await expect(page.getByText("Pedicura spa")).toBeVisible();
 
@@ -46,11 +47,12 @@ test("book manicure + pedicure in Spanish, then cancel from My appointments", as
   await page.getByRole("link", { name: "Ver o cambiar mis citas" }).click();
   await expect(page).toHaveURL(/\/es\/me/);
   await expect(page.getByRole("heading", { name: "Próximas" })).toBeVisible();
-  const upcoming = page.locator("article").filter({ hasText: "Manicura clásica" });
-  await expect(upcoming.first()).toBeVisible();
+  const card = page.locator(`li[data-appointment-id="${appointmentId}"]`);
+  const upcoming = card.locator("article").filter({ hasText: "Manicura clásica" });
+  await expect(upcoming).toBeVisible();
 
   // Cancel: the native <dialog> opens modally and takes focus
-  await upcoming.first().getByRole("button", { name: "Cancelar" }).click();
+  await upcoming.getByRole("button", { name: "Cancelar" }).click();
   const dialog = page.getByRole("dialog", { name: "¿Cancelar esta cita?" });
   await expect(dialog).toBeVisible();
   expect(await dialog.evaluate((el: HTMLDialogElement) => el.open && el.matches(":modal"))).toBe(true);
@@ -60,6 +62,6 @@ test("book manicure + pedicure in Spanish, then cancel from My appointments", as
 
   // It moves to the past, as cancelled
   await expect(page.getByRole("heading", { name: "Anteriores" })).toBeVisible();
-  const past = page.locator("article").filter({ hasText: "Cancelada" }).filter({ hasText: "Manicura clásica" });
-  await expect(past.first()).toBeVisible();
+  const past = card.locator("article").filter({ hasText: "Cancelada" }).filter({ hasText: "Manicura clásica" });
+  await expect(past).toBeVisible();
 });

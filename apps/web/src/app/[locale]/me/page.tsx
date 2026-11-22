@@ -64,7 +64,7 @@ export default function MePage() {
     const card = (a: Appointment, kind: "upcoming" | "past") => {
       const location = locationOf(a);
       return location ? (
-        <li key={a.id}>
+        <li key={a.id} data-appointment-id={a.id}>
           <AppointmentCard
             appointment={a}
             services={services}

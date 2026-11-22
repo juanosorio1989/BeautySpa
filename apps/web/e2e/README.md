@@ -34,6 +34,7 @@ pnpm --filter @beautyspa/web test:e2e
 
 Notes:
 
+- `test:e2e` overwrites `apps/web/.next` with a build pointing at the e2e API (`localhost:3101`); rebuild the web before a plain `next start`.
 - The seeded staff work Tuesday to Saturday and the cancel window is 24 h, so the booking test picks the third day
   of the date strip and uses "Next day with times" when it is empty.
 - The phone is `+1 718 555 01NN` with a random `NN` per run. The test database keeps customers between runs;

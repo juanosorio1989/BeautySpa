@@ -85,6 +85,7 @@ describe("/me", () => {
     mount();
     await screen.findAllByRole("article");
     const [open, closed] = screen.getAllByRole("article");
+    expect(open!.closest("li")).toHaveAttribute("data-appointment-id", id(410));
     expect(within(open!).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(within(open!).getByRole("link", { name: "Change time" })).toHaveAttribute(
       "href",
