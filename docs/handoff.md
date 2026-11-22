@@ -31,8 +31,8 @@ Updated: 2026-11-21
 
 ## Owner to-dos (pending)
 
-- Twilio: the owner has a trial account. Upgrade (card, pay-as-you-go), create a Verify service, and put `OTP_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` in the root `.env` (gitignored; never pasted in chat). Not needed before deploy or a real-SMS test; dev stays `OTP_PROVIDER=console`.
-- Before deploy: confirm Twilio Verify works on an individual account without A2P registration; if not, add an email OTP fallback.
+- Twilio (2026-11-21): Verify service created (SMS + RCS, landline validation, geo permissions US only); credentials in the root `.env`, dev keeps `OTP_PROVIDER=console`. Real test passed: start → SMS delivered (WhatsApp attempt fails 400 first, then falls back to SMS), verify → 200. The account can only send to verified caller IDs for now (error 21608).
+- Before deploy: get Twilio's **Primary Compliance Profile** (Trust Hub) approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Optional: skip the WhatsApp attempt while that channel is off (saves a failed call per login).
 - Decide whether IP addresses count as personal data on account deletion: `audit_log.ip`, `refresh_token.ip` and `user_agent` are kept today.
 
 ## Carried into later plans
