@@ -15,15 +15,19 @@ Services → Professional (per service, or "Any") → Date → Time slots
 4. Phone entry → `/auth/otp/start`; code entry → `/auth/otp/verify`.
    Returning clients are recognized and skip the name step.
 5. First time: name and language. Next to the Confirm button, an unticked,
-   clearly visible checkbox "Send me my confirmation and reminders on WhatsApp"
-   (owner decision: optional, not required to book). Optional email field +
-   checkbox. Returning clients see their saved choice.
+   clearly visible checkbox (owner decision: optional, not required to book).
+   For now (plan 06) the only channel offered is email: an optional email
+   field + checkbox "Email me my confirmation and reminders", saved with
+   `PATCH /me { email, consents: { EMAIL: true }, consentSource:
+   "BOOKING_FORM" }`. The WhatsApp checkbox comes with the WhatsApp channel.
+   Returning clients see their saved choice.
    Verifying the phone by OTP is **not** consent to messages.
 6. `POST /appointments { holdId }` → booked. Confirmation sent on consented
    channels; reminders scheduled. The success screen always shows the full
-   confirmation. If the client gave no WhatsApp consent, it offers once:
-   "Want reminders on WhatsApp? [Yes, send them]" → records consent
-   (`source = BOOKING_FORM`) and sends the confirmation.
+   confirmation. If the client gave no email consent, it offers once "Want
+   your confirmation and reminders by email?" → records consent
+   (`source = BOOKING_FORM`) and sends the confirmation. Once WhatsApp is
+   offered, the same offer covers WhatsApp.
 7. If the hold expired meanwhile: `HOLD_EXPIRED` → back to slots.
 
 ## Reception quick booking (staff, phone)

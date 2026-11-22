@@ -28,8 +28,20 @@ export const MePatchSchema = z
     email: EmailSchema.nullable().optional(),
     locale: LocaleSchema.optional(),
     consents: ConsentsSchema.partial().optional(),
+    /** Where the consent was given; only with `consents`. The API defaults to `PROFILE`. */
+    consentSource: z.enum(["PROFILE", "BOOKING_FORM"]).optional(),
   })
-  .refine((o) => Object.values(o).some((v) => v !== undefined), { message: "Empty update" });
+  .superRefine(({ consentSource, ...update }, ctx) => {
+    if (consentSource !== undefined && update.consents === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "consentSource requires consents",
+        path: ["consentSource"],
+      });
+    } else if (!Object.values(update).some((v) => v !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Empty update" });
+    }
+  });
 export type MePatch = z.infer<typeof MePatchSchema>;
 
 export const CustomerExportSchema = z.object({

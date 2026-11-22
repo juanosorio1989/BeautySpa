@@ -162,6 +162,30 @@ describe("/me profile, export and deletion", () => {
     it("rejects an empty body with 400", async () => {
       expect((await patchMe({})).status).toBe(400);
     });
+
+    it("records consent with source BOOKING_FORM when asked, and PROFILE by default", async () => {
+      const res = await patchMe({ email: "ana@example.com", consents: { EMAIL: true }, consentSource: "BOOKING_FORM" });
+      expect(res.status).toBe(200);
+      let history = ((await exportMe()).body as CustomerExport).consentHistory;
+      expect(history.at(-1)).toMatchObject({ channel: "EMAIL", granted: true, source: "BOOKING_FORM" });
+      const [audit] = await auditRows("customer.update");
+      expect(audit).toMatchObject({ before: null, after: { fields: ["email", "consents.EMAIL"] } });
+
+      clock.set(BOOKING_NOW + 60_000);
+      expect((await patchMe({ consents: { EMAIL: false } })).status).toBe(200);
+      history = ((await exportMe()).body as CustomerExport).consentHistory;
+      expect(history.at(-1)).toMatchObject({ channel: "EMAIL", granted: false, source: "PROFILE" });
+    });
+
+    it("rejects consentSource without consents with 400 on consentSource and writes nothing", async () => {
+      const res = await patchMe({ name: "X", consentSource: "BOOKING_FORM" });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_FAILED");
+      expect(res.body.errors[0].path).toBe("consentSource");
+      expect((await patchMe({ consentSource: "BOOKING_FORM" })).status).toBe(400);
+      expect((await getMe()).body).toMatchObject({ name: "Ana" });
+      expect(await auditRows("customer.update")).toHaveLength(0);
+    });
   });
 
   describe("GET /me/export", () => {

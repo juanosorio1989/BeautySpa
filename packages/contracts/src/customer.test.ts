@@ -6,6 +6,16 @@ describe("MePatchSchema", () => {
   it("accepts a partial consents update", () =>
     expect(MePatchSchema.safeParse({ consents: { WHATSAPP: true } }).success).toBe(true));
   it("rejects a blank name", () => expect(MePatchSchema.safeParse({ name: "  " }).success).toBe(false));
+  it("rejects consentSource without consents, on path consentSource", () => {
+    const r = MePatchSchema.safeParse({ consentSource: "BOOKING_FORM" });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => i.path)).toEqual([["consentSource"]]);
+    expect(MePatchSchema.safeParse({ name: "X", consentSource: "BOOKING_FORM" }).success).toBe(false);
+  });
+  it("accepts consents with consentSource BOOKING_FORM", () =>
+    expect(MePatchSchema.safeParse({ consents: { EMAIL: true }, consentSource: "BOOKING_FORM" }).success).toBe(true));
+  it("rejects a consentSource other than PROFILE or BOOKING_FORM", () =>
+    expect(MePatchSchema.safeParse({ consents: { EMAIL: true }, consentSource: "RECEPTION" }).success).toBe(false));
 });
 
 describe("StaffCustomerCreateSchema", () => {
