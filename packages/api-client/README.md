@@ -19,3 +19,6 @@ Typed client for the BeautySpa API. No DOM or Node types: you inject `fetch`.
 - `auth.logout()` first waits for an in-flight refresh (ignoring its outcome), so a late refresh can never
   store tokens after the store was cleared; with body transport it then logs out the freshly issued token.
 - Errors are `ApiError` with a contracts `Problem` (`err.problem.code`).
+- Resource groups: `public` (locations, services, employees; no bearer), `booking` (availability sends the
+  bearer when present, `createHold`/`releaseHold` anonymous, `book` authed) and `me` (profile, appointments,
+  cancel, reschedule, repeat, export, remove). Bodies are `z.input` of the contract schemas; responses are parsed.
