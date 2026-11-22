@@ -7,7 +7,7 @@ import { CLOCK, type Clock } from "../common/clock.js";
 import { invalidRef, slotTaken } from "../common/http-errors.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
-import { APPOINTMENT_INCLUDE, toAppointmentDto, toStaffAppointmentDto } from "./appointment-mapping.js";
+import { APPOINTMENT_INCLUDE, toAppointmentRecord, toStaffAppointmentDto } from "./appointment-mapping.js";
 import {
   AppointmentWriter,
   BOOKING_TX_OPTIONS,
@@ -81,7 +81,7 @@ export class WalkInService {
           entity: "appointment",
           entityId: appt.id,
           before: null,
-          after: toAppointmentDto(row),
+          after: toAppointmentRecord(row),
           ip,
         },
         tx,

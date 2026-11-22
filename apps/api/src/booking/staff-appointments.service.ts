@@ -18,7 +18,7 @@ import { LocationService } from "../tenancy/location.service.js";
 import {
   APPOINTMENT_INCLUDE,
   startOf,
-  toAppointmentDto,
+  toAppointmentRecord,
   toStaffAppointmentDto,
   type AppointmentRow,
 } from "./appointment-mapping.js";
@@ -64,7 +64,7 @@ export async function assertActiveCustomer(
 
 /** The `Appointment` audit shape, with `override: true` added when staff used the override (R4). */
 export function auditAfter(row: AppointmentRow, override: boolean): Appointment & { override?: true } {
-  const dto = toAppointmentDto(row);
+  const dto = toAppointmentRecord(row);
   return override ? { ...dto, override: true } : dto;
 }
 
@@ -184,7 +184,7 @@ export class StaffAppointmentsService {
         principal,
         "appointment.move",
         id,
-        toAppointmentDto(row),
+        toAppointmentRecord(row),
         auditAfter(updated, patch.override),
         ip,
       );
@@ -264,8 +264,8 @@ export class StaffAppointmentsService {
         principal,
         "appointment.status",
         id,
-        toAppointmentDto(row),
-        toAppointmentDto(updated),
+        toAppointmentRecord(row),
+        toAppointmentRecord(updated),
         ip,
       );
       return toStaffAppointmentDto(updated);

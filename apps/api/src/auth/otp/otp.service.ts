@@ -11,6 +11,7 @@ import {
 import type { Request, Response } from "express";
 import type { Locale, OtpStartResponse, OtpVerifyResponse } from "@beautyspa/contracts";
 import { AuditService } from "../../audit/audit.service.js";
+import { ENV, type Env } from "../../config/env.js";
 import { PrismaService } from "../../prisma/prisma.service.js";
 import { RateLimitService } from "../../rate-limit/rate-limit.service.js";
 import { TenancyService } from "../../tenancy/tenancy.service.js";
@@ -33,10 +34,10 @@ const US_ONLY = "Only US phone numbers are supported";
 const INVALID_US = "Enter a valid US phone number";
 /** NANP: +1, area code and exchange each start with 2-9. Non-US NANP ranges are left to Twilio Geo Permissions and Fraud Guard. */
 const NANP = /^\+1[2-9]\d{2}[2-9]\d{6}$/;
-const CHANNELS: readonly OtpChannel[] = ["whatsapp", "sms"];
 
 /**
- * Customer login by phone: `start` sends a code (WhatsApp first, SMS fallback),
+ * Customer login by phone: `start` sends a code over the channels in `OTP_CHANNELS` order
+ * (default SMS only; the next channel is tried when one is unavailable),
  * `verify` checks it, finds or creates the customer and starts a session.
  * Phones appear in Redis keys only as `hashKeyPart(phone)`. Verifying a phone
  * is not consent to messages: no `notification_consent` rows are written here.
@@ -44,21 +45,25 @@ const CHANNELS: readonly OtpChannel[] = ["whatsapp", "sms"];
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
+  private readonly channels: readonly OtpChannel[];
 
   constructor(
+    @Inject(ENV) env: Env,
     @Inject(OTP_PROVIDER) private readonly provider: OtpProvider,
     private readonly rateLimit: RateLimitService,
     private readonly tenancy: TenancyService,
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) {
+    this.channels = env.OTP_CHANNELS;
+  }
 
   async start(req: { phone: string; locale: Locale }, ip: string): Promise<OtpStartResponse> {
     assertUsPhone(req.phone);
     await this.rateLimit.enforce(`otp:start:phone:${this.rateLimit.hashKeyPart(req.phone)}`, ...START_PER_PHONE);
     await this.rateLimit.enforce(`otp:start:ip:${this.rateLimit.hashKeyPart(ip)}`, ...START_PER_IP);
-    for (const channel of CHANNELS) {
+    for (const channel of this.channels) {
       try {
         await this.provider.start(req.phone, channel, req.locale);
         return { channel };

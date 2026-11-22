@@ -3,12 +3,25 @@
   "globalDependencies": [".env"],
   "globalEnv": ["NODE_ENV"],
   "tasks": {
-    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "build": {
+      "dependsOn": ["^build"],
+      "env": ["API_URL", "NEXT_PUBLIC_*"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
     "dev": {
       "dependsOn": ["^build"],
       "persistent": true,
       "cache": false,
-      "passThroughEnv": ["DATABASE_URL", "DATABASE_URL_TEST", "REDIS_URL", "WEB_ORIGIN", "PORT"]
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "DATABASE_URL_TEST",
+        "REDIS_URL",
+        "WEB_ORIGIN",
+        "PORT",
+        "API_URL",
+        "NEXT_PUBLIC_API_URL",
+        "NEXT_PUBLIC_SITE_URL"
+      ]
     },
     "lint": {},
     "typecheck": { "dependsOn": ["^build"] },

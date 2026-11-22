@@ -77,6 +77,18 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   for SEO. Booking and staff panel are client-heavy.
 - **No business logic in web.** Server components and client code only call the
   API through `packages/api-client`.
+- Data paths: public reads (services, team, location) happen on the server
+  (`apps/web/src/lib/api/server.ts`, `fetch` with `revalidate: 60`, ISR; the layout and
+  pages are not prerendered at build, so the build works with the API down). Everything
+  per customer (availability, holds, booking, `/me`) runs in the browser through
+  `lib/api/browser.ts` (`api-client` with the cookie token store).
+- Session: the access token lives in memory; the `bs_refresh` cookie is refreshed on
+  load, and concurrent tabs share one refresh through the Web Locks API
+  (`navigator.locks`, passed into `api-client` as `refreshLock`; works without it).
+  The booking selection and hold live in `sessionStorage` (wrapped, optional).
+- `packages/i18n` holds the EN/ES catalogs; `es` is typed as `Messages`, so a missing
+  key fails typecheck. Web and a future mobile app share it; it imports no DOM or Next.js.
+- E2E smoke tests (Playwright, `apps/web/e2e`) run against the real API with the fake OTP.
 - Staff panel at `/[locale]/staff/...`, mobile-first: day agenda, quick
   booking, walk-in, client search. Desktop gets a multi-column calendar of the
   same data.
@@ -85,7 +97,7 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
 
 | Who | How |
 |---|---|
-| Client | Phone + OTP via Twilio Verify (channel WhatsApp, fallback SMS). First verification silently creates a `customer`. |
+| Client | Phone + OTP via Twilio Verify, over the channels from `OTP_CHANNELS` (default `sms`). First verification silently creates a `customer`. |
 | Staff | Email + password (argon2id) + TOTP 2FA, mandatory for all staff who log in **(call)**. |
 
 Staff lifecycle **(call)**:

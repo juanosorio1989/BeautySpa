@@ -70,9 +70,9 @@ export class MeService {
 
   /**
    * One transaction (customer row locked): writes only the fields whose value changes, appends a
-   * consent row (source `PROFILE`) per channel whose value changes, and records `customer.update`
-   * with `after: { fields }` (changed keys, consents as `consents.<CHANNEL>`) only when something
-   * changed.
+   * consent row (source `input.consentSource`, default `PROFILE`) per channel whose value changes,
+   * and records `customer.update` with `after: { fields }` (changed keys, consents as
+   * `consents.<CHANNEL>`) only when something changed.
    */
   async patch(principal: AccessClaims, input: MePatch, ip: string | null): Promise<Me> {
     return this.prisma.$transaction(async (tx) => {
@@ -87,7 +87,9 @@ export class MeService {
         fields.length > 0
           ? await tx.customer.update({ where: { id: row.id, organizationId: principal.org }, data })
           : row;
-      const channels = input.consents ? await recordConsents(tx, principal.org, row.id, input.consents, "PROFILE") : [];
+      const channels = input.consents
+        ? await recordConsents(tx, principal.org, row.id, input.consents, input.consentSource ?? "PROFILE")
+        : [];
       fields.push(...channels.map((c) => `consents.${c}`));
 
       if (fields.length > 0) {

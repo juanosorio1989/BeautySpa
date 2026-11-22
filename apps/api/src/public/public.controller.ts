@@ -11,6 +11,7 @@ import {
   type PublicServicesResponse,
 } from "@beautyspa/contracts";
 import { Public } from "../auth/decorators.js";
+import { readLocationSettings } from "../common/location-settings.js";
 import { dayHoursFromRows } from "../common/wall-time.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
@@ -42,14 +43,22 @@ export class PublicController {
     const orgId = await this.tenancy.getOrgId();
     const rows = await this.prisma.location.findMany({ where: { organizationId: orgId }, include: { hours: true } });
     return rows
-      .map((l) => ({
-        id: l.id,
-        name: l.name,
-        address: l.address,
-        phone: l.phone,
-        timezone: l.timezone,
-        hours: dayHoursFromRows(l.hours.map((h) => ({ weekday: h.weekday, start: h.opens, end: h.closes }))),
-      }))
+      .map((l) => {
+        const settings = readLocationSettings(l.settings);
+        return {
+          id: l.id,
+          name: l.name,
+          address: l.address,
+          phone: l.phone,
+          timezone: l.timezone,
+          hours: dayHoursFromRows(l.hours.map((h) => ({ weekday: h.weekday, start: h.opens, end: h.closes }))),
+          booking: {
+            bookingHorizonDays: settings.bookingHorizonDays,
+            cancelWindowHours: settings.cancelWindowHours,
+            holdMinutes: settings.holdMinutes,
+          },
+        };
+      })
       .sort((a, b) => byText(a.name, b.name));
   }
 

@@ -10,12 +10,14 @@ import {
   BOOKING_DATE,
   BOOKING_NOW,
   bookSegment,
+  customerSession,
   fixedClock,
   seedBookingFixture,
   type BookingFixture,
 } from "../helpers.js";
 
 const MINUTE = 60_000;
+const UNKNOWN_ID = "01934b6e-0000-7000-8000-000000000000";
 
 describe("POST /holds", () => {
   const clock = fixedClock(BOOKING_NOW);
@@ -277,6 +279,138 @@ describe("POST /holds", () => {
     const res = await hold(slot.segments);
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("RATE_LIMITED");
+  });
+
+  describe("DELETE /holds/:holdId", () => {
+    const release = (holdId: string) => request(ctx.app.getHttpServer()).delete(`/v1/holds/${holdId}`);
+    const releaseAudits = () => ctx.prisma.auditLog.findMany({ where: { action: "appointment.hold_release" } });
+
+    it("releases a live hold: the slot is free again, confirming it is HOLD_EXPIRED, audited as CUSTOMER", async () => {
+      const slot = await firstPediSlot();
+      const held = await hold(slot.segments);
+      expect(held.status).toBe(201);
+      const holdId = held.body.holdId as string;
+      const firstStartWith = async (employeeId: string): Promise<string | undefined> => {
+        const res = await request(ctx.app.getHttpServer()).get(
+          `/v1/availability?services=${f.pediId}:${employeeId}&date=${BOOKING_DATE}`,
+        );
+        expect(res.status).toBe(200);
+        return (res.body as Slot[])[0]?.segments[0]!.startsAt;
+      };
+      const heldStart = slot.segments[0]!.startsAt;
+      const heldEmployee = slot.segments[0]!.employeeId;
+      expect(await firstStartWith(heldEmployee)).not.toBe(heldStart);
+
+      clock.set(BOOKING_NOW + MINUTE);
+      const res = await release(holdId);
+      expect(res.status).toBe(204);
+
+      const appt = await ctx.prisma.appointment.findUniqueOrThrow({
+        where: { id: holdId },
+        include: { segments: true },
+      });
+      expect(appt.status).toBe("CANCELLED");
+      expect(appt.cancelledBy).toBe("SYSTEM");
+      expect(appt.cancelReason).toBe("HOLD_EXPIRED");
+      expect(appt.cancelledAt?.getTime()).toBe(BOOKING_NOW + MINUTE);
+      expect(appt.holdExpiresAt?.getTime()).toBe(BOOKING_NOW + 5 * MINUTE);
+      expect(appt.segments.every((s) => !s.occupies)).toBe(true);
+
+      expect(await firstStartWith(heldEmployee)).toBe(heldStart);
+
+      const { token } = await customerSession(ctx.app, f);
+      const book = await request(ctx.app.getHttpServer())
+        .post("/v1/appointments")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ holdId });
+      expect(book.status).toBe(409);
+      expect(book.body.code).toBe("HOLD_EXPIRED");
+
+      const audits = await releaseAudits();
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({
+        organizationId: f.orgId,
+        actorType: "CUSTOMER",
+        actorId: null,
+        entity: "appointment",
+        entityId: holdId,
+        before: null,
+        after: { released: 1 },
+      });
+    });
+
+    it("is idempotent: a second release answers 204 without another audit row", async () => {
+      const held = await hold((await firstPediSlot()).segments);
+      expect((await release(held.body.holdId)).status).toBe(204);
+      expect((await release(held.body.holdId)).status).toBe(204);
+      expect(await releaseAudits()).toHaveLength(1);
+    });
+
+    it("answers 204 for a hold that already expired (released by the SYSTEM sweep, not by the caller)", async () => {
+      const held = await hold((await firstPediSlot()).segments);
+      clock.set(BOOKING_NOW + 6 * MINUTE);
+      expect((await release(held.body.holdId)).status).toBe(204);
+      const audits = await releaseAudits();
+      expect(audits).toHaveLength(1);
+      expect(audits[0]).toMatchObject({ actorType: "SYSTEM", entityId: null, after: { released: 1 } });
+    });
+
+    it("refuses a booked hold with 409 CONFLICT and leaves it booked", async () => {
+      const held = await hold((await firstPediSlot()).segments);
+      await ctx.prisma.appointment.update({
+        where: { id: held.body.holdId },
+        data: { status: "BOOKED", customerId: f.customerId, holdExpiresAt: null },
+      });
+      const res = await release(held.body.holdId);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("CONFLICT");
+      const appt = await ctx.prisma.appointment.findUniqueOrThrow({
+        where: { id: held.body.holdId },
+        include: { segments: true },
+      });
+      expect(appt.status).toBe("BOOKED");
+      expect(appt.segments.every((s) => s.occupies)).toBe(true);
+      expect(await releaseAudits()).toHaveLength(0);
+    });
+
+    it("answers 404 for an unknown id and 400 for a non-uuid", async () => {
+      const unknown = await release(UNKNOWN_ID);
+      expect(unknown.status).toBe(404);
+      expect(unknown.body.code).toBe("NOT_FOUND");
+      expect((await release("not-a-uuid")).status).toBe(400);
+    });
+
+    it("answers 404 for another organization's hold and leaves it held", async () => {
+      const org = await ctx.prisma.organization.create({
+        data: { name: "Other", slug: "other-salon", defaultLocale: "en" },
+      });
+      const location = await ctx.prisma.location.create({
+        data: { organizationId: org.id, name: "Other main", timezone: "America/New_York", settings: {} },
+      });
+      const other = await ctx.prisma.appointment.create({
+        data: {
+          organizationId: org.id,
+          locationId: location.id,
+          status: "HELD",
+          source: "ONLINE",
+          holdExpiresAt: new Date(BOOKING_NOW + MINUTE),
+        },
+        select: { id: true },
+      });
+      expect((await release(other.id)).status).toBe(404);
+      expect((await ctx.prisma.appointment.findUniqueOrThrow({ where: { id: other.id } })).status).toBe("HELD");
+    });
+
+    it("shares the POST /holds rate limit: the 31st hold-or-release call from one IP is 429", async () => {
+      const slot = await firstPediSlot();
+      expect((await hold(slot.segments)).status).toBe(201);
+      for (let i = 0; i < 29; i++) {
+        expect((await release(UNKNOWN_ID)).status).toBe(404);
+      }
+      const res = await release(UNKNOWN_ID);
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("RATE_LIMITED");
+    });
   });
 
   describe("HoldSweeper", () => {

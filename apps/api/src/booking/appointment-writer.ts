@@ -10,7 +10,7 @@ import {
 import { utcToWall } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { isDeadlock, isExclusionViolation } from "../common/db-errors.js";
-import { invalidRef, slotTaken } from "../common/http-errors.js";
+import { invalidRef, notFound, slotTaken } from "../common/http-errors.js";
 import { BookingContextService, type BookingContext } from "./booking-context.service.js";
 import { choicesOf } from "./plan-mapping.js";
 
@@ -88,6 +88,42 @@ export async function releaseExpiredHoldsAudited(
     );
   }
   return released;
+}
+
+/** Outcome of `releaseHold`: released now, already cancelled, or in any other state (booked, checked in, ...). */
+export type ReleaseHoldResult = "released" | "already" | "booked";
+
+/**
+ * Releases one hold early, exactly like `releaseExpiredHolds` releases an expired one
+ * (`CANCELLED` by `SYSTEM`, reason `HOLD_EXPIRED`, `cancelledAt` = now, `hold_expires_at` kept,
+ * segments stop occupying). Call it with `lockOrgBookings` held; the row is locked with
+ * `FOR UPDATE` before its status is read. Not `HELD` and `CANCELLED` → `"already"` (no write);
+ * any other status → `"booked"` (no write). Unknown id or another organization's → 404 `NOT_FOUND`.
+ */
+export async function releaseHold(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  holdId: string,
+  now: Date,
+): Promise<ReleaseHoldResult> {
+  const rows = await tx.$queryRaw<{ status: string }[]>`
+    SELECT status::text AS status FROM appointment
+    WHERE id = ${holdId}::uuid AND organization_id = ${orgId}::uuid
+    FOR UPDATE`;
+  const row = rows[0];
+  if (!row) throw notFound("Hold");
+  if (row.status === "CANCELLED") return "already";
+  if (row.status !== "HELD") return "booked";
+  await tx.appointment.update({
+    where: { id: holdId, organizationId: orgId },
+    data: { status: "CANCELLED", cancelledAt: now, cancelledBy: "SYSTEM", cancelReason: "HOLD_EXPIRED" },
+    select: { id: true },
+  });
+  await tx.appointmentSegment.updateMany({
+    where: { appointmentId: holdId, organizationId: orgId },
+    data: { occupies: false },
+  });
+  return "released";
 }
 
 /** Rejections the client fixes by refreshing slots (409); the rest mean a bad plan (400). Design call 5. */

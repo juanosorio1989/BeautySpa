@@ -6,3 +6,11 @@ coverage
 .env.*
 !.env.example
 .superpowers/
+
+.next
+next-env.d.ts
+*.tsbuildinfo
+
+# Playwright
+test-results
+playwright-report

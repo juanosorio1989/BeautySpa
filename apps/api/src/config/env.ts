@@ -55,6 +55,24 @@ const trustProxy = z.string().transform((v, ctx): false | number | string[] => {
   return z.NEVER;
 });
 
+const OTP_CHANNEL = z.enum(["whatsapp", "sms"]);
+
+/**
+ * Ordered, comma-separated OTP delivery channels (`whatsapp` | `sms`), tried in order by `OtpService.start`.
+ * Items are trimmed; an empty list, unknown values and duplicates are rejected.
+ */
+const otpChannels = z.string().transform((v, ctx): readonly z.output<typeof OTP_CHANNEL>[] => {
+  const items = v.split(",").map((p) => p.trim());
+  const parsed = items.map((p) => OTP_CHANNEL.safeParse(p));
+  const channels = parsed.flatMap((r) => (r.success ? [r.data] : []));
+  if (channels.length === items.length && new Set(channels).size === channels.length) return channels;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: "must be a comma-separated list of whatsapp | sms without duplicates",
+  });
+  return z.NEVER;
+});
+
 /** Base64 of exactly 32 bytes (AES-256 key). */
 const key32B64 = z
   .string()
@@ -73,6 +91,8 @@ const EnvSchema = z
     DATA_ENCRYPTION_KEY: key32B64,
     DATA_ENCRYPTION_KEY_ID: z.string().min(1).default("k1"),
     OTP_PROVIDER: z.enum(["twilio", "console", "fake"]).default("console"),
+    /** Channels `OtpService.start` tries, in order; SMS only until WhatsApp is enabled on the Verify service. */
+    OTP_CHANNELS: otpChannels.default("sms"),
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_VERIFY_SERVICE_SID: z.string().optional(),

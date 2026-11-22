@@ -9,7 +9,7 @@ served at `/v1/docs` (and `/v1/openapi.json`). Errors are
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/auth/otp/start` | `{ phone, locale }` → sends code (WhatsApp, fallback SMS). Rate-limited. |
+| POST | `/auth/otp/start` | `{ phone, locale }` → sends code over the channels from `OTP_CHANNELS` (default `sms`), in order; the next one is tried when one is unavailable. Rate-limited. |
 | POST | `/auth/otp/verify` | `{ phone, code, locale? }` → tokens + `{ isNew }` (`isNew` = customer has no name yet). Creates customer if new; `locale` is used only then. |
 | POST | `/auth/staff/login` | `{ email, password }` → `{ status: "MFA_REQUIRED" \| "ENROLL_REQUIRED", mfaToken, mfaTokenExpiresAt }` |
 | POST | `/auth/staff/mfa/enroll` | `{ mfaToken }` → TOTP secret + otpauth URL |
@@ -28,11 +28,12 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`) |
+| GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`), `booking` (`bookingHorizonDays`, `cancelWindowHours`, `holdMinutes` from the merged location settings) |
 | GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
 | GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
 | GET | `/availability` | `locationId?`, repeated `services=<serviceId>:<employeeId\|ANY>` (1-4), one `date=YYYY-MM-DD` per call (the date strip calls per day), `excludeAppointmentId?` → `Slot[]`. Optional auth: the mode comes from the token (none or customer: online rules; staff: no lead time, no horizon, non-online employees and services included). `excludeAppointmentId` needs a token: a customer must own the appointment, staff any in the organization, else 404; no token is 401. Segments of `HELD` appointments whose hold has expired are ignored. Rate-limited per IP (120 per minute). |
 | POST | `/holds` | `{ locationId?, segments }` copied from a slot → 201 `{ holdId, expiresAt }` (`expiresAt` = now + `holdMinutes`). The plan is re-validated in the write transaction: 409 `SLOT_TAKEN` when the time is taken, 400 `VALIDATION_FAILED` (path `segments`) when the plan was altered. 30 per IP per 10 min. |
+| DELETE | `/holds/:holdId` | No auth (the hold id is the capability) → 204. Releases a `HELD` appointment early (the client went back) exactly like an expired hold: `CANCELLED` by `SYSTEM`, reason `HOLD_EXPIRED`, segments stop occupying, so a later `POST /appointments` with it is 409 `HOLD_EXPIRED`. Audited `appointment.hold_release` (`CUSTOMER`, `entityId` = hold id, `after: { released: 1 }`). Already released or expired → 204 (idempotent, no `CUSTOMER` audit row; an expired hold still `HELD` is released by the usual `SYSTEM` sweep first); booked or otherwise used → 409 `CONFLICT`; unknown or another organization's → 404; non-uuid → 400. Shares the `POST /holds` limit (30 per IP per 10 min). Accepted risk: the 204/409 answer reveals whether a known appointment id was booked or cancelled (ids are UUIDv7 and the call is rate limited). |
 
 ## Client (customer token)
 
@@ -40,7 +41,7 @@ Shapes `Appointment`, `MyAppointments`, `Me`, `CustomerExport`: see `packages/co
 
 | Method | Path | Notes |
 |---|---|---|
-| GET/PATCH | `/me` | name, email, locale, consents per channel; PATCH writes only changed values (consent rows source `PROFILE`) and audits only changed keys |
+| GET/PATCH | `/me` | name, email, locale, consents per channel; PATCH writes only changed values and audits only changed keys. Optional `consentSource` (`PROFILE` default, or `BOOKING_FORM` from the booking flow) sets the source of the consent rows; sent without `consents` → 400 `VALIDATION_FAILED` on `consentSource` |
 | POST | `/appointments` | `{ holdId, notes? }` → 201 `Appointment` (`BOOKED`, the caller attached, `notes` saved). Unknown hold (or another organization's) 404; expired hold (still held past `expiresAt`, or already released) 409 `HOLD_EXPIRED`; a hold already booked or otherwise used 409 `CONFLICT`; a deleted customer's still-valid token 401 `UNAUTHORIZED`; a customer without a name 400 `VALIDATION_FAILED` path `name` (the hold stays in both cases). The segments are not re-validated: the hold already occupies them. Notifications are triggered after commit and never fail the request. 10 per customer per hour. |
 | GET | `/me/appointments` | `{ upcoming, past }` of the caller's appointments, holds excluded. `upcoming`: `BOOKED` or `CHECKED_IN` ending after now, soonest first. `past`: everything else (including future cancelled ones), latest start first, at most 50. |
 | POST | `/me/appointments/:id/cancel` | `{ reason? }` → `Appointment` (200). Own `BOOKED` appointment within the cancel window: `CANCELLED`, segments stop occupying, `manage_version` + 1. Not the caller's → 404; not `BOOKED` → 409 `CONFLICT`; too late → 409 `OUTSIDE_CANCEL_WINDOW` (see flows.md). |
@@ -49,7 +50,7 @@ Shapes `Appointment`, `MyAppointments`, `Me`, `CustomerExport`: see `packages/co
 | GET | `/me/export` | `{ customer, consentHistory, appointments }` (holds excluded) |
 | DELETE | `/me` | 204; anonymizes the customer, cancels future bookings, clears notes and customer cancel reasons (also in audit rows), revokes tokens (see security-quality.md). Every `/me` and `/me/appointments` route, and `POST /appointments`, answers 401 for a deleted customer. |
 
-An appointment's `notes` and `cancelReason` are visible to its customer (in `/me/appointments` and `/me/export`), whoever wrote them, so staff must not put internal remarks there; staff-only remarks belong in the customer's private notes (endpoint in a later plan). In every request body, a `notes` or `reason` that is blank after trimming is stored as `null`.
+An appointment's `notes` are visible to its customer (in `/me/appointments` and `/me/export`), whoever wrote them, so staff must not put internal remarks there; staff-only remarks belong in the customer's private notes (endpoint in a later plan). `cancelReason` is customer-visible only when the customer or the system cancelled (their own text, or a system code such as `HOLD_EXPIRED` / `ACCOUNT_DELETED`); a reason written by staff (`cancelledBy` `STAFF`) is internal: every customer response (`/me/appointments`, `/me/export`, holds, booking) has `cancelReason: null` for it, while staff responses and audit rows keep it. In every request body, a `notes` or `reason` that is blank after trimming is stored as `null`.
 
 ## Manage link (from WhatsApp/email, no login)
 

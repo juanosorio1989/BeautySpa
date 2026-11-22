@@ -22,6 +22,7 @@ invalid key names, never values.
 | `DATA_ENCRYPTION_KEY` | required; base64 of exactly 32 bytes (`secrets:gen`) |
 | `JWT_KEY_ID`, `DATA_ENCRYPTION_KEY_ID` | default `k1` |
 | `OTP_PROVIDER` | `console` (default) / `twilio` / `fake`; `fake` only when `NODE_ENV=test`; `twilio` needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` |
+| `OTP_CHANNELS` | ordered, comma-separated `whatsapp` / `sms` that `OtpService.start` tries (default `sms`); items trimmed; an empty list, unknown values or duplicates fail validation. Use `whatsapp,sms` only once WhatsApp is enabled on the Twilio Verify service |
 | `EMAIL_PROVIDER` | `console` (default) / `resend`; `resend` needs `RESEND_API_KEY`, `EMAIL_FROM` |
 | `COOKIE_SECURE` | `true`/`false`; default `true` only in production |
 | `COOKIE_DOMAIN` | optional |
@@ -95,9 +96,10 @@ still 401, never treated as anonymous.
 - US only: a phone not starting with `+1`, or not NANP-shaped (`/^\+1[2-9]\d{2}[2-9]\d{6}$/`), is 400
   `VALIDATION_FAILED` with `errors: [{ path: "phone" }]`. Non-US NANP ranges are left to Twilio Geo Permissions
   and Fraud Guard.
-- `start` tries WhatsApp and falls back to SMS when WhatsApp is unavailable (`OtpProviderUnavailableError` or
-  any untyped error) or answers `OtpInvalidRecipientError` (a WhatsApp 400 can be a channel-config error such as
-  Twilio 60223); both failing → 503. `OtpInvalidRecipientError` from SMS → 400 `VALIDATION_FAILED` on `phone`.
+- `start` tries the channels in `OTP_CHANNELS` order (default `sms` only: one provider call per login). With
+  `whatsapp,sms` it falls back to SMS when WhatsApp is unavailable (`OtpProviderUnavailableError` or any untyped
+  error) or answers `OtpInvalidRecipientError` (a WhatsApp 400 can be a channel-config error such as Twilio
+  60223); every channel failing → 503. `OtpInvalidRecipientError` from SMS → 400 `VALIDATION_FAILED` on `phone`.
   `OtpProviderRateLimitedError` → 429 `RATE_LIMITED` on either channel, no fallback. On `verify`, a provider rate limit is 429
   and any other provider failure 503.
 - `verify`: a wrong code is 400 `OTP_INVALID`. A correct code upserts the customer on `(organization_id,
@@ -117,6 +119,8 @@ Providers (`OTP_PROVIDER` token, picked in `AuthModule` by `env.OTP_PROVIDER`):
 | `twilio` | Twilio Verify REST API (no SDK, form bodies, Basic auth). Needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`. Each request is aborted after 10 s. start: 400 → `OtpInvalidRecipientError`, 429 → `OtpProviderRateLimitedError`, other non-2xx / network / timeout → `OtpProviderUnavailableError`; check: 404 → `false`, 429 → rate limited, other non-2xx / network / timeout → unavailable (errors in `otp-provider.ts`). Errors carry only the HTTP status (or `network` / `timeout`). | all |
 | `console` (default) | Logs `OTP for <phone>: <code>` to the API log; stores only `sha256` of the code in Redis (`otp:console:<hashKeyPart(phone)>`, 10 min, deleted on success). | development, test |
 | `fake` | Sends nothing; accepts only `000000`. | `NODE_ENV=test` only |
+
+The channel sent to the provider comes from `OTP_CHANNELS` for every provider; `console` and `fake` ignore it.
 
 Dev usage: with the default `console` provider, call `start`, read the 6-digit code from the API log line
 `OTP for +1...: 123456`, and send it to `verify`.
@@ -237,6 +241,6 @@ Tests: `test/integration/public/public.int.test.ts`, `test/integration/audit-rea
 
 ## Booking and customers (`src/booking/`, `src/customers/`)
 
-`BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus the hold sweeper. `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
+`BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` and `DELETE /v1/holds/:holdId` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus the hold sweeper. `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
 
 Tests: `test/integration/rbac-matrix.int.test.ts` covers every plan 03 and 04 route: 401 without a token, 403 for each disallowed caller (a CUSTOMER token on a staff route and a staff token on a customer route included); `@Public()` routes answer 200 or at least pass the guard; `GET /availability` needs no token but answers 401 to an invalid one.
