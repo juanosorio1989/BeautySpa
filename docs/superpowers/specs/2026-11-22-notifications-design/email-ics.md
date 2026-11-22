@@ -23,8 +23,9 @@ HTML-escaped.
 
 `MailMessage` gains `html?: string` and `attachments?: { filename; content:
 string; contentType }[]`. `ResendMailer` maps them to Resend's `html` and
-`attachments` (`content` base64). `ConsoleMailer` logs subject, recipient and
-attachment names only. `send` returns `{ id?: string }` (Resend's `id`) so the
+`attachments` (`content` base64). `ConsoleMailer` (dev/test only; refused in production) logs recipient,
+subject, attachment names and the plain text, never html or attachment
+content, so dev keeps seeing invite and manage links. `send` returns `{ id?: string }` (Resend's `id`) so the
 log row gets `providerMessageId`; existing callers ignore it.
 
 ## `.ics`
