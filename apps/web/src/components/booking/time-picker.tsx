@@ -37,6 +37,8 @@ export interface TimePickerProps {
   /** Default: hold the slot and go to step 3. */
   onPick?: (slot: Slot) => Promise<void>;
   pickLabel?: string;
+  /** Footer label while `onPick` runs (default: "Holding…"). */
+  pickingLabel?: string;
 }
 
 type Result = { key: string; slots?: Slot[]; errorKey?: string };
@@ -53,6 +55,7 @@ export function TimePicker({
   excludeAppointmentId,
   onPick,
   pickLabel,
+  pickingLabel,
 }: TimePickerProps) {
   const t = useTranslations("booking.time");
   const tAll = useTranslations();
@@ -275,7 +278,7 @@ export function TimePicker({
         ) : null}
       </div>
       <BookingFooter
-        actionLabel={busy ? t("holding") : (pickLabel ?? t("hold"))}
+        actionLabel={busy ? (pickingLabel ?? t("holding")) : (pickLabel ?? t("hold"))}
         disabled={!selected || busy}
         onAction={pick}
       >

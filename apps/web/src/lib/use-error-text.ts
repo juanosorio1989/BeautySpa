@@ -30,3 +30,13 @@ export function useFieldErrorText(): (
     return out;
   };
 }
+
+/**
+ * Like `useErrorText`, but a `VALIDATION_FAILED` with no matching on-screen field reads as the generic message
+ * ("check the highlighted fields" would point at nothing).
+ */
+export function useFallbackErrorText(): (err: unknown) => string {
+  const t = useTranslations();
+  const errorText = useErrorText();
+  return (err) => (errorMessageKey(err) === "errors.VALIDATION_FAILED" ? t("errors.generic") : errorText(err));
+}

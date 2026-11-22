@@ -126,3 +126,22 @@ reschedule page uses them); by default it holds the slot and goes to Details.
 - Delete account: `DELETE /me`, then `logout()` (clears the cookie and the
   in-memory token; `/auth/logout` answers 204 for revoked tokens), clear the
   booking store, home with a "Your account was deleted" notice.
+
+Implementation (`app/[locale]/me/`, `components/me/`, `lib/me/window.ts`):
+
+- Every client-area page uses `useAuthedLoad` (`lib/session/use-authed-load.ts`): it waits for
+  `session.ensure()`, sends signed-out visitors to `/<locale>/login?next=<encoded path>`, and
+  shows `LoadError` (localized copy and retry) when the session `error` status or the load fails.
+- Cancel and Change time show only while `canChangeOnline` is true; otherwise the card shows the
+  call-the-salon message (`CallSalon`, `tel:` link from `PublicLocation.phone`). The API still decides:
+  `OUTSIDE_CANCEL_WINDOW` from cancel or reschedule shows the same message. After a cancel the card moves to Past.
+- Reschedule reuses `TimePicker` with `excludeAppointmentId` and `onPick` (calls `me.reschedule`, then goes to
+  `/me`). Choices start from the appointment's segments; `SLOT_TAKEN` is rethrown so the picker refetches and the
+  old time is kept.
+- Profile sends only changed fields. The email switch sends `consents: { EMAIL }` without `consentSource`
+  (the API records `PROFILE`) and is disabled without an email. A language change patches `locale`, then
+  `router.replace(pathname, { locale })`. Export is a `Blob` object URL saved as `beautyspa-my-data.json`.
+- Delete account: two buttons, then `me.remove()`, `session.logout()` (resets the booking store), `/?deleted=1`
+  (`DeletedNotice` on the home page).
+- Validation errors never show API text: the field copy (`errors.field.*`) for fields on screen, else
+  `errors.generic` (`useFallbackErrorText`).
