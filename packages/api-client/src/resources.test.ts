@@ -43,7 +43,7 @@ const me = {
   consents: { WHATSAPP: false, SMS: false, EMAIL: false },
 };
 
-function setup(reply: Reply) {
+function setup(reply: Reply, token: string | null = "tok") {
   const calls: Call[] = [];
   const fetch: FetchLike = (url, init) => {
     calls.push({ url, init });
@@ -54,7 +54,7 @@ function setup(reply: Reply) {
     });
   };
   const store = new MemoryTokenStore();
-  store.setAccessToken("tok");
+  store.setAccessToken(token);
   const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
   return { api, calls };
 }
@@ -99,9 +99,18 @@ describe("booking", () => {
     );
   });
 
+  it("availability without a stored token sends no authorization and resolves", async () => {
+    const { api, calls } = setup({ status: 200, body: [] }, null);
+    await expect(
+      api.booking.availability({ services: [{ serviceId: "s1", employeeId: "ANY" }], date: "2026-12-01" }),
+    ).resolves.toEqual([]);
+    expect(calls[0]!.init.headers.authorization).toBeUndefined();
+  });
+
   it("createHold posts without bearer", async () => {
     const { api, calls } = setup({ status: 200, body: { holdId: U(7), expiresAt: T } });
     await api.booking.createHold({ segments: [segment] });
+    expect(JSON.parse(calls[0]!.init.body!)).toEqual({ segments: [segment] });
     expect(calls[0]!.init.method).toBe("POST");
     expect(calls[0]!.url).toBe("http://x/v1/holds");
     expect(calls[0]!.init.headers.authorization).toBeUndefined();
@@ -118,6 +127,7 @@ describe("booking", () => {
   it("book posts /appointments with bearer", async () => {
     const { api, calls } = setup({ status: 200, body: appointment });
     await api.booking.book({ holdId: U(7) });
+    expect(JSON.parse(calls[0]!.init.body!)).toEqual({ holdId: U(7) });
     expect(calls[0]!.init.method).toBe("POST");
     expect(calls[0]!.url).toBe("http://x/v1/appointments");
     expect(calls[0]!.init.headers.authorization).toBe("Bearer tok");
