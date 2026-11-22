@@ -1,6 +1,6 @@
 # Handoff
 
-Updated: 2026-11-21
+Updated: 2026-11-22
 
 ## Done
 
@@ -15,13 +15,13 @@ Updated: 2026-11-21
   - Every booking write serializes per org with a Postgres advisory lock, re-validates the plan in the transaction, and keeps the exclusion constraints as the final guard. In-process hold sweeper (`HOLD_SWEEP_INTERVAL_MS`).
   - `BookingEvents` port (booked/changed/cancelled) is a logging no-op until notifications land.
   - Execution rulings R1–R16 are listed at the end of `docs/superpowers/plans/2026-11-17-mvp/04-booking.md`.
+- Plan 06 — web public site and booking — implemented on branch `feat/mvp-06-web` (tasks 1-11 plus OTP channels), pending final reviews: next-intl EN/ES, SEO pages, booking flow with holds and OTP, client area (`/me`), Playwright e2e smoke tests and the CI `e2e` job.
 - Frontend mockups approved: https://claude.ai/artifact/3zfpH45c9UxwhiMPDWGjNi (base for plans 06/07).
 
 ## Next
 
-1. If plan 04 is not merged yet: push `feat/mvp-04-booking`, open the PR, merge (use `gh api` REST for edit/merge — `gh pr edit/merge` fail on a GraphQL deprecation).
-2. **Plan 06 (web: public site and booking) comes before plan 05** (owner decision 2026-11-21, so there is something to see in the browser first). Write it with brainstorming → writing-plans, from the approved mockups. Use `excludeAppointmentId` for reschedule; booking works without notifications.
-3. Then plan 05 with the reduced scope below, then 07, 08.
+1. Plan 06: two independent final branch reviews (fresh context), fix round (deferred minors are in `.superpowers/sdd/06-web-public-booking/progress.md`), then push, PR and merge to `main` (use `gh api` REST for edit/merge: `gh pr edit/merge` fail on a GraphQL deprecation).
+2. Then plan 05 (notifications) with the reduced scope below, then 07, 08.
 
 ## Owner decisions (2026-11-21)
 

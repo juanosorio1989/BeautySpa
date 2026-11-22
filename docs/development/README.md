@@ -97,7 +97,8 @@ API and database details: [apps/api/README.md](../../apps/api/README.md).
 
 Nothing is prerendered at build, so `pnpm build` works with the API down. Public pages and the header render on first visit and are then revalidated every 60 s (ISR); if the API is unreachable the header shows no name and a page error shows `error.tsx` with a retry button. `pnpm dev` needs the API running.
 
-Single app: `pnpm --filter @beautyspa/web dev|build|test`. Colors are Tailwind theme tokens in
+Single app: `pnpm --filter @beautyspa/web dev|build|test|test:e2e`. `test:e2e` runs the Playwright smoke tests against
+the API and a seeded test database; see [apps/web/e2e/README.md](../../apps/web/e2e/README.md). Colors are Tailwind theme tokens in
 `apps/web/src/app/globals.css` (`plum`, `ink`, `cream`, ...); `components.json` is the shadcn config.
 
 ## CI
@@ -107,3 +108,6 @@ Single app: `pnpm --filter @beautyspa/web dev|build|test`. Colors are Tailwind t
 - `checks`: install with `--frozen-lockfile`, then `format:check`, lint, typecheck, unit tests, build.
 - `integration`: Postgres 16 and Redis 7 services, creates `beautyspa_test`, builds the API,
   `db:deploy`, `test:int`, `db:drift`.
+- `e2e`: Postgres and Redis services, `.env` from `.env.example` plus `secrets:gen`, Chromium via
+  `playwright install --with-deps`, then `pnpm --filter @beautyspa/web test:e2e` (migrates and seeds the test
+  database, builds the API and web, starts both, runs the specs). The Playwright report is uploaded on failure.

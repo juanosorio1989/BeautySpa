@@ -75,3 +75,63 @@ jobs:
       - run: pnpm --filter @beautyspa/api db:deploy
       - run: pnpm --filter @beautyspa/api test:int
       - run: pnpm --filter @beautyspa/api db:drift
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: beautyspa
+          POSTGRES_PASSWORD: beautyspa
+          POSTGRES_DB: beautyspa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beautyspa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://beautyspa:beautyspa@localhost:5432/beautyspa
+      DATABASE_URL_TEST: postgresql://beautyspa:beautyspa@localhost:5432/beautyspa_test
+      REDIS_URL: redis://localhost:6379
+      REDIS_URL_TEST: redis://localhost:6379/1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Create test database
+        run: psql -h localhost -U beautyspa -d beautyspa -c 'CREATE DATABASE beautyspa_test'
+        env:
+          PGPASSWORD: beautyspa
+      - name: Create .env with generated secrets
+        run: |
+          cp .env.example .env
+          pnpm --filter @beautyspa/api secrets:gen
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: apps/web
+      # Migrates and seeds the test database, builds the API and web, starts both and runs the specs
+      - run: pnpm --filter @beautyspa/web test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
