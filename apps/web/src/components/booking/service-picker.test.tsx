@@ -1,3 +1,4 @@
+import { renderToString } from "react-dom/server";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,7 +66,7 @@ describe("ServicePicker", () => {
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
     fireEvent.click(screen.getByRole("checkbox", { name: /Svc 1/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: /Svc 2/ }));
-    expect(screen.getByText("2 services · from 45 min")).toBeInTheDocument();
+    expect(screen.getByText("2 services · about 45 min")).toBeInTheDocument();
     expect(screen.getByText("from $60.00")).toBeInTheDocument();
     const next = screen.getByRole("button", { name: "Continue" });
     expect(next).toBeEnabled();
@@ -86,6 +87,23 @@ describe("ServicePicker", () => {
     renderPicker();
     expect(screen.getByRole("checkbox", { name: /Svc 3/ })).toBeChecked();
     expect(bookingStore.getState().serviceIds).toEqual([id(3)]);
+  });
+
+  it("?service= with four services already chosen shows the limit notice", () => {
+    for (const n of [1, 2, 3, 4]) bookingStore.toggleService(id(n));
+    search = `service=${id(5)}`;
+    renderPicker();
+    expect(screen.getByRole("status")).toHaveTextContent(en.booking.services.limit);
+    expect(bookingStore.getState().serviceIds).toHaveLength(4);
+  });
+
+  it("renders the service list on the server (no search-params bailout)", () => {
+    const html = renderToString(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ServicePicker data={data} locale="en" />
+      </NextIntlClientProvider>,
+    );
+    expect(html).toContain("Svc 1");
   });
 
   it("?service= preselects a service from another category and shows that category", () => {

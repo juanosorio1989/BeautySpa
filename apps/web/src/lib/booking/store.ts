@@ -2,9 +2,9 @@
 
 import { useSyncExternalStore } from "react";
 import type { ServiceChoice, Slot } from "@beautyspa/contracts";
-import { BOOKING_STORE_KEY } from "@/lib/session/session-provider";
 import type { StoredHold } from "./hold-slot";
 
+export const BOOKING_STORE_KEY = "bs-booking";
 export const MAX_SERVICES = 4;
 
 export interface BookingState {
@@ -101,7 +101,16 @@ export function createBookingStore(getStorage: () => Storage) {
         slot: null,
       });
     },
-    reset: (): void => set(EMPTY),
+    /** Clears memory and sessionStorage (booking done, logout, account deleted). */
+    reset(): void {
+      state = EMPTY;
+      try {
+        getStorage().removeItem(BOOKING_STORE_KEY);
+      } catch {
+        // storage unavailable: nothing to clear
+      }
+      listeners.forEach((l) => l());
+    },
   };
 }
 

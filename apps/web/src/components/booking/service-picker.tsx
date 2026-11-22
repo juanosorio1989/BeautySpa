@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import type { PublicService, PublicServicesResponse } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
 import { useRouter } from "@/i18n/navigation";
@@ -20,15 +20,41 @@ function durationHint(selected: PublicService[]): number {
   return serial + parallel;
 }
 
+/**
+ * Reads `?service=<id>` in its own Suspense boundary so the rest of the page can render on the server.
+ * Adds the service once the store is ready and reports the outcome to the picker.
+ */
+function PreselectFromUrl({
+  services,
+  onResult,
+}: {
+  services: PublicService[];
+  onResult: (service: PublicService, result: "ok" | "limit") => void;
+}) {
+  const preselect = useSearchParams().get("service");
+  const { ready, serviceIds, toggleService } = useBookingStore();
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (!ready || !preselect || handled.current) return;
+    const service = services.find((s) => s.id === preselect);
+    if (!service) return;
+    handled.current = true;
+    onResult(service, serviceIds.includes(service.id) ? "ok" : toggleService(service.id));
+    // run once per page load, when the store becomes ready
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, preselect]);
+
+  return null;
+}
+
 export function ServicePicker({ data, locale }: { data: PublicServicesResponse; locale: Locale }) {
   const t = useTranslations("booking.services");
   const ts = useTranslations("services");
   const router = useRouter();
   const store = useBookingStore();
-  const preselect = useSearchParams().get("service");
   const [chosenCategory, setChosenCategory] = useState<string | null>(null);
   const [limit, setLimit] = useState(false);
-  const handled = useRef(false);
 
   const known = new Set(data.categories.map((c) => c.id));
   const categoryOf = (s: PublicService) => (s.categoryId && known.has(s.categoryId) ? s.categoryId : OTHER);
@@ -38,17 +64,7 @@ export function ServicePicker({ data, locale }: { data: PublicServicesResponse; 
       .map((c) => ({ id: c.id, label: localized(c.name, locale) })),
     { id: OTHER, label: t("other") },
   ].filter((chip) => data.services.some((s) => categoryOf(s) === chip.id));
-  const preselected = preselect ? data.services.find((s) => s.id === preselect) : undefined;
-  const active = chosenCategory ?? (preselected ? categoryOf(preselected) : chips[0]?.id);
-
-  useEffect(() => {
-    if (!store.ready || !preselect || handled.current) return;
-    const service = data.services.find((s) => s.id === preselect);
-    if (!service) return;
-    handled.current = true;
-    if (!store.serviceIds.includes(service.id)) store.toggleService(service.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `store` is a fresh object each render; ready/serviceIds cover it
-  }, [store.ready, preselect, data]);
+  const active = chosenCategory ?? chips[0]?.id;
 
   const selected = store.serviceIds
     .map((id) => data.services.find((s) => s.id === id))
@@ -59,7 +75,16 @@ export function ServicePicker({ data, locale }: { data: PublicServicesResponse; 
   if (data.services.length === 0) return <p className="px-5 text-muted">{t("empty")}</p>;
 
   return (
-    <div className="mx-auto max-w-[480px] pb-48">
+    <div className="mx-auto max-w-[480px]">
+      <Suspense>
+        <PreselectFromUrl
+          services={data.services}
+          onResult={(service, result) => {
+            setChosenCategory(categoryOf(service));
+            setLimit(result === "limit");
+          }}
+        />
+      </Suspense>
       <nav aria-label={t("categories")} className="flex gap-2 overflow-x-auto px-5 pb-4">
         {chips.map((chip) => (
           <button

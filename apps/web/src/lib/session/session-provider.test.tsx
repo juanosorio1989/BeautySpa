@@ -10,6 +10,7 @@ vi.mock("@/lib/api/browser", () => ({
   setSessionExpiredHandler: (fn: unknown) => setHandler(fn),
 }));
 
+import { bookingStore } from "@/lib/booking/store";
 import { SessionProvider } from "./session-provider";
 import { useSession, type Session } from "./use-session";
 
@@ -95,13 +96,15 @@ describe("SessionProvider", () => {
 
   it("logout() calls auth.logout and clears the booking store", async () => {
     logout.mockResolvedValue(undefined);
-    sessionStorage.setItem("bs-booking", "{}");
+    bookingStore.toggleService("00000000-0000-4000-8000-000000000001");
+    expect(sessionStorage.getItem("bs-booking")).not.toBeNull();
     const s = setup();
     await act(async () => {
       await s.current().logout();
     });
     expect(logout).toHaveBeenCalledTimes(1);
     expect(sessionStorage.getItem("bs-booking")).toBeNull();
+    expect(bookingStore.getState().serviceIds).toEqual([]);
     expect(s.current().status).toBe("signedOut");
   });
 });

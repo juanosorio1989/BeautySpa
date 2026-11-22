@@ -2,10 +2,9 @@
 
 import { ApiError } from "@beautyspa/api-client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { bookingStore } from "@/lib/booking/store";
 import { getBrowserApi, setSessionExpiredHandler } from "@/lib/api/browser";
 import { SessionContext, type Session, type SessionStatus } from "./use-session";
-
-export const BOOKING_STORE_KEY = "bs-booking";
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>("loading");
@@ -51,11 +50,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       await getBrowserApi().auth.logout();
     } finally {
-      try {
-        sessionStorage.removeItem(BOOKING_STORE_KEY);
-      } catch {
-        // sessionStorage unavailable: nothing to clear
-      }
+      bookingStore.reset();
       update("signedOut");
     }
   }, [update]);

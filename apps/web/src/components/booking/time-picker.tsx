@@ -2,7 +2,7 @@
 
 import { ApiError } from "@beautyspa/api-client";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PublicEmployee, PublicLocation, PublicService, ServiceChoice, Slot } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
 import { useRouter } from "@/i18n/navigation";
@@ -67,23 +67,36 @@ export function TimePicker({
   const [result, setResult] = useState<Result | null>(null);
   const [picked, setPicked] = useState<Slot | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [noticeAt, setNoticeAt] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const [noNextFor, setNoNextFor] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [searchingAt, setSearchingAt] = useState<string | null>(null);
+  const cache = useRef<Result | null>(null);
+  const searchToken = useRef(0);
 
-  const key = `${active}|${refresh}|${excludeAppointmentId ?? ""}|${JSON.stringify(choices)}`;
+  // `viewKey` identifies what the person is looking at; `key` also changes on a forced refetch.
+  const keyFor = (d: string, n = refresh) => `${d}|${n}|${excludeAppointmentId ?? ""}|${JSON.stringify(choices)}`;
+  const viewKey = keyFor(active, 0);
+  const key = keyFor(active);
+  const notice = noticeAt === viewKey ? t("slotTaken") : null;
+  const searching = searchingAt === viewKey;
   const loading = result?.key !== key;
   const slots = !loading ? result?.slots : undefined;
   const selected = picked && slots?.includes(picked) ? picked : null;
 
+  const save = (r: Result) => {
+    cache.current = r;
+    setResult(r);
+  };
+
   useEffect(() => {
+    if (cache.current?.key === key) return; // already fetched (next-day search)
     let cancelled = false;
     getBrowserApi()
       .booking.availability({ locationId: location.id, services: choices, date: active, excludeAppointmentId })
       .then(
-        (list) => !cancelled && setResult({ key, slots: list }),
-        (err: unknown) => !cancelled && setResult({ key, errorKey: errorMessageKey(err) }),
+        (list) => !cancelled && save({ key, slots: list }),
+        (err: unknown) => !cancelled && save({ key, errorKey: errorMessageKey(err) }),
       );
     return () => {
       cancelled = true;
@@ -92,11 +105,20 @@ export function TimePicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, location.id]);
 
+  // Leaving the day (or the choices) cancels a running next-day search.
+  useEffect(() => {
+    const token = searchToken;
+    return () => {
+      token.current++;
+    };
+  }, [viewKey]);
+
   const message = (errorKey: string) =>
     tAll.has(errorKey as never) ? tAll(errorKey as never) : tAll("errors.generic");
 
   async function nextDay() {
-    setSearching(true);
+    const token = ++searchToken.current;
+    setSearchingAt(viewKey);
     const from = strip.indexOf(active);
     const candidates = strip.slice(from + 1, from + 1 + NEXT_DAY_LIMIT);
     try {
@@ -107,21 +129,23 @@ export function TimePicker({
           date: d,
           excludeAppointmentId,
         });
+        if (token !== searchToken.current) return;
         if (found.length > 0) {
+          save({ key: keyFor(d), slots: found });
           onDateChange(d);
           return;
         }
       }
-      setNoNextFor(key);
+      setNoNextFor(viewKey);
     } catch (err) {
-      setResult({ key, errorKey: errorMessageKey(err) });
+      if (token === searchToken.current) save({ key, errorKey: errorMessageKey(err) });
     } finally {
-      setSearching(false);
+      if (token === searchToken.current) setSearchingAt(null);
     }
   }
 
   function taken() {
-    setNotice(t("slotTaken"));
+    setNoticeAt(viewKey);
     setPicked(null);
     setRefresh((r) => r + 1);
   }
@@ -129,21 +153,24 @@ export function TimePicker({
   async function pick() {
     if (!selected) return;
     setBusy(true);
-    setNotice(null);
+    setNoticeAt(null);
     setPickError(null);
     try {
       if (onPick) {
         await onPick(selected);
         return;
       }
-      store.setDate(active);
-      store.setSlot(selected);
-      const outcome = await holdSlot(getBrowserApi(), { hold: store.hold, setHold: store.setHold }, selected, {
-        locationId: location.id,
-        onError: (err) => setPickError(errorMessageKey(err)),
-      });
-      if (outcome === "held") router.push("/book/details");
-      else if (outcome === "taken") taken();
+      const outcome = await holdSlot(
+        getBrowserApi(),
+        { hold: store.hold, setHold: store.setHold, clearHold: store.clearHold },
+        selected,
+        { locationId: location.id, onError: (err) => setPickError(errorMessageKey(err)) },
+      );
+      if (outcome === "held") {
+        store.setDate(active); // clears the slot, so set the slot after
+        store.setSlot(selected);
+        router.push("/book/details");
+      } else if (outcome === "taken") taken();
     } catch (err) {
       if (err instanceof ApiError && err.problem.code === "SLOT_TAKEN") taken();
       else setPickError(errorMessageKey(err));
@@ -157,7 +184,7 @@ export function TimePicker({
   const shownError = pickError ?? errorKey;
 
   return (
-    <div className="mx-auto max-w-[480px] pb-60">
+    <div className="mx-auto max-w-[480px]">
       <div className="flex flex-col gap-3.5 px-5">
         {services.map((service) => {
           const current = choices.find((c) => c.serviceId === service.id)?.employeeId ?? "ANY";
@@ -216,18 +243,22 @@ export function TimePicker({
         ) : null}
         {loading && !errorKey ? <p className="text-muted">{t("loading")}</p> : null}
         {slots && slots.length > 0 ? (
+          <h2 className="pb-2 text-[13px] font-semibold uppercase text-muted">{t("times")}</h2>
+        ) : null}
+        {slots && slots.length > 0 ? (
           <SlotGrid slots={slots} selected={selected} onSelect={setPicked} timezone={timezone} locale={locale} />
         ) : null}
         {slots && slots.length === 0 ? (
           <div className="flex flex-col items-start gap-3">
             <p className="text-muted">{t("noTimes")}</p>
-            {noNextFor === key ? (
+            {searching ? (
+              <p className="text-muted">{t("searching")}</p>
+            ) : noNextFor === viewKey ? (
               <p className="text-muted">{t("noNextDay")}</p>
             ) : (
               <button
                 type="button"
                 onClick={nextDay}
-                disabled={searching}
                 className="min-h-11 rounded-full border border-plum px-5 font-medium"
               >
                 {t("nextDay")}

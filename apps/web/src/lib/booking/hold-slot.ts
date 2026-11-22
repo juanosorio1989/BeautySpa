@@ -7,6 +7,7 @@ export type StoredHold = Hold & { segments: PlannedSegment[] };
 export interface HoldStore {
   hold: StoredHold | null;
   setHold(hold: StoredHold): void;
+  clearHold(): void;
 }
 
 const SEGMENT_KEYS = ["serviceId", "employeeId", "resourceId", "startsAt", "endsAt", "blockEndsAt"] as const;
@@ -34,6 +35,8 @@ export async function holdSlot(
     } catch {
       // best effort: the old hold expires by itself
     }
+    // Either way the old hold is no longer ours to reuse (a failed create must not leave it looking valid).
+    store.clearHold();
   }
   try {
     const hold = await api.booking.createHold({ locationId: opts.locationId, segments: slot.segments });

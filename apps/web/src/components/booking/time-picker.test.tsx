@@ -43,7 +43,7 @@ const apiError = (status: number, code: "SLOT_TAKEN" | "RATE_LIMITED") =>
 const mount = (props: Partial<React.ComponentProps<typeof TimePicker>> = {}) => {
   const onDateChange = vi.fn();
   const onChoiceChange = vi.fn();
-  render(
+  const ui = (over: Partial<React.ComponentProps<typeof TimePicker>> = {}) => (
     <NextIntlClientProvider locale="en" messages={en}>
       <TimePicker
         locale="en"
@@ -55,10 +55,16 @@ const mount = (props: Partial<React.ComponentProps<typeof TimePicker>> = {}) => 
         date="2026-11-19"
         onDateChange={onDateChange}
         {...props}
+        {...over}
       />
-    </NextIntlClientProvider>,
+    </NextIntlClientProvider>
   );
-  return { onDateChange, onChoiceChange };
+  const view = render(ui());
+  return {
+    onDateChange,
+    onChoiceChange,
+    rerender: (over: Partial<React.ComponentProps<typeof TimePicker>>) => view.rerender(ui(over)),
+  };
 };
 
 describe("TimePicker", () => {
@@ -129,6 +135,38 @@ describe("TimePicker", () => {
     expect(await screen.findByText(en.booking.time.slotTaken)).toBeInTheDocument();
     await waitFor(() => expect(availability).toHaveBeenCalledTimes(2));
     expect(push).not.toHaveBeenCalled();
+    expect(bookingStore.getState().slot).toBeNull();
+  });
+
+  it("clears the SLOT_TAKEN notice when the date changes", async () => {
+    availability.mockResolvedValue([slotA]);
+    createHold.mockRejectedValue(apiError(409, "SLOT_TAKEN"));
+    const { rerender } = mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^11:00\sAM$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Hold this time" }));
+    expect(await screen.findByText(en.booking.time.slotTaken)).toBeInTheDocument();
+    rerender({ date: "2026-11-20" });
+    await waitFor(() => expect(screen.queryByText(en.booking.time.slotTaken)).toBeNull());
+  });
+
+  it("renders the Available times label above the grid", async () => {
+    availability.mockResolvedValue([slotA]);
+    mount();
+    expect(await screen.findByText(en.booking.time.times)).toBeInTheDocument();
+  });
+
+  it("next-day search shows a searching state and does not move the date if the user picked another day", async () => {
+    let release!: (v: unknown[]) => void;
+    availability.mockImplementation(({ date }: { date: string }) =>
+      date === "2026-11-19" ? Promise.resolve([]) : new Promise((r) => (release = r)),
+    );
+    const { onDateChange, rerender } = mount();
+    await screen.findByText(en.booking.time.noTimes);
+    fireEvent.click(screen.getByRole("button", { name: "Next day with times" }));
+    expect(await screen.findByText(en.booking.time.searching)).toBeInTheDocument();
+    rerender({ date: "2026-11-25" });
+    await act(async () => release([slotB]));
+    expect(onDateChange).not.toHaveBeenCalled();
   });
 
   it("shows the rate-limit message when holding is throttled", async () => {

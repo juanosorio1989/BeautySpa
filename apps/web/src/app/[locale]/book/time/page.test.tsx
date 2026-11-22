@@ -46,6 +46,21 @@ describe("/book/time", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
   });
 
+  it("drops stored services missing from the catalog and keeps the rest", async () => {
+    bookingStore.toggleService(id(1));
+    bookingStore.toggleService(id(77));
+    mount();
+    await waitFor(() => expect(bookingStore.getState().serviceIds).toEqual([id(1)]));
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("redirects to step 1 when no stored service exists in the catalog", async () => {
+    bookingStore.toggleService(id(77));
+    mount();
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
+    expect(bookingStore.getState().serviceIds).toEqual([]);
+  });
+
   it("renders the picker when services are chosen", async () => {
     bookingStore.toggleService(id(1));
     const view = mount();

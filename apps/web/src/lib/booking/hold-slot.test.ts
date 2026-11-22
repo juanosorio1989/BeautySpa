@@ -29,7 +29,7 @@ function setup(hold: HoldStore["hold"]) {
       releaseHold: vi.fn().mockResolvedValue(undefined),
     },
   };
-  const store: HoldStore = { hold, setHold: vi.fn() };
+  const store: HoldStore = { hold, setHold: vi.fn(), clearHold: vi.fn() };
   return { api, store };
 }
 
@@ -65,6 +65,34 @@ describe("holdSlot", () => {
     const failing = setup({ holdId: "old", expiresAt: future, segments: slotAt("2026-11-19T16:15:00.000Z").segments });
     failing.api.booking.releaseHold.mockRejectedValue(new Error("boom"));
     expect(await holdSlot(failing.api, failing.store, slot, { now: NOW })).toBe("held");
+  });
+
+  it("clears the old hold from the store once it was chosen for release, even if the new hold fails", async () => {
+    const slot = slotAt("2026-11-19T16:00:00.000Z");
+    const old = slotAt("2026-11-19T16:15:00.000Z");
+    const { api, store } = setup({ holdId: "old", expiresAt: future, segments: old.segments });
+    api.booking.createHold.mockRejectedValue(
+      new ApiError(409, { type: "about:blank", title: "x", status: 409, code: "SLOT_TAKEN" }),
+    );
+    expect(await holdSlot(api, store, slot, { now: NOW })).toBe("taken");
+    expect(store.clearHold).toHaveBeenCalledTimes(1);
+
+    // the old hold is gone from the store, so re-picking the old slot creates a new hold
+    const again = setup(null);
+    expect(await holdSlot(again.api, again.store, old, { now: NOW })).toBe("held");
+    expect(again.api.booking.createHold).toHaveBeenCalled();
+  });
+
+  it("clears the old hold even when releasing it fails", async () => {
+    const slot = slotAt("2026-11-19T16:00:00.000Z");
+    const { api, store } = setup({
+      holdId: "old",
+      expiresAt: future,
+      segments: slotAt("2026-11-19T16:15:00.000Z").segments,
+    });
+    api.booking.releaseHold.mockRejectedValue(new Error("boom"));
+    await holdSlot(api, store, slot, { now: NOW });
+    expect(store.clearHold).toHaveBeenCalledTimes(1);
   });
 
   it("maps SLOT_TAKEN to taken and other failures to error", async () => {

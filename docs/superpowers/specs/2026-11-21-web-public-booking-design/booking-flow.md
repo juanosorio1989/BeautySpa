@@ -18,7 +18,7 @@ cleared after a successful booking.
 
 Implementation (`apps/web/src/lib/booking/`): `store.ts` is a small external
 store (`useBookingStore()`, key `bs-booking`; `ready` is false until
-`sessionStorage` is read, so redirects wait for it). The stored `hold` also
+`sessionStorage` is read, so redirects wait for it). `reset()` clears memory and `sessionStorage`; `logout()` calls it. The stored `hold` also
 keeps the `segments` it was made for (`StoredHold`), which is how `holdSlot`
 (`hold-slot.ts`) tells an identical hold from a different one. `TimePicker`
 (`components/booking/time-picker.tsx`) takes the selected services, employees

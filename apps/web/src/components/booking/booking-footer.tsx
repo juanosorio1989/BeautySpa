@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Sticky bottom action bar shared by the booking steps. */
+/** Action bar shared by the booking steps; sticks to the bottom of the (max 480 px) content column. */
 export function BookingFooter({
   children,
   actionLabel,
@@ -13,8 +13,8 @@ export function BookingFooter({
   disabled?: boolean;
 }) {
   return (
-    <footer className="fixed inset-x-0 bottom-0 border-t border-line bg-card">
-      <div className="mx-auto flex max-w-[480px] flex-col gap-2.5 px-5 pb-7 pt-4">
+    <footer className="sticky bottom-0 mt-6 border-t border-line bg-card">
+      <div className="flex flex-col gap-2.5 px-5 pb-7 pt-4">
         <div className="flex flex-col gap-0.5 text-sm text-ink">{children}</div>
         <button
           type="button"

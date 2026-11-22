@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PublicEmployee, PublicLocation, PublicService } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
 import { TimePicker } from "@/components/booking/time-picker";
@@ -50,6 +50,14 @@ export default function TimePage() {
     };
   }, [empty, attempt]);
 
+  // Stored services that left the catalog are dropped; only if none remain do we go back to step 1.
+  const missing = catalog ? store.serviceIds.filter((id) => !catalog.services.some((s) => s.id === id)) : [];
+  useEffect(() => {
+    for (const id of missing) store.toggleService(id);
+    // `missing` is derived from the two inputs below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog, store.serviceIds]);
+
   const selected = useMemo(
     () =>
       catalog
@@ -59,13 +67,10 @@ export default function TimePage() {
         : [],
     [catalog, store.serviceIds],
   );
-  // A stored service that no longer exists in the catalog: start over from step 1.
   const stale = catalog !== null && selected.length === 0;
   useEffect(() => {
     if (stale) router.replace("/");
   }, [stale, router]);
-
-  const onChoiceChange = useCallback((id: string, employeeId: string) => store.setChoice(id, employeeId), [store]);
 
   return (
     <main>
@@ -113,7 +118,7 @@ export default function TimePage() {
           services={selected}
           employees={catalog.employees}
           choices={store.choices}
-          onChoiceChange={onChoiceChange}
+          onChoiceChange={store.setChoice}
           date={store.date}
           onDateChange={store.setDate}
         />
