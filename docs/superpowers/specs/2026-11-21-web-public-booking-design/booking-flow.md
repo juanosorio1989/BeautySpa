@@ -16,6 +16,15 @@ persisted to `sessionStorage` (wrapped in try/catch; works without it). A page
 reached with missing prerequisites redirects to the previous step. State is
 cleared after a successful booking.
 
+Implementation (`apps/web/src/lib/booking/`): `store.ts` is a small external
+store (`useBookingStore()`, key `bs-booking`; `ready` is false until
+`sessionStorage` is read, so redirects wait for it). The stored `hold` also
+keeps the `segments` it was made for (`StoredHold`), which is how `holdSlot`
+(`hold-slot.ts`) tells an identical hold from a different one. `TimePicker`
+(`components/booking/time-picker.tsx`) takes the selected services, employees
+and choices as props and has optional `excludeAppointmentId` and `onPick` (the
+reschedule page uses them); by default it holds the slot and goes to Details.
+
 ## Step 1 — Services
 
 - Up to 4 services (the API limit); a fifth tap shows a short notice.
