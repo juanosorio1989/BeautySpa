@@ -32,7 +32,7 @@ Updated: 2026-11-22
 ## Owner to-dos (pending)
 
 - Twilio (2026-11-21): Verify service created (SMS + RCS, landline validation, geo permissions US only); credentials in the root `.env`, dev keeps `OTP_PROVIDER=console`. Real test passed: start → SMS delivered, verify → 200. The account can only send to verified caller IDs for now (error 21608).
-- Twilio (2026-11-22): Primary Compliance Profile submitted as an individual. Pending: Twilio approval, then upgrade the account out of trial; then re-test with an unverified number.
+- Twilio (2026-11-22): Primary Compliance Profile submitted as an individual. Account upgraded out of trial (2026-11-22). Pending: real test with an unverified US number (start → SMS → verify) and confirm the profile shows Twilio approved.
 - No IRS EIN yet (business not incorporated): anything that needs an EIN (A2P 10DLC brand, WhatsApp Business API, business-type Twilio profiles) waits. Choose individual / sole-proprietor options where offered.
 - Before deploy: Twilio's **Primary Compliance Profile** must be approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Done: `OTP_CHANNELS` (default `sms`) skips the WhatsApp attempt; set `whatsapp,sms` once WhatsApp is enabled on the Verify service.
 - Decide whether IP addresses count as personal data on account deletion: `audit_log.ip`, `refresh_token.ip` and `user_agent` are kept today.
