@@ -53,7 +53,7 @@ export function LocationHours({ location, locale }: { location: PublicLocation; 
             const ranges = location.hours
               .filter((h) => h.weekday === d)
               .sort((a, b) => a.start.localeCompare(b.start))
-              .map((h) => `${wall(h.start, locale)} – ${wall(h.end, locale)}`);
+              .map((h) => t("hoursRange", { start: wall(h.start, locale), end: wall(h.end, locale) }));
             return (
               <div key={d} className="flex justify-between gap-4 px-4 py-3">
                 <dt className="font-medium">{t(`weekdays.${DAYS[d]}`)}</dt>

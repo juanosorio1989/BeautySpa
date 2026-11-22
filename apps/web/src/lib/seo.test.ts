@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { en } from "@beautyspa/i18n";
+import { en, es } from "@beautyspa/i18n";
 import { pageMetadata } from "./seo";
 
 vi.mock("next-intl/server", () => ({
-  getTranslations: async () => (key: string) =>
-    key.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], en) as string,
+  getTranslations:
+    async ({ locale, namespace }: { locale: "en" | "es"; namespace: string }) =>
+    (key: string) =>
+      `${namespace}.${key}`
+        .split(".")
+        .reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], { en, es }[locale]) as string,
 }));
 
 describe("pageMetadata", () => {
@@ -12,9 +16,9 @@ describe("pageMetadata", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("sets hreflang en, es and x-default plus canonical", async () => {
-    const m = await pageMetadata("es", "/services", "seo.services.title", "seo.services.description");
-    expect(m.title).toBe(en.seo.services.title);
-    expect(m.description).toBe(en.seo.services.description);
+    const m = await pageMetadata("es", "/services", "services.title", "services.description");
+    expect(m.title).toBe(es.seo.services.title);
+    expect(m.description).toBe(es.seo.services.description);
     expect(m.alternates).toEqual({
       canonical: "https://spa.example/es/services",
       languages: {

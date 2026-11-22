@@ -54,10 +54,7 @@ export function TeamList({
             </div>
             {e.bio ? <p className="mt-3 text-sm">{localized(e.bio, locale)}</p> : null}
             {names.length > 0 ? (
-              <p className="mt-3 text-sm text-muted">
-                <span className="font-medium text-ink">{t("does")}: </span>
-                {names.join(", ")}
-              </p>
+              <p className="mt-3 text-sm text-muted">{t("does", { list: names.join(", ") })}</p>
             ) : null}
           </li>
         );

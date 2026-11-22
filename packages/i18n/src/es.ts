@@ -2,6 +2,7 @@ import type { Messages } from "./index";
 
 export const es: Messages = {
   common: {
+    retry: "Intentar de nuevo",
     language: "Idioma",
     english: "Inglés",
     spanish: "Español",
@@ -18,8 +19,8 @@ export const es: Messages = {
   },
   services: {
     title: "Servicios",
-    description: "Explora nuestros servicios, duraciones y precios.",
     book: "Reservar",
+    bookService: "Reservar {name}",
     from: "desde {price}",
     minutes: "{count} min",
     uncategorized: "Otros servicios",
@@ -28,16 +29,15 @@ export const es: Messages = {
   },
   team: {
     title: "Nuestro equipo",
-    description: "Conoce a las profesionales y los servicios que ofrecen.",
-    does: "Servicios",
+    does: "Servicios: {list}",
     empty: "Pronto verás aquí a nuestro equipo.",
   },
   location: {
     title: "Ubicación",
-    description: "Encuéntranos, llámanos y consulta nuestro horario.",
     address: "Dirección",
     phone: "Teléfono",
     hours: "Horario",
+    hoursRange: "{start} – {end}",
     closed: "Cerrado",
     openMap: "Abrir en Mapas",
     noAddress: "Dirección no disponible.",

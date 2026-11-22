@@ -55,7 +55,7 @@ export function ServicesList({ data, locale }: { data: PublicServicesResponse; l
                   </p>
                   <Link
                     href={`/?service=${s.id}`}
-                    aria-label={`${t("book")}: ${name}`}
+                    aria-label={t("bookService", { name })}
                     className="inline-flex min-h-11 items-center rounded-full border border-plum px-5 font-medium"
                   >
                     {t("book")}

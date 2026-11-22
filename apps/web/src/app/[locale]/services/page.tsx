@@ -1,12 +1,15 @@
+import { hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@beautyspa/i18n";
 import { ServicesList } from "@/components/public/services-list";
 import { getServerApi } from "@/lib/api/server";
+import { routing } from "@/i18n/routing";
 import { pageMetadata } from "@/lib/seo";
 
-export async function generateMetadata({ params }: { params: Promise<{ locale: Locale }> }) {
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
-  return pageMetadata(locale, "/services", "seo.services.title", "seo.services.description");
+  if (!hasLocale(routing.locales, locale)) return {};
+  return pageMetadata(locale, "/services", "services.title", "services.description");
 }
 
 export default async function ServicesPage({ params }: { params: Promise<{ locale: Locale }> }) {

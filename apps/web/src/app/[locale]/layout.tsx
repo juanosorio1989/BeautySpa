@@ -5,18 +5,18 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { SessionProvider } from "@/lib/session/session-provider";
 import { SiteHeader } from "@/components/site-header";
-import { getServerApi } from "@/lib/api/server";
+import { getPrimaryLocation } from "@/lib/api/server";
 import { routing } from "@/i18n/routing";
 import "../globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-space-grotesk", display: "swap" });
 
-// Pages read the API (cached 60 s per fetch); do not prerender them at build time, when the API may be down.
-export const dynamic = "force-dynamic";
+// Nothing is prerendered at build time (the API may be down); the first visit renders, then ISR every 60 s.
+export const revalidate = 60;
 
 export function generateStaticParams() {
-  return routing.locales.map((locale) => ({ locale }));
+  return [];
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
@@ -36,7 +36,7 @@ export default async function LocaleLayout({
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) notFound();
   setRequestLocale(locale);
-  const [location] = await getServerApi().public.locations();
+  const location = await getPrimaryLocation();
 
   return (
     <html lang={locale} className={`${inter.variable} ${spaceGrotesk.variable}`}>

@@ -1,5 +1,6 @@
 export const en = {
   common: {
+    retry: "Try again",
     language: "Language",
     english: "English",
     spanish: "Spanish",
@@ -16,8 +17,8 @@ export const en = {
   },
   services: {
     title: "Services",
-    description: "Browse our services, durations and prices.",
     book: "Book",
+    bookService: "Book {name}",
     from: "from {price}",
     minutes: "{count} min",
     uncategorized: "Other services",
@@ -26,16 +27,15 @@ export const en = {
   },
   team: {
     title: "Our team",
-    description: "Meet the professionals and the services they offer.",
-    does: "Services",
+    does: "Services: {list}",
     empty: "Our team will be listed here soon.",
   },
   location: {
     title: "Location",
-    description: "Find us, call us and see our opening hours.",
     address: "Address",
     phone: "Phone",
     hours: "Opening hours",
+    hoursRange: "{start} – {end}",
     closed: "Closed",
     openMap: "Open in Maps",
     noAddress: "Address not available.",

@@ -1,12 +1,15 @@
+import { hasLocale } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { Locale } from "@beautyspa/i18n";
 import { LocationHours } from "@/components/public/location-hours";
 import { getServerApi } from "@/lib/api/server";
+import { routing } from "@/i18n/routing";
 import { pageMetadata } from "@/lib/seo";
 
-export async function generateMetadata({ params }: { params: Promise<{ locale: Locale }> }) {
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
-  return pageMetadata(locale, "/location", "seo.location.title", "seo.location.description");
+  if (!hasLocale(routing.locales, locale)) return {};
+  return pageMetadata(locale, "/location", "location.title", "location.description");
 }
 
 export default async function LocationPage({ params }: { params: Promise<{ locale: Locale }> }) {

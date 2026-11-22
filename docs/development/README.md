@@ -95,7 +95,7 @@ API and database details: [apps/api/README.md](../../apps/api/README.md).
 | `NEXT_PUBLIC_API_URL` | browser calls to the API |
 | `NEXT_PUBLIC_SITE_URL` | public site origin (links, metadata) |
 
-Public pages (`/services`, `/team`, `/location`) and the header read the API per request (fetches cached 60 s), so the web build does not need the API, but `pnpm dev` needs it running.
+Nothing is prerendered at build, so `pnpm build` works with the API down. Public pages and the header render on first visit and are then revalidated every 60 s (ISR); if the API is unreachable the header shows no name and a page error shows `error.tsx` with a retry button. `pnpm dev` needs the API running.
 
 Single app: `pnpm --filter @beautyspa/web dev|build|test`. Colors are Tailwind theme tokens in
 `apps/web/src/app/globals.css` (`plum`, `ink`, `cream`, ...); `components.json` is the shadcn config.

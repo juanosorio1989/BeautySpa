@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { revalidatingFetch } from "./server";
+import { getPrimaryLocation, revalidatingFetch } from "./server";
 
 describe("revalidatingFetch", () => {
   it("passes next.revalidate", async () => {
@@ -14,6 +14,17 @@ describe("revalidatingFetch", () => {
       headers: { accept: "application/json" },
       next: { revalidate: 60 },
     });
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("getPrimaryLocation", () => {
+  it("returns undefined and logs when the API is unreachable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(getPrimaryLocation()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledOnce();
+    log.mockRestore();
     vi.unstubAllGlobals();
   });
 });

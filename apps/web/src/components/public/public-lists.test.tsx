@@ -57,7 +57,13 @@ describe("ServicesList", () => {
 
   it("links each service to /<locale>?service=<id>", () => {
     wrap(<ServicesList data={data} locale="en" />);
-    expect(screen.getByRole("link", { name: /Svc 1/ })).toHaveAttribute("href", `/en?service=${id(1)}`);
+    expect(screen.getByRole("link", { name: "Book Svc 1" })).toHaveAttribute("href", `/en?service=${id(1)}`);
+  });
+
+  it("shows 'desde' with an es-US price in Spanish", () => {
+    wrap(<ServicesList data={data} locale="es" />, "es");
+    expect(screen.getByText("desde $40.00")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reservar Serv 1" })).toBeInTheDocument();
   });
 
   it("falls back to the other language when the text is empty", () => {
@@ -82,7 +88,7 @@ describe("TeamList", () => {
     expect(screen.getByText("Ana Lopez 1")).toBeInTheDocument();
     expect(screen.queryByText("Ana Lopez 2")).toBeNull();
     expect(screen.getByText("AL")).toBeInTheDocument();
-    expect(screen.getByText("Svc 1")).toBeInTheDocument();
+    expect(screen.getByText(`${en.team.does.replace("{list}", "Svc 1")}`)).toBeInTheDocument();
   });
 });
 
@@ -108,7 +114,7 @@ describe("LocationHours", () => {
       "href",
       "https://maps.google.com/?q=1%20Main%20St%2C%20Miami%20FL",
     );
-    expect(screen.getByText(/9:00 AM – 5:00 PM/)).toBeInTheDocument();
+    expect(screen.getByText("9:00 AM – 5:00 PM")).toBeInTheDocument();
     expect(screen.getByText(/9:00 AM – 12:00 PM, 1:00 PM – 5:00 PM/)).toBeInTheDocument();
     expect(screen.getAllByText(en.location.closed)).toHaveLength(5);
   });
