@@ -2,7 +2,7 @@ import { useTranslations } from "next-intl";
 import type { Appointment, PublicEmployee, PublicLocation, PublicService } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
 import { formatDate, formatPrice, formatTimeRange } from "@/lib/format";
-import { localized } from "@/lib/localized";
+import { SegmentLines } from "./segment-lines";
 
 /** Date, time range, services with professionals and prices, total and address. Shared with the client area. */
 export function AppointmentSummary({
@@ -31,19 +31,7 @@ export function AppointmentSummary({
         </span>
       </div>
       <hr className="border-line" />
-      <ul className="flex flex-col gap-3.5">
-        {appointment.segments.map((seg) => (
-          <li key={seg.id} className="flex justify-between gap-3 text-[15px]">
-            <span>
-              {t("summary.line", {
-                service: localized(services.find((s) => s.id === seg.serviceId)?.name ?? null, locale),
-                employee: employees.find((e) => e.id === seg.employeeId)?.displayName ?? t("time.yourProfessional"),
-              })}
-            </span>
-            <span>{formatPrice(seg.priceCents, locale)}</span>
-          </li>
-        ))}
-      </ul>
+      <SegmentLines segments={appointment.segments} services={services} employees={employees} locale={locale} />
       <hr className="border-line" />
       <div className="flex justify-between text-[15px] font-semibold">
         <span>{t("summary.total")}</span>

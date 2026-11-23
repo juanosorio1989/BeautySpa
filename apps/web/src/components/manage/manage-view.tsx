@@ -3,8 +3,9 @@
 import { ApiError } from "@beautyspa/api-client";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
-import type { ManageView as ManageViewData } from "@beautyspa/contracts";
+import type { ManageView as ManageViewData, PublicEmployee, PublicService } from "@beautyspa/contracts";
 import type { Locale } from "@beautyspa/i18n";
+import { SegmentLines } from "@/components/booking/segment-lines";
 import { CallSalon } from "@/components/me/call-salon";
 import { CancelSheet } from "@/components/me/cancel-sheet";
 import { getBrowserApi } from "@/lib/api/browser";
@@ -26,12 +27,29 @@ export function ManageView({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [catalog, setCatalog] = useState<{ services: PublicService[]; employees: PublicEmployee[] }>({
+    services: [],
+    employees: [],
+  });
 
   useEffect(() => {
     let alive = true;
     getBrowserApi()
       .manage.get(token)
-      .then((view) => alive && setState({ kind: "ok", view }))
+      .then((view) => {
+        if (!alive) return;
+        setState({ kind: "ok", view });
+        // Names for the segment lines; a failed read falls back to the generic text.
+        const api = getBrowserApi();
+        const q = { locationId: view.appointment.locationId };
+        void Promise.allSettled([api.public.services(q), api.public.employees(q)]).then(([sv, em]) => {
+          if (alive)
+            setCatalog({
+              services: sv.status === "fulfilled" ? sv.value.services : [],
+              employees: em.status === "fulfilled" ? em.value : [],
+            });
+        });
+      })
       .catch((err: unknown) => {
         if (!alive) return;
         if (err instanceof ApiError && err.status === 404) setState({ kind: "invalid" });
@@ -43,12 +61,24 @@ export function ManageView({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- errorText is recreated each render
   }, [token]);
 
-  if (state.kind === "loading") return <p className="p-5 text-muted">{t("loading")}</p>;
+  if (state.kind === "loading")
+    return (
+      <main className="p-5">
+        <p role="status" className="text-muted">
+          {t("loading")}
+        </p>
+      </main>
+    );
   if (state.kind === "error")
     return (
-      <p role="alert" className="p-5 text-warn">
-        {state.message}
-      </p>
+      <main className="flex flex-col items-start gap-4 p-5">
+        <p role="alert" className="text-warn">
+          {state.message}
+        </p>
+        <a href={`/${locale}/me`} className="flex min-h-11 items-center font-semibold underline">
+          {t("toMyAppointments")}
+        </a>
+      </main>
     );
   if (state.kind === "invalid")
     return (
@@ -66,6 +96,15 @@ export function ManageView({ token }: { token: string }) {
   const booked = appointment.status === "BOOKED";
   const confirmed = appointment.confirmedByCustomerAt !== null;
 
+  /** Re-reads the link so the buttons match the API after a conflict. */
+  async function refresh() {
+    try {
+      setState({ kind: "ok", view: await getBrowserApi().manage.get(token) });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) setState({ kind: "invalid" });
+    }
+  }
+
   async function confirm() {
     setBusy(true);
     setActionError(null);
@@ -73,6 +112,7 @@ export function ManageView({ token }: { token: string }) {
       setState({ kind: "ok", view: await getBrowserApi().manage.confirm(token) });
     } catch (err) {
       setActionError(errorText(err));
+      await refresh();
     } finally {
       setBusy(false);
     }
@@ -88,6 +128,12 @@ export function ManageView({ token }: { token: string }) {
         <span className="text-[15px] font-semibold">
           {t("total", { total: formatPrice(appointment.totalPriceCents, locale) })}
         </span>
+        <SegmentLines
+          segments={appointment.segments}
+          services={catalog.services}
+          employees={catalog.employees}
+          locale={locale}
+        />
         <p className="text-[13px] text-muted">
           {location.name}
           {location.addressLine ? `, ${location.addressLine}` : ""}
@@ -152,7 +198,10 @@ export function ManageView({ token }: { token: string }) {
             setState({ kind: "ok", view: next });
             return next.appointment;
           }}
-          onClose={() => setCancelling(false)}
+          onClose={() => {
+            setCancelling(false);
+            void refresh();
+          }}
           onCancelled={() => setCancelling(false)}
         />
       ) : null}
