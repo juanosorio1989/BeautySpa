@@ -16,6 +16,7 @@ import {
   type SendJob,
 } from "../queue/queue-names.js";
 import { errorCode } from "./error-code.js";
+import { appointmentIcsEvent } from "./appointment-ics.js";
 import { buildIcs } from "./ics.js";
 import { manageUrl, signManageToken } from "./manage-token.js";
 import { MessageContextService, messageLocale, statusFits, type LoadedAppointment } from "./message-context.service.js";
@@ -291,20 +292,12 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
           ? "CANCEL"
           : null;
     if (channel === "EMAIL" && method !== null) {
-      const professionals = [...new Set(ctx.services.map((s) => s.employeeName).filter((n) => n.length > 0))];
       const content = buildIcs(
-        {
-          uid: `appointment-${a.id}@beautyspa`,
-          sequence: a.manageVersion,
+        appointmentIcsEvent(a, ctx, {
           dtstamp: new Date(this.clock.now()),
-          start: a.start,
-          end: a.end,
-          summary: `${ctx.services.map((s) => s.name).join(", ")} — ${ctx.salonName}`,
-          location: ctx.address,
-          description: [professionals.join(", "), ctx.salonPhone ?? ""].filter((s) => s.length > 0).join("\n"),
           url: method === "CANCEL" ? ctx.bookUrl : ctx.manageUrl,
           status: method === "CANCEL" ? "CANCELLED" : "CONFIRMED",
-        },
+        }),
         { method, organizerEmail: organizerEmail(this.env), attendeeEmail: customer.email ?? undefined },
       );
       target.ics = { content, method };

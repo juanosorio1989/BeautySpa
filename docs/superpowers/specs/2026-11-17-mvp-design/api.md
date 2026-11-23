@@ -52,15 +52,30 @@ Shapes `Appointment`, `MyAppointments`, `Me`, `CustomerExport`: see `packages/co
 
 An appointment's `notes` are visible to its customer (in `/me/appointments` and `/me/export`), whoever wrote them, so staff must not put internal remarks there; staff-only remarks belong in the customer's private notes (endpoint in a later plan). `cancelReason` is customer-visible only when the customer or the system cancelled (their own text, or a system code such as `HOLD_EXPIRED` / `ACCOUNT_DELETED`); a reason written by staff (`cancelledBy` `STAFF`) is internal: every customer response (`/me/appointments`, `/me/export`, holds, booking) has `cancelReason: null` for it, while staff responses and audit rows keep it. In every request body, a `notes` or `reason` that is blank after trimming is stored as `null`.
 
-## Manage link (from WhatsApp/email, no login)
+## Manage link (from email/push, no login)
 
-`GET /manage/:token`, `POST /manage/:token/confirm`, `POST /manage/:token/cancel`.
-Token **(call)**: stateless, HMAC-SHA256 signed (`MANAGE_LINK_SECRET`) over
-`{appointmentId, manageVersion, exp}`; `exp` = appointment start. Any message
-(including 24 h / 2 h reminders) can mint a fresh link. Revocation: increment
-`appointment.manage_version` (done on cancel and reschedule). Cancel via link
-obeys the same `cancelWindowHours` as the app; inside the window the page shows
-"confirm" plus the salon phone. Reschedule from the link goes through OTP.
+The signed token is the capability (all routes `@Public()`). Token **(call)**: stateless,
+HMAC-SHA256 signed (`MANAGE_LINK_SECRET`) over `{appointmentId, manageVersion, exp}`;
+`exp` = appointment start; every message mints a fresh link (notifications spec,
+`2026-11-22-notifications-design/manage-link.md`). Revocation: `appointment.manage_version`
+increments on cancel and reschedule (customer or staff).
+
+A link is valid only when the signature matches, now < `exp`, the appointment is in the
+organization with the same `manage_version`, its customer exists and is not deleted, and it
+is not `HELD`. Every failure is the same 404 `NOT_FOUND` body (no oracle); the token is
+checked before any database read. 30 requests per IP per minute across `/manage/*`
+(invalid tokens count) → 429 `RATE_LIMITED`. Every response, errors included, carries
+`Cache-Control: no-store` and `Referrer-Policy: no-referrer`. Shapes `ManageView`,
+`ManageCancelInput`: `packages/contracts/src/manage.ts`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/manage/:token` | `ManageView`: the customer-shaped `Appointment` (staff cancel reason is `null`), `location` (`name`, `addressLine` = the address on one line, `phone` or null, `timezone`), `canCancel` (`BOOKED` and inside `cancelWindowHours`, same rule as the client cancel), `canConfirm` (`BOOKED` and `confirmedByCustomerAt` null). |
+| POST | `/manage/:token/confirm` | → `ManageView` (200). Sets `confirmedByCustomerAt` once (conditional update; already confirmed → same 200); audit `appointment.confirm` (CUSTOMER) only on that change. Not `BOOKED` → 409 `CONFLICT`. No `manage_version` change, no message. |
+| POST | `/manage/:token/cancel` | `{ reason? }` → `ManageView` (200) of the cancelled appointment. Same code path as `POST /me/appointments/:id/cancel` (`cancelByCustomer`): too late → 409 `OUTSIDE_CANCEL_WINDOW`, not `BOOKED` → 409 `CONFLICT`, actor CUSTOMER, `manage_version` + 1 (the link is then stale), `appointment.cancelled` message after commit. |
+| GET | `/manage/:token/calendar.ics` | `text/calendar; charset=utf-8`, `Content-Disposition: attachment; filename="appointment.ics"`, `METHOD:PUBLISH` (a download, not an invitation: no organizer or attendee); same UID/SEQUENCE/SUMMARY as the email `.ics`, in the customer's locale. |
+
+Reschedule from the link goes through OTP (`/me`).
 
 ## Staff (staff token, RBAC)
 

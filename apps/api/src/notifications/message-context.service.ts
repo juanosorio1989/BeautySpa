@@ -33,8 +33,8 @@ export function statusFits(key: TemplateKey, status: AppointmentStatus): boolean
   return key === "appointment.cancelled" ? status === "CANCELLED" : status === "BOOKED";
 }
 
-/** The location address on one line (line breaks become ", "). */
-function oneLine(address: string | null): string {
+/** The location address on one line (line breaks become ", "); `null` is "". */
+export function oneLineAddress(address: string | null): string {
   return (address ?? "")
     .split(/\r?\n/)
     .map((s) => s.trim())
@@ -109,7 +109,7 @@ export class MessageContextService {
       })),
       location: {
         name: a.location.name,
-        address: oneLine(a.location.address),
+        address: oneLineAddress(a.location.address),
         phone: a.location.phone,
         timezone: a.location.timezone,
       },
