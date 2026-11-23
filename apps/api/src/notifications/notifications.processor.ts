@@ -283,7 +283,12 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
       locale,
     );
     const msg = renderMessage(key, ctx);
-    const target: DeliveryTarget = { customerId: customer.id, email: customer.email, templateKey: key };
+    const target: DeliveryTarget = {
+      organizationId: a.organizationId,
+      customerId: customer.id,
+      email: customer.email,
+      templateKey: key,
+    };
 
     const method =
       key === "appointment.confirmed" || key === "appointment.changed"

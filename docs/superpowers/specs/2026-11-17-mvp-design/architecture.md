@@ -215,8 +215,16 @@ worker: NotificationsProcessor.handleSend (route, log rows) ---------------+
 - Providers (`ChannelProvider { channel; name; send(rendered, target) }`, token
   `CHANNEL_PROVIDERS`): EMAIL = `EmailProvider` over `Mailer`
   (`EMAIL_PROVIDER` `resend` or `console`); PUSH by `PUSH_PROVIDER`: `fake`
-  (tests, records calls), `console` (dev, logs the title only); `webpush`
-  arrives with the push task and until then the worker refuses to start with it.
+  (tests, records calls), `console` (dev, logs the title only), `webpush`
+  (`WebPushProvider`: every subscription of the customer, TTL 24 h, urgency
+  `high` for the 2 h reminder; 404/410 deletes that subscription; success when
+  one send succeeds, else `push_<last status>` (`push_0` = no HTTP response) or
+  `push_none`; logs subscription ids, never endpoints).
+- Consent catch-up (`notifications/consent-catch-up.ts`): after commit, an
+  `EMAIL`/`PUSH` consent that turned granted (`PATCH /me`,
+  `POST /me/push-subscriptions`) adds `send` jobs for `appointment.confirmed`
+  limited to that channel, job id suffix `grant|<channel>|<consent row id>`;
+  bounded and swallowed like `notifyAfterCommit`.
 - Error codes in `notification_log.error` (`errorCode`, max 200 chars, built
   only from recognized shapes, never free error text, an email, a phone or a
   provider body): `resend_<status>`, `resend_timeout`, `push_<status>`,

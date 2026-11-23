@@ -25,7 +25,7 @@ invalid key names, never values.
 | `OTP_CHANNELS` | ordered, comma-separated `whatsapp` / `sms` that `OtpService.start` tries (default `sms`); items trimmed; an empty list, unknown values or duplicates fail validation. Use `whatsapp,sms` only once WhatsApp is enabled on the Twilio Verify service |
 | `EMAIL_PROVIDER` | `console` (default) / `resend`; `resend` needs `RESEND_API_KEY`, `EMAIL_FROM` |
 | `MANAGE_LINK_SECRET` | required in every `NODE_ENV`; base64 of at least 32 bytes (`secrets:gen`); HMAC key of manage-link tokens |
-| `PUSH_PROVIDER` | `console` (default) / `webpush` / `fake`; `fake` only when `NODE_ENV=test`; `webpush` needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url pair from `secrets:gen`) and `VAPID_SUBJECT` (`mailto:` or `https:`) |
+| `PUSH_PROVIDER` | `console` (default) / `webpush` / `fake`; `fake` only when `NODE_ENV=test`; `webpush` needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url pair from `secrets:gen`: a 65-byte public point starting `0x04` and a 32-byte private key, both checked) and `VAPID_SUBJECT` (`mailto:<address>` or `https://<url>`) |
 | `REMINDER_SCAN_INTERVAL_MS` | reminder scan period, default `60000`; `0` disables it |
 | `COOKIE_SECURE` | `true`/`false`; default `true` only in production |
 | `COOKIE_DOMAIN` | optional |
@@ -275,3 +275,15 @@ Tests: `src/queue/queue-names.test.ts`, `test/integration/notifications/queue-ev
 `BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` and `DELETE /v1/holds/:holdId` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus `HoldSweeper` (run by the worker's `sweep-holds` job). `BookingEvents` is bound to `QueueBookingEvents` (see Queues and worker). `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
 
 Tests: `test/integration/rbac-matrix.int.test.ts` covers every plan 03 and 04 route: 401 without a token, 403 for each disallowed caller (a CUSTOMER token on a staff route and a staff token on a customer route included); `@Public()` routes answer 200 or at least pass the guard; `GET /availability` needs no token but answers 401 to an invalid one.
+
+## Web push (`src/push/`, `src/notifications/providers/web-push.provider.ts`)
+
+`PushModule`: `GET /v1/push/public-key` (`@Public()`, 404 `NOT_FOUND` without `VAPID_PUBLIC_KEY`) and
+`POST`/`DELETE /v1/me/push-subscriptions` (`@CustomerAuth()`, 20 per customer per hour). Subscribe upserts by endpoint and
+grants `PUSH`; removing the last subscription revokes it. `WebPushProvider` (`PUSH_PROVIDER=webpush`) sends to every
+subscription of the customer and deletes those the push service answers 404/410; it logs subscription ids, never
+endpoints. A consent that turns granted (`PATCH /me`, subscribe) runs `enqueueConsentCatchUp`
+(`src/notifications/consent-catch-up.ts`) after commit; its errors are logged and swallowed. Contracts and behaviour:
+`api.md`, `docs/superpowers/specs/2026-11-22-notifications-design/push.md`.
+Tests: `src/notifications/providers/web-push.provider.test.ts`, `test/integration/push/push.int.test.ts`,
+`test/integration/notifications/catch-up.int.test.ts`.

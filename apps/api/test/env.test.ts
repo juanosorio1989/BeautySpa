@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createECDH, generateKeyPairSync, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "../src/config/env.js";
 
@@ -15,9 +15,12 @@ const base: Record<string, string> = {
   MANAGE_LINK_SECRET: randomBytes(32).toString("base64"),
 };
 
+const vapidPair = createECDH("prime256v1");
+vapidPair.generateKeys();
+
 const vapid: Record<string, string> = {
-  VAPID_PUBLIC_KEY: "BPub",
-  VAPID_PRIVATE_KEY: "priv",
+  VAPID_PUBLIC_KEY: vapidPair.getPublicKey().toString("base64url"),
+  VAPID_PRIVATE_KEY: vapidPair.getPrivateKey().toString("base64url"),
   VAPID_SUBJECT: "mailto:owner@example.com",
 };
 
@@ -170,6 +173,32 @@ describe("loadEnv", () => {
     expect(() => loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, VAPID_SUBJECT: "owner@example.com" })).toThrow(
       /VAPID_SUBJECT/,
     );
+  });
+
+  it("VAPID_SUBJECT needs something after the scheme", () => {
+    const withSubject = (VAPID_SUBJECT: string) => () =>
+      loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, VAPID_SUBJECT });
+    expect(withSubject("mailto:")).toThrow(/VAPID_SUBJECT/);
+    expect(withSubject("https://")).toThrow(/VAPID_SUBJECT/);
+    expect(withSubject("https:salon.example")).toThrow(/VAPID_SUBJECT/);
+    expect(withSubject("mailto:a")()).toBeTruthy();
+  });
+
+  it("webpush validates the VAPID key shapes", () => {
+    const withKeys = (keys: Record<string, string>) => () =>
+      loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, ...keys });
+    const pub = Buffer.from(vapid.VAPID_PUBLIC_KEY!, "base64url");
+    const notUncompressed = Buffer.from(pub);
+    notUncompressed[0] = 0x03;
+    expect(withKeys({ VAPID_PUBLIC_KEY: "BPub" })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PUBLIC_KEY: notUncompressed.toString("base64url") })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PUBLIC_KEY: pub.subarray(0, 64).toString("base64url") })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PUBLIC_KEY: pub.toString("base64") + "!" })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PRIVATE_KEY: "priv" })).toThrow(/VAPID_PRIVATE_KEY/);
+    expect(withKeys({ VAPID_PRIVATE_KEY: randomBytes(31).toString("base64url") })).toThrow(/VAPID_PRIVATE_KEY/);
+    expect(withKeys({})()).toBeTruthy();
+    // Only checked when webpush is selected.
+    expect(loadEnv({ ...base, VAPID_PUBLIC_KEY: "BPub", VAPID_PRIVATE_KEY: "priv" }).PUSH_PROVIDER).toBe("console");
   });
 
   it("production requires PUSH_PROVIDER=webpush", () => {

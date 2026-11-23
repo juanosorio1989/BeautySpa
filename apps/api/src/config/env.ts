@@ -83,10 +83,22 @@ const key32PlusB64 = z
   .string()
   .refine((v) => BASE64.test(v) && Buffer.from(v, "base64").length >= 32, "must be base64 of at least 32 bytes");
 
-/** Contact URL for the push service (RFC 8292): `mailto:` or `https:`. */
-const vapidSubject = z
-  .string()
-  .refine((v) => v.startsWith("mailto:") || v.startsWith("https:"), "must start with mailto: or https:");
+/** Contact URL for the push service (RFC 8292): `mailto:<something>` or `https://<something>`. */
+const vapidSubject = z.string().regex(/^(mailto:.+|https:\/\/.+)$/, "must be mailto:<address> or https://<url>");
+
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
+
+/** Base64url (no padding) of an uncompressed P-256 point: 65 bytes starting with 0x04. */
+function isVapidPublicKey(v: string): boolean {
+  if (!BASE64URL.test(v)) return false;
+  const raw = Buffer.from(v, "base64url");
+  return raw.length === 65 && raw[0] === 0x04;
+}
+
+/** Base64url (no padding) of a 32-byte P-256 private scalar. */
+function isVapidPrivateKey(v: string): boolean {
+  return BASE64URL.test(v) && Buffer.from(v, "base64url").length === 32;
+}
 
 const EnvSchema = z
   .object({
@@ -157,6 +169,20 @@ const EnvSchema = z
       require("VAPID_PUBLIC_KEY", "required when PUSH_PROVIDER=webpush");
       require("VAPID_PRIVATE_KEY", "required when PUSH_PROVIDER=webpush");
       require("VAPID_SUBJECT", "required when PUSH_PROVIDER=webpush");
+      if (e.VAPID_PUBLIC_KEY !== undefined && !isVapidPublicKey(e.VAPID_PUBLIC_KEY)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["VAPID_PUBLIC_KEY"],
+          message: "must be base64url of a 65-byte uncompressed P-256 point",
+        });
+      }
+      if (e.VAPID_PRIVATE_KEY !== undefined && !isVapidPrivateKey(e.VAPID_PRIVATE_KEY)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["VAPID_PRIVATE_KEY"],
+          message: "must be base64url of 32 bytes",
+        });
+      }
     }
   })
   .transform((e) => ({ ...e, COOKIE_SECURE: e.COOKIE_SECURE ?? e.NODE_ENV === "production" }));

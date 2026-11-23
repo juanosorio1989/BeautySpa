@@ -11,6 +11,7 @@ import { LocationsModule } from "./locations/locations.module.js";
 import { MailModule } from "./mail/mail.module.js";
 import { ManageModule } from "./manage/manage.module.js";
 import { PublicModule } from "./public/public.module.js";
+import { PushModule } from "./push/push.module.js";
 import { PrismaModule } from "./prisma/prisma.module.js";
 import { QueueModule } from "./queue/queue.module.js";
 import { RateLimitModule } from "./rate-limit/rate-limit.module.js";
@@ -36,6 +37,7 @@ import { TenancyModule } from "./tenancy/tenancy.module.js";
     PublicModule,
     BookingModule,
     CustomersModule,
+    PushModule,
     ManageModule,
     HealthModule,
   ],

@@ -184,7 +184,7 @@ describe("notification_log dedupe", () => {
     await prisma.notificationLog.create({ data: row });
     const code = await prisma.notificationLog.create({ data: row }).then(
       () => undefined,
-      (err: { code?: string; meta?: { target?: unknown } }) => err.code,
+      (err: { code?: string }) => err.code,
     );
     expect(code).toBe("P2002");
     // A new manage version or another channel is a different notification.

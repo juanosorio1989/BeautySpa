@@ -17,8 +17,8 @@ tables `staff_location` and `employee_service` use a composite primary key); tim
 | `location_closure` | `location_id`, `starts_at`, `ends_at`, `reason` |
 
 **Tenancy columns.** Top-level tables and the hot child tables `resource`,
-`appointment_segment`, `working_hours`, `time_off` and `notification_consent`
-carry `organization_id` directly (NOT NULL, FK, indexed) so the busiest queries
+`appointment_segment`, `working_hours`, `time_off`, `notification_consent` and
+`push_subscription` carry `organization_id` directly (NOT NULL, FK, indexed) so the busiest queries
 filter by tenant without a join. All other child tables (`location_hours`,
 `staff_location`, `employee_profile`, `service_level_price`, ...) inherit
 tenancy through their parent; RLS will join through it.
@@ -26,8 +26,9 @@ tenancy through their parent; RLS will join through it.
 **Deletes keep history.** FKs from history rows are `ON DELETE RESTRICT`:
 `appointment.customer_id`, `appointment_segment.resource_id`,
 `service.resource_type_id`, `notification_consent.customer_id` (consent is
-evidence) and `push_subscription.customer_id` (rows are deleted explicitly). Customers are soft-deleted (`deleted_at`); resources are
-deactivated (`active = false`).
+evidence) and `push_subscription.customer_id` (rows are deleted explicitly).
+Customers are soft-deleted (`deleted_at`); resources are deactivated
+(`active = false`).
 
 ## Staff and auth
 
@@ -168,7 +169,7 @@ segment insert answers both as 409 `SLOT_TAKEN`.
 | Table | Key columns |
 |---|---|
 | `notification_log` | `organization_id`, `appointment_id`, `customer_id`, `template_key`, `manage_version` (the appointment version it was sent for; unique `notification_log_dedupe` on `(appointment_id, template_key, manage_version, channel)`), `locale`, `channel`, `provider`, `provider_message_id`, `status` (`QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `SKIPPED`), `error`, `attempts`, `sent_at`, `updated_at` |
-| `push_subscription` | `organization_id`, `customer_id` (index), `endpoint` (unique), `p256dh`, `auth`, `created_at`, `last_success_at`. One row per browser subscribed to Web Push; deleted on unsubscribe, on a 404/410 from the push service and in the `DELETE /me` transaction. |
+| `push_subscription` | `organization_id`, `customer_id` (index), `endpoint` (unique), `p256dh`, `auth`, `created_at`, `last_success_at`. One row per browser subscribed to Web Push. `POST /me/push-subscriptions` upserts by `endpoint` (an endpoint another customer held moves to the caller). Rows are deleted by `DELETE /me/push-subscriptions` (the caller's own row only), when the push service answers 404 or 410 to a send, and inside the `DELETE /me` anonymization transaction. |
 | `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only, except that `DELETE /me` sets `notes` and non-system `cancelReason` to null inside the customer's appointment audit rows (see security-quality.md). |
 
 ## Encryption

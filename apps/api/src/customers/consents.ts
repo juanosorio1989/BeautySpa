@@ -24,9 +24,16 @@ export async function currentConsents(
   return result;
 }
 
+/** One consent row `recordConsents` appended. */
+export interface RecordedConsent {
+  channel: Channel;
+  id: string;
+}
+
 /**
  * Appends a consent row for each channel in `wanted` whose value differs from the current one
- * (history is append-only) and returns those channels.
+ * (history is append-only) and returns those channels with the new row ids, in the order
+ * `WHATSAPP`, `SMS`, `EMAIL`, `PUSH` (the id names the consent catch-up job).
  */
 export async function recordConsents(
   tx: Prisma.TransactionClient,
@@ -34,21 +41,21 @@ export async function recordConsents(
   customerId: string,
   wanted: Partial<Consents>,
   source: ConsentSource,
-): Promise<Channel[]> {
+): Promise<RecordedConsent[]> {
   const current = await currentConsents(tx, customerId);
   const changed = CHANNELS.filter((c) => wanted[c] !== undefined && wanted[c] !== current[c]);
-  if (changed.length > 0) {
-    await tx.notificationConsent.createMany({
-      data: changed.map((channel) => ({
-        organizationId: orgId,
-        customerId,
-        channel,
-        granted: wanted[channel]!,
-        source,
-      })),
-    });
-  }
-  return changed;
+  if (changed.length === 0) return [];
+  const rows = await tx.notificationConsent.createManyAndReturn({
+    data: changed.map((channel) => ({
+      organizationId: orgId,
+      customerId,
+      channel,
+      granted: wanted[channel]!,
+      source,
+    })),
+    select: { id: true, channel: true },
+  });
+  return changed.map((channel) => ({ channel, id: rows.find((r) => r.channel === channel)!.id }));
 }
 
 /** The customer shape shared by staff endpoints and `Me`. */

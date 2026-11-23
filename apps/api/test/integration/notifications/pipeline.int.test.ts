@@ -1,3 +1,4 @@
+import { createECDH } from "node:crypto";
 import { Test, type TestingModule } from "@nestjs/testing";
 import type { Queue } from "bullmq";
 import type { Redis } from "ioredis";
@@ -489,17 +490,22 @@ describe("notification providers and organizer", () => {
     );
   });
 
-  it("PUSH_PROVIDER binds fake or console and refuses webpush until it exists", () => {
+  it("PUSH_PROVIDER binds fake, console or webpush", () => {
     const mailer = new CapturingMailer();
-    const names = (e: Env) => channelProvidersFactory(e, mailer).map((p) => `${p.channel}:${p.name}`);
+    const names = (e: Env) =>
+      channelProvidersFactory(e, mailer, {} as PrismaService, fixedClock(BOOKING_NOW)).map(
+        (p) => `${p.channel}:${p.name}`,
+      );
     expect(names(testEnv({ PUSH_PROVIDER: "fake" }))).toEqual(["EMAIL:console", "PUSH:fake"]);
     expect(names(testEnv({ PUSH_PROVIDER: "console" }))).toEqual(["EMAIL:console", "PUSH:console"]);
+    const pair = createECDH("prime256v1");
+    pair.generateKeys();
     const webpush = testEnv({
       PUSH_PROVIDER: "webpush",
-      VAPID_PUBLIC_KEY: "pub",
-      VAPID_PRIVATE_KEY: "priv",
+      VAPID_PUBLIC_KEY: pair.getPublicKey().toString("base64url"),
+      VAPID_PRIVATE_KEY: pair.getPrivateKey().toString("base64url"),
       VAPID_SUBJECT: "mailto:ops@x.test",
     });
-    expect(() => channelProvidersFactory(webpush, mailer)).toThrow(/webpush is not implemented/);
+    expect(names(webpush)).toEqual(["EMAIL:console", "PUSH:webpush"]);
   });
 });
