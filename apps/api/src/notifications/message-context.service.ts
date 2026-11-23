@@ -61,12 +61,13 @@ export class MessageContextService {
 
   /**
    * The appointment with customer, segments (services and employee display names) and location, or `null`
-   * when it does not exist or has no segments. Loaded by id (job data comes from the API); every row read
-   * belongs to the appointment's organization through its relations.
+   * when it does not exist (in `organizationId`, when given) or has no segments. `send` passes no org: the
+   * appointment id is the root and later reads use `a.organizationId`; `deliver` passes the log row's org.
+   * Every related row is read through the appointment's relations, so it belongs to the same organization.
    */
-  async load(appointmentId: string): Promise<LoadedAppointment | null> {
-    const a = await this.prisma.appointment.findUnique({
-      where: { id: appointmentId },
+  async load(appointmentId: string, organizationId?: string): Promise<LoadedAppointment | null> {
+    const a = await this.prisma.appointment.findFirst({
+      where: { id: appointmentId, ...(organizationId !== undefined ? { organizationId } : {}) },
       select: {
         id: true,
         organizationId: true,
@@ -121,9 +122,13 @@ export class MessageContextService {
     return `${this.env.WEB_ORIGIN}/${locale}/book`;
   }
 
-  /** The render context in the customer's message locale. */
-  toContext(a: LoadedAppointment, manageUrl: string, bookUrl: string): MessageContext {
-    const locale = messageLocale(a.customer?.locale ?? "en");
+  /** The render context in `locale` (default: the customer's message locale). */
+  toContext(
+    a: LoadedAppointment,
+    manageUrl: string,
+    bookUrl: string,
+    locale: MessageContext["locale"] = messageLocale(a.customer?.locale ?? "en"),
+  ): MessageContext {
     return {
       locale,
       customerName: a.customer?.name ?? null,

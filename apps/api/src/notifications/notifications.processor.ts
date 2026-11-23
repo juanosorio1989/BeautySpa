@@ -22,7 +22,10 @@ import { MessageContextService, messageLocale, statusFits, type LoadedAppointmen
 import { CHANNEL_PROVIDERS, type ChannelProvider, type DeliveryTarget } from "./providers/channel-provider.js";
 import { selectChannels, type SendChannel } from "./router.js";
 import { renderMessage } from "./templates/render.js";
-import type { RenderedMessage, TemplateKey } from "./templates/types.js";
+import type { MessageContext, RenderedMessage, TemplateKey } from "./templates/types.js";
+
+/** Notification jobs handled in parallel per worker process (maintenance stays at 1). */
+export const NOTIFICATIONS_CONCURRENCY = 5;
 
 /** The address part of `EMAIL_FROM` (`Name <addr>` or `addr`); unset (dev/test) → `no-reply@<WEB_ORIGIN host>`. */
 export function organizerEmail(env: Pick<Env, "EMAIL_FROM" | "WEB_ORIGIN">): string {
@@ -62,7 +65,10 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
 
   onApplicationBootstrap(): void {
     this.connection = new Redis(this.env.REDIS_URL, { maxRetriesPerRequest: null });
-    this.worker = new Worker(NOTIFICATIONS_QUEUE, (job) => this.dispatch(job), { connection: this.connection });
+    this.worker = new Worker(NOTIFICATIONS_QUEUE, (job) => this.dispatch(job), {
+      connection: this.connection,
+      concurrency: NOTIFICATIONS_CONCURRENCY,
+    });
     // Job ids and error messages only: never job data that could hold contact details.
     this.worker.on("failed", (job, err) =>
       this.logger.warn(`Notification job ${job?.id ?? "?"} failed: ${errorCode(err)}`),
@@ -94,7 +100,8 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
    * null or deleted, it is a walk-in, or its status does not fit the template. Otherwise inserts one `QUEUED`
    * row per selected channel, one at a time: a unique conflict means that channel was already handled. A new
    * row, or a conflicting row still `QUEUED` (an earlier attempt of this job may have failed before its
-   * enqueue), gets a `deliver` job with id `deliver|<logId>`, so BullMQ drops duplicates.
+   * enqueue), gets a `deliver` job with id `deliver|<logId>`, so BullMQ drops duplicates. The appointment
+   * (by id) is the root; every later read and write is scoped to `a.organizationId`.
    */
   async handleSend(job: SendJob): Promise<void> {
     const a = await this.contexts.load(job.appointmentId);
@@ -108,7 +115,7 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
       return;
     }
 
-    const consents = await currentConsents(this.prisma, customer.id);
+    const consents = await currentConsents(this.prisma, customer.id, a.organizationId);
     const subscriptions = await this.prisma.pushSubscription.count({
       where: { organizationId: a.organizationId, customerId: customer.id },
     });
@@ -158,44 +165,52 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
   }
 
   /**
-   * Delivers one row. Only a `QUEUED` row is sent. Consent for the row's channel revoked since → `SKIPPED`
-   * (`consent_revoked`); appointment changed (version, status, customer deleted) → `SKIPPED` (`stale`); an
-   * EMAIL row whose customer no longer has an email → `SKIPPED` (`no_email`). A render (or `.ics`) failure →
-   * `FAILED` (`render_failed`), not retried. Success → `SENT`. A provider error → `attempts + 1`,
-   * `error = errorCode(err)`, `FAILED` on the last attempt (`attemptsMade + 1 >= maxAttempts`) else still
-   * `QUEUED`; then rethrows so BullMQ retries.
+   * Delivers one row. Only a `QUEUED` row is sent. Reads are scoped to the row's organization. Consent for the
+   * row's channel revoked since → `SKIPPED` (`consent_revoked`); appointment changed (version, status, customer
+   * deleted) → `SKIPPED` (`stale`); an EMAIL row whose customer no longer has an email → `SKIPPED`
+   * (`no_email`). Renders in the row's locale; a render (or `.ics`) failure → `FAILED` (`render_failed`), not
+   * retried. Success → `SENT`. A provider error → `attempts + 1`, `error = errorCode(err)`, `FAILED` on the last
+   * attempt (`attemptsMade + 1 >= maxAttempts`) else still `QUEUED`; then rethrows so BullMQ retries. Any other
+   * error before the send (database, Redis) is rethrown too, and on the last attempt first marks the row
+   * `FAILED`, so no row stays `QUEUED` after BullMQ gives up. A failure to record `SENT` after the provider
+   * accepted the message is logged as `sent_update_failed` and rethrown (the retry may send again:
+   * at-least-once).
    */
   async handleDeliver(job: DeliverJob, attemptsMade: number, maxAttempts: number): Promise<void> {
-    const row = await this.prisma.notificationLog.findUnique({ where: { id: job.logId } });
-    if (!row || row.status !== "QUEUED") return;
-    if (row.appointmentId === null || row.customerId === null) return this.skip(row, "stale");
-
-    const consents = await currentConsents(this.prisma, row.customerId);
-    if (!consents[row.channel]) return this.skip(row, "consent_revoked");
-
-    const a = await this.contexts.load(row.appointmentId);
-    const stale = staleReason(row, a);
-    if (stale !== null || !a?.customer) return this.skip(row, stale ?? "stale");
-    const customer = a.customer;
-    if (row.channel === "EMAIL" && customer.email === null) return this.skip(row, "no_email");
-
-    const key = row.templateKey as TemplateKey;
-    const channel = row.channel as SendChannel;
-    let msg: RenderedMessage;
-    let target: DeliveryTarget;
+    const last = attemptsMade + 1 >= maxAttempts;
+    let prepared: Awaited<ReturnType<NotificationsProcessor["prepare"]>>;
     try {
-      ({ msg, target } = this.compose(a, key, channel));
-    } catch {
-      await this.prisma.notificationLog.update({
-        where: { id: row.id },
-        data: { status: "FAILED", error: "render_failed", attempts: { increment: 1 } },
+      prepared = await this.prepare(job.logId);
+    } catch (err) {
+      const code = errorCode(err);
+      this.logger.warn(`deliver ${job.logId}: ${code} before send (attempt ${attemptsMade + 1}/${maxAttempts})`);
+      if (last) {
+        await this.prisma.notificationLog
+          .updateMany({
+            where: { id: job.logId, status: "QUEUED" },
+            data: { status: "FAILED", error: code, attempts: { increment: 1 } },
+          })
+          .catch(() => this.logger.error(`deliver ${job.logId}: could not mark FAILED`));
+      }
+      throw err;
+    }
+    if (!prepared) return;
+    const { row, channel, msg, target } = prepared;
+
+    let providerMessageId: string | undefined;
+    try {
+      ({ providerMessageId } = await this.provider(channel).send(msg, target));
+    } catch (err) {
+      const code = errorCode(err);
+      await this.prisma.notificationLog.updateMany({
+        where: { id: row.id, status: "QUEUED" },
+        data: { status: last ? "FAILED" : "QUEUED", error: code, attempts: { increment: 1 } },
       });
-      this.logger.warn(`deliver ${row.id}: render_failed`);
-      return;
+      this.logger.warn(`deliver ${row.id}: ${code} (attempt ${attemptsMade + 1}/${maxAttempts})`);
+      throw err;
     }
 
     try {
-      const { providerMessageId } = await this.provider(channel).send(msg, target);
       await this.prisma.notificationLog.update({
         where: { id: row.id },
         data: {
@@ -207,14 +222,43 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
         },
       });
     } catch (err) {
-      const code = errorCode(err);
-      const last = attemptsMade + 1 >= maxAttempts;
-      await this.prisma.notificationLog.update({
-        where: { id: row.id },
-        data: { status: last ? "FAILED" : "QUEUED", error: code, attempts: { increment: 1 } },
-      });
-      this.logger.warn(`deliver ${row.id}: ${code} (attempt ${attemptsMade + 1}/${maxAttempts})`);
+      this.logger.error(`deliver ${row.id}: sent_update_failed`);
       throw err;
+    }
+  }
+
+  /**
+   * Everything before the provider call: loads and checks the row, skips or fails it when it must not be sent,
+   * and renders. Returns `null` when the row is done (not queued, skipped, render failed).
+   */
+  private async prepare(logId: string): Promise<{
+    row: NotificationLog;
+    channel: SendChannel;
+    msg: RenderedMessage;
+    target: DeliveryTarget;
+  } | null> {
+    const row = await this.prisma.notificationLog.findUnique({ where: { id: logId } });
+    if (!row || row.status !== "QUEUED") return null;
+    if (row.appointmentId === null || row.customerId === null) return this.skip(row, "stale");
+
+    const consents = await currentConsents(this.prisma, row.customerId, row.organizationId);
+    if (!consents[row.channel]) return this.skip(row, "consent_revoked");
+
+    const a = await this.contexts.load(row.appointmentId, row.organizationId);
+    const stale = staleReason(row, a);
+    if (stale !== null || !a?.customer) return this.skip(row, stale ?? "stale");
+    if (row.channel === "EMAIL" && a.customer.email === null) return this.skip(row, "no_email");
+
+    const channel = row.channel as SendChannel;
+    try {
+      return { row, channel, ...this.compose(a, row.templateKey as TemplateKey, channel, messageLocale(row.locale)) };
+    } catch {
+      await this.prisma.notificationLog.updateMany({
+        where: { id: row.id, status: "QUEUED" },
+        data: { status: "FAILED", error: "render_failed", attempts: { increment: 1 } },
+      });
+      this.logger.warn(`deliver ${row.id}: render_failed`);
+      return null;
     }
   }
 
@@ -223,9 +267,9 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
     a: LoadedAppointment,
     key: TemplateKey,
     channel: SendChannel,
+    locale: MessageContext["locale"],
   ): { msg: RenderedMessage; target: DeliveryTarget } {
     const customer = a.customer!;
-    const locale = messageLocale(customer.locale);
     const token = signManageToken(this.env.MANAGE_LINK_SECRET, {
       appointmentId: a.id,
       manageVersion: a.manageVersion,
@@ -235,6 +279,7 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
       a,
       manageUrl(this.env.WEB_ORIGIN, locale, token),
       this.contexts.bookUrl(locale),
+      locale,
     );
     const msg = renderMessage(key, ctx);
     const target: DeliveryTarget = { customerId: customer.id, email: customer.email, templateKey: key };
@@ -267,12 +312,13 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
     return { msg, target };
   }
 
-  private async skip(row: NotificationLog, reason: string): Promise<void> {
+  private async skip(row: NotificationLog, reason: string): Promise<null> {
     await this.prisma.notificationLog.updateMany({
       where: { id: row.id, status: "QUEUED" },
       data: { status: "SKIPPED", error: reason },
     });
     this.logger.debug(`deliver ${row.id}: skipped (${reason})`);
+    return null;
   }
 
   private provider(channel: SendChannel): ChannelProvider {

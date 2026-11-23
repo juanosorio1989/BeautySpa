@@ -177,7 +177,8 @@ worker: NotificationsProcessor.handleSend (route, log rows) ---------------+
   `message-context.service.ts`, `router.ts`, `error-code.ts`, `providers/`,
   `templates/`, `ics.ts`, `manage-token.ts`). `NotificationDeliveryModule`
   (context loading and providers) and `NotificationsProcessor` (a BullMQ
-  `Worker` on `notifications`, started at bootstrap, closed on destroy) live
+  `Worker` on `notifications`, concurrency 5, started at bootstrap, closed on
+  destroy; `maintenance` runs one job at a time) live
   only in `WorkerModule`; the API imports `NotificationsModule` (producer).
 - `send` `{ appointmentId, templateKey, manageVersion, channels? }`: re-reads
   the appointment and stops silently (no row) when it is gone, its
@@ -191,21 +192,26 @@ worker: NotificationsProcessor.handleSend (route, log rows) ---------------+
   manage_version, channel)` means the channel was handled. A new row, or a
   conflicting row still `QUEUED`, gets a `deliver` job with id
   `deliver|<logId>` (added with `enqueueBounded`), so a retried `send` never
-  loses or duplicates a delivery.
-- `deliver` `{ logId }`: only a `QUEUED` row is sent. Skips (`SKIPPED` +
+  loses or duplicates a delivery. The appointment (by id) is the root; later
+  reads and writes use its organization.
+- `deliver` `{ logId }`: only a `QUEUED` row is sent; reads are scoped to the
+  row's organization. Skips (`SKIPPED` +
   reason in `error`) when the channel's consent was revoked
   (`consent_revoked`), the appointment changed (`stale`: version, status,
   customer deleted) or an email row has no address (`no_email`). Renders in
-  the customer locale and location timezone; the manage link token expires at
+  the row's locale and the location timezone; the manage link token expires at
   the first segment start. EMAIL for confirmed/changed attaches
   `appointment.ics` `METHOD:REQUEST`, cancelled `METHOD:CANCEL`
   (`SEQUENCE` = `manage_version`, organizer = address part of `EMAIL_FROM`, or
   `no-reply@<WEB_ORIGIN host>` when unset); reminders carry none. Success →
   `SENT`, `sent_at`, `provider_message_id`, `attempts + 1`. A render failure →
   `FAILED` `render_failed`, no retry. A provider error → `attempts + 1`, error
-  code, rethrow for the BullMQ retry; `FAILED` on the last of 5 attempts. A
-  provider that succeeds right before a failed row update can send twice
-  (at-least-once).
+  code, rethrow for the BullMQ retry; `FAILED` on the last of 5 attempts. Any
+  other error before the send (database, Redis) is rethrown and, on the last
+  attempt, marks the row `FAILED` first, so no row stays `QUEUED` after BullMQ
+  gives up. If recording `SENT` fails after the provider accepted, the worker
+  logs `sent_update_failed` and rethrows (not a provider error); the retry can
+  send twice (at-least-once).
 - Providers (`ChannelProvider { channel; name; send(rendered, target) }`, token
   `CHANNEL_PROVIDERS`): EMAIL = `EmailProvider` over `Mailer`
   (`EMAIL_PROVIDER` `resend` or `console`); PUSH by `PUSH_PROVIDER`: `fake`

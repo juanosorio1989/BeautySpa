@@ -3,13 +3,14 @@ import type { Channel, Consents, StaffCustomer } from "@beautyspa/contracts";
 
 const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL", "PUSH"];
 
-/** Current consent per channel: the latest row of each; no row means false. */
+/** Current consent per channel: the latest row of each; no row means false. `organizationId` scopes the read. */
 export async function currentConsents(
   db: Pick<Prisma.TransactionClient, "notificationConsent">,
   customerId: string,
+  organizationId?: string,
 ): Promise<Consents> {
   const rows = await db.notificationConsent.findMany({
-    where: { customerId },
+    where: { customerId, ...(organizationId !== undefined ? { organizationId } : {}) },
     orderBy: [{ changedAt: "desc" }, { id: "desc" }],
     select: { channel: true, granted: true },
   });

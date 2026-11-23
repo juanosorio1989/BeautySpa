@@ -1,11 +1,12 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import type { Queue } from "bullmq";
 import type { Redis } from "ioredis";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLOCK } from "../../../src/common/clock.js";
 import { ENV, type Env } from "../../../src/config/env.js";
 import { MAILER, type MailMessage, type Mailer } from "../../../src/mail/mailer.js";
 import { verifyManageToken } from "../../../src/notifications/manage-token.js";
+import { MessageContextService } from "../../../src/notifications/message-context.service.js";
 import { channelProvidersFactory } from "../../../src/notifications/notifications.module.js";
 import { NotificationsProcessor, organizerEmail } from "../../../src/notifications/notifications.processor.js";
 import { CHANNEL_PROVIDERS, type ChannelProvider } from "../../../src/notifications/providers/channel-provider.js";
@@ -73,6 +74,9 @@ describe("notification pipeline: send and deliver", () => {
   });
   afterAll(async () => {
     await moduleRef.close();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
   beforeEach(async () => {
     await resetState(prisma, moduleRef.get<Redis>(REDIS));
@@ -303,6 +307,107 @@ describe("notification pipeline: send and deliver", () => {
     await processor.handleDeliver({ logId: row!.id }, 0, 5);
     expect(mailer.sent).toHaveLength(0);
     expect((await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).status).toBe("SKIPPED");
+  });
+
+  it("a failure before the send marks the row FAILED on the last attempt", async () => {
+    await grant("EMAIL");
+    await send("appointment.confirmed");
+    const [row] = await rows();
+    const load = vi.spyOn(moduleRef.get(MessageContextService), "load").mockRejectedValue(new Error("db down"));
+
+    await expect(processor.handleDeliver({ logId: row!.id }, 0, 5)).rejects.toThrow("db down");
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "QUEUED",
+      attempts: 0,
+      error: null,
+    });
+
+    await expect(processor.handleDeliver({ logId: row!.id }, 4, 5)).rejects.toThrow("db down");
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "FAILED",
+      attempts: 1,
+      error: "unknown",
+    });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(mailer.sent).toHaveLength(0);
+  });
+
+  it("a failed SENT update after the provider accepted is not recorded as a provider error", async () => {
+    await grant("EMAIL");
+    // A reminder carries no .ics, so the first clock read in deliver is the SENT update's `sentAt`:
+    // throwing there simulates the SENT write failing after the provider accepted the message.
+    await send("appointment.reminder_24h");
+    const [row] = await rows();
+    const now = vi.spyOn(clock, "now").mockImplementationOnce(() => {
+      throw new Error("db down");
+    });
+
+    await expect(processor.handleDeliver({ logId: row!.id }, 4, 5)).rejects.toThrow("db down");
+    expect(now).toHaveBeenCalledTimes(1);
+    expect(mailer.sent).toHaveLength(1);
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "QUEUED",
+      attempts: 0,
+      error: null,
+    });
+  });
+
+  it("render failure is FAILED render_failed without retry", async () => {
+    await grant("EMAIL");
+    // A line break in the attendee address makes the .ics builder refuse it.
+    await prisma.customer.update({ where: { id: f.customerId }, data: { email: "ana@example.test\nX" } });
+    await send("appointment.confirmed");
+    const [row] = await rows();
+    await processor.handleDeliver({ logId: row!.id }, 0, 5);
+    expect(mailer.sent).toHaveLength(0);
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "FAILED",
+      attempts: 1,
+      error: "render_failed",
+    });
+  });
+
+  it("email removed before delivery is skipped as no_email", async () => {
+    await grant("EMAIL");
+    await send("appointment.confirmed");
+    const [row] = await rows();
+    await prisma.customer.update({ where: { id: f.customerId }, data: { email: null } });
+    await processor.handleDeliver({ logId: row!.id }, 0, 5);
+    expect(mailer.sent).toHaveLength(0);
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "SKIPPED",
+      error: "no_email",
+      attempts: 0,
+    });
+  });
+
+  it("a retried send re-adds a missing deliver job for a still QUEUED row", async () => {
+    await grant("EMAIL");
+    await send("appointment.confirmed");
+    const [row] = await rows();
+    await (await queue.getJob(`deliver|${row!.id}`))!.remove();
+    expect(await queue.getJob(`deliver|${row!.id}`)).toBeUndefined();
+
+    await send("appointment.confirmed");
+    expect(await rows()).toHaveLength(1);
+    expect((await queue.getJob(`deliver|${row!.id}`))?.data).toEqual({ logId: row!.id });
+
+    // Once SENT, a later send adds nothing.
+    await processor.handleDeliver({ logId: row!.id }, 0, 5);
+    await (await queue.getJob(`deliver|${row!.id}`))!.remove();
+    await send("appointment.confirmed");
+    expect(await queue.getJob(`deliver|${row!.id}`)).toBeUndefined();
+  });
+
+  it("renders in the row locale even if the customer locale changed", async () => {
+    await grant("EMAIL");
+    await send("appointment.confirmed");
+    const [row] = await rows();
+    expect(row!.locale).toBe("es");
+    await prisma.customer.update({ where: { id: f.customerId }, data: { locale: "en" } });
+    await processor.handleDeliver({ logId: row!.id }, 0, 5);
+    expect(mailer.sent[0]!.text).toContain("http://localhost:3000/es/manage/");
+    expect(mailer.sent[0]!.text).toContain("Pedicura");
   });
 
   it("staff cancelReason never appears in the email", async () => {

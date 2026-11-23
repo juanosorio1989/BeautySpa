@@ -45,7 +45,11 @@ export class MaintenanceProcessor implements OnApplicationBootstrap, OnModuleDes
       }
     }
     this.connection = new Redis(this.env.REDIS_URL, { maxRetriesPerRequest: null });
-    this.worker = new Worker(MAINTENANCE_QUEUE, (job) => this.handle(job.name), { connection: this.connection });
+    // One maintenance job at a time: sweeps and scans must not overlap.
+    this.worker = new Worker(MAINTENANCE_QUEUE, (job) => this.handle(job.name), {
+      connection: this.connection,
+      concurrency: 1,
+    });
     this.worker.on("failed", (job, err) =>
       this.logger.error(`Maintenance job ${job?.name ?? "?"} failed: ${err.message}`),
     );
