@@ -191,6 +191,15 @@ export const en = {
     bookAgain: "Book again",
     total: "Total: {total}",
   },
+  push: {
+    enable: "Notify me on this device",
+    disable: "Turn off notifications on this device",
+    working: "One moment…",
+    needsInstall:
+      "To get notifications on iPhone, add BeautySpa to your Home Screen (Share, then Add to Home Screen), then open it from there.",
+    denied: "Notifications are blocked for this site. Allow them in your browser settings, then reload this page.",
+    failed: "We could not change notifications. Please try again.",
+  },
   profile: {
     title: "Profile and privacy",
     back: "Back",

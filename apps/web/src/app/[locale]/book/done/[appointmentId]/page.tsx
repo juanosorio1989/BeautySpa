@@ -9,6 +9,7 @@ import type { Locale } from "@beautyspa/i18n";
 import { AppointmentSummary } from "@/components/booking/appointment-summary";
 import { LoadError } from "@/components/me/load-error";
 import { EmailOffer } from "@/components/booking/email-offer";
+import { PushToggle } from "@/components/push-toggle";
 import { Link } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { useAuthedLoad } from "@/lib/session/use-authed-load";
@@ -86,6 +87,7 @@ export default function DonePage() {
         locale={locale}
       />
       {!me.consents.EMAIL && !offerDone ? <EmailOffer email={me.email} onSaved={() => setOfferDone(true)} /> : null}
+      <PushToggle consentSource="BOOKING_FORM" />
       <div className="mt-2 flex flex-col gap-2.5">
         <Link
           href="/me"

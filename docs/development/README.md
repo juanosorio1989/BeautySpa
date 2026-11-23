@@ -122,3 +122,7 @@ the API and a seeded test database; see [apps/web/e2e/README.md](../../apps/web/
 - `e2e`: Postgres and Redis services, `.env` from `.env.example` plus `secrets:gen`, Chromium via
   `playwright install --with-deps`, then `pnpm --filter @beautyspa/web test:e2e` (migrates and seeds the test
   database, builds the API and web, starts both, runs the specs). The Playwright report is uploaded on failure.
+
+## PWA icons
+
+`apps/web/public/icons/*.png` are solid plum placeholders written by `node apps/web/scripts/gen-icons.mjs` (no dependencies). Replace them with real artwork once the owner has a logo. `public/sw.js` is a plain-JS, push-only service worker (no fetch handler, no caching).

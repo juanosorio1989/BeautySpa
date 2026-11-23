@@ -138,7 +138,7 @@ describe("/me", () => {
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog");
     expect(dialog.tagName).toBe("DIALOG");
-    expect(screen.getByLabelText("Reason (optional)")).toHaveFocus();
+    await waitFor(() => expect(screen.getByLabelText("Reason (optional)")).toHaveFocus());
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel appointment" }));
     const busyEscape = new Event("cancel", { cancelable: true });
     dialog.dispatchEvent(busyEscape);

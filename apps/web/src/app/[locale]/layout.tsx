@@ -23,7 +23,11 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) return {};
   const t = await getTranslations({ locale, namespace: "home" });
-  return { title: t("title") };
+  return {
+    title: t("title"),
+    manifest: "/manifest.webmanifest",
+    icons: { apple: "/icons/apple-touch-icon.png" },
+  };
 }
 
 export default async function LocaleLayout({
