@@ -40,8 +40,8 @@ services, professional, address), then:
 - "Add to calendar" → the `.ics` URL.
 - "Reschedule" → `/[locale]/login?next=/me` (reschedule needs OTP, parent
   spec).
-- Invalid/expired → "This link is no longer valid" + link to `/me` and the
-  salon phone.
+- Invalid/expired → "This link is no longer valid" + link to `/me` (a 404
+  carries no location data, so no salon phone here).
 
 **(call)** The page's language comes from the URL locale (the link is built
 with the customer's locale).
