@@ -16,11 +16,11 @@ pnpm --filter @beautyspa/api secrets:gen
 pnpm --filter @beautyspa/api db:migrate
 pnpm --filter @beautyspa/api db:seed
 pnpm dev
-pnpm --filter @beautyspa/api worker:dev   # second terminal: BullMQ worker (hold sweep, notifications)
+pnpm dev:worker   # second terminal: BullMQ worker (hold sweep, reminders, notifications)
 ```
 
-`pnpm dev` runs web and api only. Run the worker next to it: without it expired holds are never swept and no
-notification is sent.
+`pnpm dev` runs web and api only. `pnpm dev:worker` runs the worker: it sweeps expired holds, scans for reminders
+and sends notifications. Without it holds expire only on demand and nothing is sent.
 
 The API scripts (`dev`, `start`, `worker:dev`, `worker:start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
 
@@ -59,6 +59,13 @@ Notification emails (confirmations, reminders, changes, cancellations) are sent 
 they appear in the worker's console (attachment names included, never html or `.ics` content). With
 `PUSH_PROVIDER=console` push messages log their title only. Mailpit is not used yet: the API has no SMTP mailer,
 only Resend (`EMAIL_PROVIDER=resend`).
+
+### Testing web push in Chrome
+
+`secrets:gen` creates the VAPID pair. Set `PUSH_PROVIDER=webpush` in `.env` (default `console` only logs the title),
+restart `pnpm dev` and `pnpm dev:worker`, open http://localhost:3000/en, sign in, and tap "Notify me on this
+device" on the booking Done page or Profile (Chrome allows the service worker on `localhost`). Allow the permission, then book or cancel
+an appointment: the worker sends the push. On iPhone the PWA must be added to the Home Screen first.
 
 ## Development seed
 
