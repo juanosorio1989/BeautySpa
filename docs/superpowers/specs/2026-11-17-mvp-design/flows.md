@@ -60,10 +60,15 @@ professionals side by side, plus a resource view (chairs).
 | Event | Template | When |
 |---|---|---|
 | Booked | `appointment.confirmed` | immediately |
-| Reminder | `appointment.reminder_24h` | 24 h before (skipped if booked < 24 h before) |
-| Reminder | `appointment.reminder_2h` | 2 h before (skipped if booked < 2 h before) |
+| Reminder | `appointment.reminder_24h` | 24 h before (skipped if times set < 24 h before; not sent once < 2 h remain) |
+| Reminder | `appointment.reminder_2h` | 2 h before (skipped if times set < 2 h before; never after the start) |
 | Changed | `appointment.changed` | on move/reschedule (reminders re-scheduled) |
 | Cancelled | `appointment.cancelled` | on cancel by salon or client |
+
+Reminders are enqueued by a per-minute worker scan for BOOKED appointments with a customer, excluding
+walk-ins; "booked" means `times_set_at` (reset on every reschedule/move). Late limits: the 24 h reminder is
+dropped once 2 h remain (L=2 h), the 2 h one once the appointment starts (L=0). See
+`2026-11-22-notifications-design/reminders.md`.
 
 All include the manage link (confirm / cancel). Sent in the customer's
 `locale`. Channel per the router in architecture.md. A client with no consented
