@@ -19,7 +19,14 @@ import {
 import type { z } from "zod";
 import { ApiError, toApiError } from "./errors";
 import type { FetchLike } from "./fetch";
-import { createResources, type BookingApi, type MeApi, type PublicApi } from "./resources";
+import {
+  createResources,
+  type BookingApi,
+  type ManageApi,
+  type MeApi,
+  type PublicApi,
+  type PushApi,
+} from "./resources";
 import type { TokenStore } from "./token-store";
 
 export interface ApiClientOptions {
@@ -72,6 +79,8 @@ export interface ApiClient {
   public: PublicApi;
   booking: BookingApi;
   me: MeApi;
+  manage: ManageApi;
+  push: PushApi;
 }
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {
@@ -219,5 +228,5 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     },
   };
 
-  return { request, auth, ...createResources(request) };
+  return { request, auth, ...createResources(request, baseUrl) };
 }
