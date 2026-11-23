@@ -53,6 +53,23 @@ describe("buildIcs", () => {
     );
     expect(out).toContain("METHOD:CANCEL\r\n");
     expect(out).toContain("STATUS:CANCELLED\r\n");
+    expect(out).toContain("ORGANIZER:mailto:hi@glow.test\r\n");
+    expect(out).toContain("ATTENDEE;RSVP=FALSE:mailto:c@x.test\r\n");
+  });
+
+  it("REQUEST and CANCEL require an organizer", () => {
+    expect(() => buildIcs(event, { method: "REQUEST", attendeeEmail: "c@x.test" })).toThrow(/organizer/i);
+    expect(() => buildIcs({ ...event, status: "CANCELLED" }, { method: "CANCEL" })).toThrow(/organizer/i);
+    expect(() => buildIcs(event, { method: "PUBLISH" })).not.toThrow();
+  });
+
+  it("rejects CR or LF in organizer or attendee", () => {
+    for (const bad of ["a@x.test\r\nATTENDEE:mailto:evil@x.test", "a@x.test\nX", "a@x.test\rX"]) {
+      expect(() => buildIcs(event, { method: "REQUEST", organizerEmail: bad })).toThrow();
+      expect(() =>
+        buildIcs(event, { method: "REQUEST", organizerEmail: "hi@glow.test", attendeeEmail: bad }),
+      ).toThrow();
+    }
   });
 
   it("PUBLISH has no ORGANIZER or ATTENDEE", () => {

@@ -4,6 +4,8 @@ import { HoldSweeper } from "../booking/hold-sweeper.js";
 import { CommonModule } from "../common/common.module.js";
 import { ConfigModule } from "../config/config.module.js";
 import { MailModule } from "../mail/mail.module.js";
+import { NotificationDeliveryModule } from "../notifications/notifications.module.js";
+import { NotificationsProcessor } from "../notifications/notifications.processor.js";
 import { ReminderScanner } from "../notifications/reminder-scanner.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { QueueModule } from "../queue/queue.module.js";
@@ -12,7 +14,16 @@ import { MaintenanceProcessor } from "./maintenance.processor.js";
 
 /** Root module of the worker process (`worker.ts`): consumes the BullMQ queues; no HTTP. */
 @Module({
-  imports: [ConfigModule, CommonModule, PrismaModule, RedisModule, AuditModule, MailModule, QueueModule],
-  providers: [HoldSweeper, ReminderScanner, MaintenanceProcessor],
+  imports: [
+    ConfigModule,
+    CommonModule,
+    PrismaModule,
+    RedisModule,
+    AuditModule,
+    MailModule,
+    QueueModule,
+    NotificationDeliveryModule,
+  ],
+  providers: [HoldSweeper, ReminderScanner, MaintenanceProcessor, NotificationsProcessor],
 })
 export class WorkerModule {}

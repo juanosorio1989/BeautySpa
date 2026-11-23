@@ -77,6 +77,21 @@ describe("renderMessage", () => {
     expect(escapeHtml(`<a href="x">'`)).toBe("&lt;a href=&quot;x&quot;&gt;&#39;");
   });
 
+  it("formats the full date and time in the location timezone (es)", () => {
+    const m = renderMessage("appointment.confirmed", ctx({ locale: "es" }));
+    expect(m.text).toContain("martes, 1 de diciembre de 2026, 10:00 a.m.");
+  });
+
+  it("push body truncation never splits a code point", () => {
+    const services = Array.from({ length: 40 }, () => ({ name: "a💅b", employeeName: "Ana" }));
+    const m = renderMessage("appointment.confirmed", ctx({ services }));
+    const points = Array.from(m.push.body);
+    expect(points.length).toBeLessThan(120);
+    expect(m.push.body.endsWith("...")).toBe(true);
+    // no lone surrogate left behind by the cut
+    expect(m.push.body).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+
   it("push body under 120 chars", () => {
     for (const locale of ["en", "es"] as const) {
       for (const key of keys) {

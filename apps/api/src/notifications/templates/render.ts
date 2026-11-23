@@ -103,7 +103,9 @@ export function renderMessage(key: TemplateKey, ctx: MessageContext): RenderedMe
   const html = htmlShell({ greeting, headline, rows, confirmLine, linkLabel: k.linkLabel, url, phoneLine });
 
   const body = `${formatShort(ctx)} · ${ctx.services.map((s) => s.name).join(", ")}`;
-  const pushBody = body.length < 120 ? body : `${body.slice(0, 116)}...`;
+  // Count and cut by code point, so an emoji (surrogate pair) is never split.
+  const points = Array.from(body);
+  const pushBody = points.length < 120 ? body : `${points.slice(0, 116).join("")}...`;
 
   return { subject: k.subject(ctx, when), text, html, push: { title: k.pushTitle(ctx), body: pushBody, url } };
 }

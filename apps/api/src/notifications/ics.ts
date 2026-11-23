@@ -57,8 +57,20 @@ function fold(line: string): string {
   return out.join("\r\n ");
 }
 
+/** A `mailto:` value is written raw (not TEXT-escaped), so a CR or LF would inject properties. */
+function assertNoLineBreak(name: string, value: string | undefined): void {
+  if (value !== undefined && /[\r\n]/.test(value)) throw new Error(`ics: ${name} must not contain CR or LF`);
+}
+
+/**
+ * Builds a one-event calendar. `REQUEST` and `CANCEL` require `organizerEmail` (RFC 5546 iTIP) and write
+ * ORGANIZER/ATTENDEE; `PUBLISH` never does. Throws when organizer or attendee holds a CR or LF.
+ */
 export function buildIcs(event: IcsEvent, opts: IcsOptions): string {
   const withParties = opts.method === "REQUEST" || opts.method === "CANCEL";
+  assertNoLineBreak("organizerEmail", opts.organizerEmail);
+  assertNoLineBreak("attendeeEmail", opts.attendeeEmail);
+  if (withParties && !opts.organizerEmail) throw new Error(`ics: METHOD:${opts.method} requires organizerEmail`);
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",

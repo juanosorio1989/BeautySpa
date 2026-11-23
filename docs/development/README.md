@@ -55,6 +55,10 @@ The link is a one-time credential: do not paste it into chats or tickets.
 
 In development `EMAIL_PROVIDER=console`: invite and password reset emails are not sent, the API logs them
 (recipient, subject and text with the link) to its console.
+Notification emails (confirmations, reminders, changes, cancellations) are sent by the worker, so with `console`
+they appear in the worker's console (attachment names included, never html or `.ics` content). With
+`PUSH_PROVIDER=console` push messages log their title only. Mailpit is not used yet: the API has no SMTP mailer,
+only Resend (`EMAIL_PROVIDER=resend`).
 
 ## Development seed
 
@@ -73,7 +77,7 @@ Customers and appointments are demo data: never run it against a real database. 
 
 - API docs (Swagger UI): http://localhost:3001/v1/docs
 - Web (public booking site): http://localhost:3000 (redirects `/` to `/en` or `/es` by `Accept-Language`)
-- Mailpit: http://localhost:8025
+- Mailpit: http://localhost:8025 (unused until an SMTP mailer exists; email goes through `EMAIL_PROVIDER`)
 
 ## Commands
 

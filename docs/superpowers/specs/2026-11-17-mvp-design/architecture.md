@@ -161,28 +161,62 @@ Tokens (identical for web and native):
 
 ## Notifications
 
+Plan 05 replaced the original sketch (WhatsApp/SMS router with fallback,
+delayed reminder jobs); details in `specs/2026-11-22-notifications-design/`.
+
 ```
-NotificationService.send(intent)  ->  ChannelRouter  ->  Provider (interface)
-                                                         ├─ WhatsAppTwilioProvider
-                                                         ├─ SmsTwilioProvider   (flag: SMS_REMINDERS_ENABLED)
-                                                         ├─ EmailResendProvider
-                                                         └─ ConsoleProvider     (dev/test)
+API: QueueBookingEvents --send job--> queue `notifications` <--deliver job--+
+                                        |                                  |
+worker: NotificationsProcessor.handleSend (route, log rows) ---------------+
+        NotificationsProcessor.handleDeliver (render, provider, update row)
+                                        |
+                  ChannelProvider: EmailProvider (Mailer) | push provider
 ```
 
-- `Provider.send(message) -> { providerMessageId } | error`; status arrives via
-  webhook and updates `notification_log`.
-- Router order: WhatsApp (if consent) → SMS (if enabled and consent) → email (if
-  present and consent). Fall through on send error or `failed` status webhook.
-- Twilio is the single vendor for WhatsApp, SMS, and Verify **(call)**: one
-  account, one webhook format; Meta Cloud API can be a later provider.
-- Templates are code-defined per `{templateKey, locale}` and mapped to
-  approved WhatsApp template SIDs via config.
-- Scheduled reminders are BullMQ delayed jobs with deterministic `jobId`
-  (`appt:{id}:r24`, `appt:{id}:r2`): reschedule = remove + re-add; cancel =
-  remove. The job re-reads the appointment before sending and skips if it is no
-  longer `booked`.
-- Retries: 5 attempts, exponential backoff; final failure logged and falls to
-  next channel.
+- Code: `apps/api/src/notifications/` (`notifications.processor.ts`,
+  `message-context.service.ts`, `router.ts`, `error-code.ts`, `providers/`,
+  `templates/`, `ics.ts`, `manage-token.ts`). `NotificationDeliveryModule`
+  (context loading and providers) and `NotificationsProcessor` (a BullMQ
+  `Worker` on `notifications`, started at bootstrap, closed on destroy) live
+  only in `WorkerModule`; the API imports `NotificationsModule` (producer).
+- `send` `{ appointmentId, templateKey, manageVersion, channels? }`: re-reads
+  the appointment and stops silently (no row) when it is gone, its
+  `manage_version` differs, the customer is null or deleted, it is a walk-in, or
+  the status does not fit (`BOOKED`; `CANCELLED` for `appointment.cancelled`).
+  `selectChannels` (pure) picks every consented channel the customer can
+  receive on: `EMAIL` needs an email, `PUSH` a push subscription; never SMS or
+  WhatsApp; `channels` limits it (consent catch-up). One `notification_log` row
+  per channel, inserted one at a time (`QUEUED`, provider name, locale,
+  version); a unique conflict on `(appointment_id, template_key,
+  manage_version, channel)` means the channel was handled. A new row, or a
+  conflicting row still `QUEUED`, gets a `deliver` job with id
+  `deliver|<logId>` (added with `enqueueBounded`), so a retried `send` never
+  loses or duplicates a delivery.
+- `deliver` `{ logId }`: only a `QUEUED` row is sent. Skips (`SKIPPED` +
+  reason in `error`) when the channel's consent was revoked
+  (`consent_revoked`), the appointment changed (`stale`: version, status,
+  customer deleted) or an email row has no address (`no_email`). Renders in
+  the customer locale and location timezone; the manage link token expires at
+  the first segment start. EMAIL for confirmed/changed attaches
+  `appointment.ics` `METHOD:REQUEST`, cancelled `METHOD:CANCEL`
+  (`SEQUENCE` = `manage_version`, organizer = address part of `EMAIL_FROM`, or
+  `no-reply@<WEB_ORIGIN host>` when unset); reminders carry none. Success →
+  `SENT`, `sent_at`, `provider_message_id`, `attempts + 1`. A render failure →
+  `FAILED` `render_failed`, no retry. A provider error → `attempts + 1`, error
+  code, rethrow for the BullMQ retry; `FAILED` on the last of 5 attempts. A
+  provider that succeeds right before a failed row update can send twice
+  (at-least-once).
+- Providers (`ChannelProvider { channel; name; send(rendered, target) }`, token
+  `CHANNEL_PROVIDERS`): EMAIL = `EmailProvider` over `Mailer`
+  (`EMAIL_PROVIDER` `resend` or `console`); PUSH by `PUSH_PROVIDER`: `fake`
+  (tests, records calls), `console` (dev, logs the title only); `webpush`
+  arrives with the push task and until then the worker refuses to start with it.
+- Error codes in `notification_log.error` (`errorCode`, max 200 chars, built
+  only from recognized shapes, never free error text, an email, a phone or a
+  provider body): `resend_<status>`, `resend_timeout`, `push_<status>`,
+  `push_none`, `render_failed`, `unknown`; skip reasons `stale`,
+  `consent_revoked`, `no_email`. Logs carry log ids and codes only.
+- Reminders: the worker's `scan-reminders` maintenance job adds `send` jobs.
 
 ## PWA
 
