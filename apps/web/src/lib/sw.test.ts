@@ -16,8 +16,9 @@ function load() {
   return { self, listeners };
 }
 
-async function click(url: unknown) {
+async function click(url: unknown, open: { url: string; focus: () => unknown }[] = []) {
   const { self, listeners } = load();
+  self.clients.matchAll.mockResolvedValue(open as never);
   let pending: Promise<unknown> = Promise.resolve();
   listeners.notificationclick!({
     notification: { close: vi.fn(), data: { url } },
@@ -41,6 +42,27 @@ describe("sw.js", () => {
       data: { url: "/en/manage/x" },
       icon: "/icons/icon-192.png",
     });
+  });
+
+  it("opens / when the url is missing or not a string, and survives a null payload", async () => {
+    expect((await click(undefined)).clients.openWindow).toHaveBeenCalledWith("/");
+    expect((await click(42)).clients.openWindow).toHaveBeenCalledWith("/");
+    const { self, listeners } = load();
+    let pending: Promise<unknown> = Promise.resolve();
+    listeners.push!({ data: { json: () => null }, waitUntil: (p: Promise<unknown>) => (pending = p) });
+    await pending;
+    expect(self.registration.showNotification).toHaveBeenCalledWith("BeautySpa", {
+      body: "",
+      data: { url: "/" },
+      icon: "/icons/icon-192.png",
+    });
+  });
+
+  it("focuses an already-open tab on that url", async () => {
+    const focus = vi.fn();
+    const self = await click("https://spa.example/en/me", [{ url: "https://spa.example/en/me", focus }]);
+    expect(focus).toHaveBeenCalled();
+    expect(self.clients.openWindow).not.toHaveBeenCalled();
   });
 
   it("opens only same-origin urls", async () => {

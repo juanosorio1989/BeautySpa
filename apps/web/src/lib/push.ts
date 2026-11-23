@@ -31,7 +31,7 @@ export function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
 }
 
 async function currentSubscription(): Promise<PushSubscription | null> {
-  const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+  const registration = await navigator.serviceWorker.getRegistration("/");
   return registration ? await registration.pushManager.getSubscription() : null;
 }
 
@@ -52,9 +52,10 @@ export async function getPushSupport(api: PushApi): Promise<PushSupport> {
 /** Must run from a tap: it asks for permission. Returns the resulting state. */
 export async function enablePush(api: PushApi, consentSource: PushConsentSource): Promise<PushSupport> {
   if (!hasPushApis()) return "unsupported";
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  // First await: registering the worker first would use up the tap's transient user activation.
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "available";
+  const registration = await navigator.serviceWorker.register("/sw.js");
   const { publicKey } = await api.push.publicKey();
   const subscription =
     (await registration.pushManager.getSubscription()) ??
@@ -63,11 +64,17 @@ export async function enablePush(api: PushApi, consentSource: PushConsentSource)
       applicationServerKey: decodeBase64Url(publicKey),
     }));
   const json = subscription.toJSON();
-  await api.push.subscribe({
-    endpoint: subscription.endpoint,
-    keys: { p256dh: json.keys?.p256dh ?? "", auth: json.keys?.auth ?? "" },
-    consentSource,
-  });
+  try {
+    await api.push.subscribe({
+      endpoint: subscription.endpoint,
+      keys: { p256dh: json.keys?.p256dh ?? "", auth: json.keys?.auth ?? "" },
+      consentSource,
+    });
+  } catch (err) {
+    // Keep the browser and the server in step: no server row, no browser subscription.
+    await subscription.unsubscribe().catch(() => false);
+    throw err;
+  }
   return "subscribed";
 }
 

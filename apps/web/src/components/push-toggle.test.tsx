@@ -59,6 +59,15 @@ describe("PushToggle", () => {
     expect(enablePush).toHaveBeenCalledWith(expect.anything(), "BOOKING_FORM");
   });
 
+  it("switches to the help text when enabling ends denied", async () => {
+    getPushSupport.mockResolvedValue("available");
+    enablePush.mockResolvedValue("denied");
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Notify me on this device" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/blocked for this site/);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
   it("turns off when subscribed", async () => {
     getPushSupport.mockResolvedValue("subscribed");
     disablePush.mockResolvedValue(undefined);

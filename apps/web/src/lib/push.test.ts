@@ -99,6 +99,37 @@ describe("enablePush / disablePush", () => {
     });
   });
 
+  it("enablePush asks for permission before registering the worker", async () => {
+    stub();
+    const order: string[] = [];
+    (navigator.serviceWorker.register as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      order.push("register");
+      return registration;
+    });
+    vi.stubGlobal("Notification", {
+      permission: "default",
+      requestPermission: vi.fn(async () => {
+        order.push("permission");
+        return "granted";
+      }),
+    });
+    await enablePush(pushApi, "PROFILE");
+    expect(order).toEqual(["permission", "register"]);
+  });
+
+  it("enablePush drops the browser subscription when the API call fails", async () => {
+    stub();
+    api.push.subscribe.mockRejectedValue(new Error("boom"));
+    await expect(enablePush(pushApi, "PROFILE")).rejects.toThrow("boom");
+    expect(subscription.unsubscribe).toHaveBeenCalled();
+  });
+
+  it("getPushSupport looks up the registration at scope /", async () => {
+    stub();
+    await getPushSupport(pushApi);
+    expect(navigator.serviceWorker.getRegistration).toHaveBeenCalledWith("/");
+  });
+
   it("enablePush does not subscribe when permission is refused", async () => {
     stub();
     vi.stubGlobal("Notification", { permission: "default", requestPermission: vi.fn(async () => "denied") });

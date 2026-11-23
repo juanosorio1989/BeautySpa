@@ -24,7 +24,11 @@ export function PushToggle({ consentSource }: { consentSource: PushConsentSource
 
   if (support === null || support === "unsupported") return null;
   if (support === "needs-install" || support === "denied") {
-    return <p className="text-sm text-muted">{t(support === "denied" ? "denied" : "needsInstall")}</p>;
+    return (
+      <p role="status" className="text-sm text-muted">
+        {t(support === "denied" ? "denied" : "needsInstall")}
+      </p>
+    );
   }
 
   async function toggle() {

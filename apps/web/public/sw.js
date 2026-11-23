@@ -2,7 +2,8 @@
 self.addEventListener("push", (event) => {
   let payload = {};
   try {
-    payload = event.data ? event.data.json() : {};
+    const parsed = event.data ? event.data.json() : {};
+    payload = parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     payload = {};
   }
@@ -16,11 +17,13 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const raw = event.notification.data && event.notification.data.url;
   let target = "/";
-  try {
-    const parsed = new URL(raw, self.location.origin);
-    if (parsed.origin === self.location.origin) target = parsed.href;
-  } catch {
-    target = "/";
+  if (typeof raw === "string") {
+    try {
+      const parsed = new URL(raw, self.location.origin);
+      if (parsed.origin === self.location.origin) target = parsed.href;
+    } catch {
+      target = "/";
+    }
   }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
