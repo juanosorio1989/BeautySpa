@@ -33,7 +33,7 @@ test("client confirms then cancels from a manage link", async ({ page }) => {
   await confirm.click();
 
   await expect(page).toHaveURL(/\/en\/book\/done\//);
-  const appointmentId = new URL(page.url()).pathname.split("/").pop()!;
+  const appointmentId = /\/en\/book\/done\/([^/?#]+)/.exec(page.url())![1]!;
 
   // Open the manage link a notification would carry
   await page.goto(`/en/manage/${mintManageToken(appointmentId)}`);

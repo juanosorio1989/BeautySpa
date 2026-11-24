@@ -62,10 +62,12 @@ only Resend (`EMAIL_PROVIDER=resend`).
 
 ### Testing web push in Chrome
 
-`secrets:gen` creates the VAPID pair. Set `PUSH_PROVIDER=webpush` in `.env` (default `console` only logs the title),
+`secrets:gen` creates the VAPID pair. Set `PUSH_PROVIDER=webpush` in `.env` (default `console` only logs the title) and set `VAPID_SUBJECT` (a `mailto:` or
+`https:` contact, for example `mailto:owner@example.com`; the API and worker refuse to start without it),
 restart `pnpm dev` and `pnpm dev:worker`, open http://localhost:3000/en, sign in, and tap "Notify me on this
 device" on the booking Done page or Profile (Chrome allows the service worker on `localhost`). Allow the permission, then book or cancel
-an appointment: the worker sends the push. On iPhone the PWA must be added to the Home Screen first.
+an appointment: the worker sends the push. Push goes only to the signed-in customer's own appointments, so book while
+signed in as the customer who enabled notifications on that device. On iPhone the PWA must be added to the Home Screen first.
 
 ## Development seed
 
