@@ -7,6 +7,8 @@ import { PushError, type ChannelProvider, type DeliveryTarget } from "./channel-
 
 /** Push service TTL for every message: 24 h (design call: reminders and confirmations alike). */
 export const PUSH_TTL_SEC = 86_400;
+/** Socket timeout per push request: a slow (tarpit) push service must not hold a notification worker slot. */
+export const PUSH_TIMEOUT_MS = 10_000;
 
 export interface VapidDetails {
   subject: string;
@@ -16,7 +18,7 @@ export interface VapidDetails {
 
 /**
  * `PUSH_PROVIDER=webpush`: sends `{ title, body, url }` to every push subscription of the customer (in the
- * target's organization) with TTL 24 h, urgency `high` for `appointment.reminder_2h` else `normal`. A 404/410
+ * target's organization) with TTL 24 h, a 10 s request timeout, urgency `high` for `appointment.reminder_2h` else `normal`. A 404/410
  * from the push service deletes that subscription. Succeeds when at least one send succeeds (those rows get
  * `last_success_at`, best effort); otherwise throws `PushError(<last status>)`, or `PushError("none")` without subscriptions.
  * Logs subscription ids only: endpoints identify a device and never reach logs or errors.
@@ -46,6 +48,7 @@ export class WebPushProvider implements ChannelProvider {
       TTL: PUSH_TTL_SEC,
       urgency: target.templateKey === "appointment.reminder_2h" ? "high" : "normal",
       vapidDetails: this.vapid,
+      timeout: PUSH_TIMEOUT_MS,
     };
     let delivered = false;
     let lastStatus = 0;

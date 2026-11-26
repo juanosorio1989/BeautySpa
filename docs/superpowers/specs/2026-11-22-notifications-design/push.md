@@ -23,7 +23,8 @@ checks consent). `GET /me` reports `PUSH` like `EMAIL`.
 `web-push` library with `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
 `VAPID_SUBJECT` (`mailto:` of the salon). Payload JSON `{ title, body, url }`
 (url = manage link), TTL 24 h for reminders/confirmations **(call)**, urgency
-`high` for the 2 h reminder. One `deliver` per channel sends to all the
+`high` for the 2 h reminder, request timeout 10 s (a slow push service never
+holds a worker slot; a timeout counts as `push_0`). One `deliver` per channel sends to all the
 customer's subscriptions; success when at least one succeeds. 404/410 from the
 push service deletes that subscription (error code `push_410`). All failing →
 error, retry.

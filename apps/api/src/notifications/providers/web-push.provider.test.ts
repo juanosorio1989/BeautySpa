@@ -3,7 +3,7 @@ import { WebPushError } from "web-push";
 import { errorCode } from "../error-code.js";
 import type { RenderedMessage, TemplateKey } from "../templates/types.js";
 import { PushError, type DeliveryTarget } from "./channel-provider.js";
-import { WebPushProvider } from "./web-push.provider.js";
+import { PUSH_TIMEOUT_MS, WebPushProvider } from "./web-push.provider.js";
 
 const { sendNotification } = vi.hoisted(() => ({ sendNotification: vi.fn() }));
 vi.mock("web-push", async () => {
@@ -63,7 +63,7 @@ describe("WebPushProvider", () => {
       1,
       { endpoint: "https://push.example/a", keys: { p256dh: "p-a", auth: "a-a" } },
       JSON.stringify(msg.push),
-      { TTL: 86_400, urgency: "normal", vapidDetails: VAPID },
+      { TTL: 86_400, urgency: "normal", vapidDetails: VAPID, timeout: 10_000 },
     );
     expect(db.pushSubscription.deleteMany).toHaveBeenCalledWith({ where: { id: "a", organizationId: "org-1" } });
     expect(db.pushSubscription.updateMany).toHaveBeenCalledWith({
@@ -115,6 +115,16 @@ describe("WebPushProvider", () => {
     expect(err).toBeInstanceOf(PushError);
     expect(errorCode(err)).toBe("push_none");
     expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("every send has a 10 s timeout", async () => {
+    const { provider } = setup([sub("a"), sub("b")]);
+    sendNotification.mockResolvedValue({ statusCode: 201 });
+
+    await provider.send(msg, target());
+
+    expect(PUSH_TIMEOUT_MS).toBe(10_000);
+    for (const call of sendNotification.mock.calls) expect(call[2]).toMatchObject({ timeout: 10_000 });
   });
 
   it("2h reminder uses urgency high", async () => {
