@@ -33,17 +33,30 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   types the client.
 - Prisma for data access. Range types and exclusion constraints are written in
   raw SQL inside Prisma migrations (see data-model.md).
-- Workers: BullMQ queues `notifications` and `maintenance` (hold sweeper). Run as
-  a separate process from the same app (`api` and `worker` entrypoints).
-- Hold sweeper **(call, plan 04)**: until the worker entrypoint exists, the API
-  process runs `HoldSweeper` (`apps/api/src/booking/hold-sweeper.ts`), which
-  releases expired holds every `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0`
-  disables it, and tests use 0). Each run writes one `appointment.hold_release`
+- Workers **(plan 05)**: BullMQ queues `notifications` and `maintenance` on the
+  same Redis DB as `REDIS_URL` (producers share one dedicated ioredis connection
+  with `maxRetriesPerRequest: null`; `apps/api/src/queue/`). The API process only
+  produces jobs (`Queue`, never a `Worker`): `QueueBookingEvents` adds a `send`
+  job per booking event after commit (job id
+  `send|<appointmentId>|<templateKey>|<manageVersion>`; BullMQ 5 rejects `:` in
+  custom ids). A separate process from the same codebase consumes them:
+  `apps/api/src/worker.ts` (`WorkerModule`, a Nest application context, no HTTP),
+  run with `pnpm --filter @beautyspa/api worker:dev` (watch) or `worker:start`
+  (`dist-worker/worker.js`). `pnpm dev` runs only web and api, so in dev the worker must
+  also run, or expired holds are not swept.
+- Hold sweeper **(call, plan 04; moved in plan 05)**: `HoldSweeper.sweep()`
+  (`apps/api/src/booking/hold-sweeper.ts`) has no timer of its own. At start the
+  worker upserts the job scheduler `sweep-holds` on queue `maintenance` every
+  `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0` removes the scheduler, and tests
+  use 0), and `MaintenanceProcessor` runs `sweep()` for each job; likewise
+  `scan-reminders` every `REMINDER_SCAN_INTERVAL_MS` and `recover-deliveries`
+  (orphaned `QUEUED` notification rows) every `DELIVERY_RECOVERY_INTERVAL_MS`
+  (default 600000). Each sweep takes the org
+  booking lock per organization and writes one `appointment.hold_release`
   audit row per organization that had holds released (`actorType "SYSTEM"`,
   `after: { released: n }`); booking writes that release expired holds write the
   same row (`releaseExpiredHoldsAudited`). An organization whose sweep fails is
-  logged and skipped; the others still run. Plan 05 moves it to the BullMQ
-  `maintenance` queue.
+  logged and skipped; the others still run.
 - Booking writes **(call, plan 04)**: each booking write transaction takes the
   organization's booking lock first (`lockOrgBookings`, a transaction-scoped
   Postgres advisory lock), so writes of one organization are serialized and a
@@ -53,9 +66,10 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   and `cancelled` through the `BookingEvents` port
   (`apps/api/src/booking/booking-events.ts`), only after the write transaction
   commits and through `notifyAfterCommit`, which logs and swallows errors so a
-  notification failure never fails the request. The adapter for now is
-  `LoggingBookingEvents` (debug log `booking.<event> <id>`); plan 05 binds the
-  notification router in its place.
+  notification failure never fails the request. The API binds it to
+  `QueueBookingEvents` (plan 05), which adds a notification `send` job through
+  `enqueueBounded` (gives up after 2 s with `QUEUE_TIMEOUT`, so Redis being down
+  never hangs a response); `LoggingBookingEvents` stays for unit tests.
 - Time **(call, plan 04)**: booking code reads the current time only from the
   injectable `Clock` (`CLOCK` token, `{ now(): number }` in epoch ms, default
   `Date.now`, provided by the global `CommonModule`), never `Date.now()`, so
@@ -149,28 +163,76 @@ Tokens (identical for web and native):
 
 ## Notifications
 
+Plan 05 replaced the original sketch (WhatsApp/SMS router with fallback,
+delayed reminder jobs); details in `specs/2026-11-22-notifications-design/`.
+
 ```
-NotificationService.send(intent)  ->  ChannelRouter  ->  Provider (interface)
-                                                         ├─ WhatsAppTwilioProvider
-                                                         ├─ SmsTwilioProvider   (flag: SMS_REMINDERS_ENABLED)
-                                                         ├─ EmailResendProvider
-                                                         └─ ConsoleProvider     (dev/test)
+API: QueueBookingEvents --send job--> queue `notifications` <--deliver job--+
+                                        |                                  |
+worker: NotificationsProcessor.handleSend (route, log rows) ---------------+
+        NotificationsProcessor.handleDeliver (render, provider, update row)
+                                        |
+                  ChannelProvider: EmailProvider (Mailer) | push provider
 ```
 
-- `Provider.send(message) -> { providerMessageId } | error`; status arrives via
-  webhook and updates `notification_log`.
-- Router order: WhatsApp (if consent) → SMS (if enabled and consent) → email (if
-  present and consent). Fall through on send error or `failed` status webhook.
-- Twilio is the single vendor for WhatsApp, SMS, and Verify **(call)**: one
-  account, one webhook format; Meta Cloud API can be a later provider.
-- Templates are code-defined per `{templateKey, locale}` and mapped to
-  approved WhatsApp template SIDs via config.
-- Scheduled reminders are BullMQ delayed jobs with deterministic `jobId`
-  (`appt:{id}:r24`, `appt:{id}:r2`): reschedule = remove + re-add; cancel =
-  remove. The job re-reads the appointment before sending and skips if it is no
-  longer `booked`.
-- Retries: 5 attempts, exponential backoff; final failure logged and falls to
-  next channel.
+- Code: `apps/api/src/notifications/` (`notifications.processor.ts`,
+  `message-context.service.ts`, `router.ts`, `error-code.ts`, `providers/`,
+  `templates/`, `ics.ts`, `manage-token.ts`). `NotificationDeliveryModule`
+  (context loading and providers) and `NotificationsProcessor` (a BullMQ
+  `Worker` on `notifications`, concurrency 5, started at bootstrap, closed on
+  destroy; `maintenance` runs one job at a time) live
+  only in `WorkerModule`; the API imports `NotificationsModule` (producer).
+- `send` `{ appointmentId, templateKey, manageVersion, channels? }`: re-reads
+  the appointment and stops silently (no row) when it is gone, its
+  `manage_version` differs, the customer is null or deleted, it is a walk-in, or
+  the status does not fit (`BOOKED`; `CANCELLED` for `appointment.cancelled`).
+  `selectChannels` (pure) picks every consented channel the customer can
+  receive on: `EMAIL` needs an email, `PUSH` a push subscription; never SMS or
+  WhatsApp; `channels` limits it (consent catch-up). One `notification_log` row
+  per channel, inserted one at a time (`QUEUED`, provider name, locale,
+  version); a unique conflict on `(appointment_id, template_key,
+  manage_version, channel)` means the channel was handled. A new row, or a
+  conflicting row still `QUEUED`, gets a `deliver` job with id
+  `deliver|<logId>` (added with `enqueueBounded`), so a retried `send` never
+  loses or duplicates a delivery. The appointment (by id) is the root; later
+  reads and writes use its organization.
+- `deliver` `{ logId }`: only a `QUEUED` row is sent; reads are scoped to the
+  row's organization. Skips (`SKIPPED` +
+  reason in `error`) when the channel's consent was revoked
+  (`consent_revoked`), the appointment changed (`stale`: version, status,
+  customer deleted) or an email row has no address (`no_email`). Renders in
+  the row's locale and the location timezone; the manage link token expires at
+  the first segment start. EMAIL for confirmed/changed attaches
+  `appointment.ics` `METHOD:REQUEST`, cancelled `METHOD:CANCEL`
+  (`SEQUENCE` = `manage_version`, organizer = address part of `EMAIL_FROM`, or
+  `no-reply@<WEB_ORIGIN host>` when unset); reminders carry none. Success →
+  `SENT`, `sent_at`, `provider_message_id`, `attempts + 1`. A render failure →
+  `FAILED` `render_failed`, no retry. A provider error → `attempts + 1`, error
+  code, rethrow for the BullMQ retry; `FAILED` on the last of 5 attempts. Any
+  other error before the send (database, Redis) is rethrown and, on the last
+  attempt, marks the row `FAILED` first, so no row stays `QUEUED` after BullMQ
+  gives up. If recording `SENT` fails after the provider accepted, the worker
+  logs `sent_update_failed` and rethrows (not a provider error); the retry can
+  send twice (at-least-once).
+- Providers (`ChannelProvider { channel; name; send(rendered, target) }`, token
+  `CHANNEL_PROVIDERS`): EMAIL = `EmailProvider` over `Mailer`
+  (`EMAIL_PROVIDER` `resend` or `console`); PUSH by `PUSH_PROVIDER`: `fake`
+  (tests, records calls), `console` (dev, logs the title only), `webpush`
+  (`WebPushProvider`: every subscription of the customer, TTL 24 h, urgency
+  `high` for the 2 h reminder; 404/410 deletes that subscription; success when
+  one send succeeds, else `push_<last status>` (`push_0` = no HTTP response) or
+  `push_none`; logs subscription ids, never endpoints).
+- Consent catch-up (`notifications/consent-catch-up.ts`): after commit, an
+  `EMAIL`/`PUSH` consent that turned granted (`PATCH /me`,
+  `POST /me/push-subscriptions`) adds `send` jobs for `appointment.confirmed`
+  limited to that channel, job id suffix `grant|<channel>|<consent row id>`;
+  bounded and swallowed like `notifyAfterCommit`.
+- Error codes in `notification_log.error` (`errorCode`, max 200 chars, built
+  only from recognized shapes, never free error text, an email, a phone or a
+  provider body): `resend_<status>`, `resend_timeout`, `push_<status>`,
+  `push_none`, `render_failed`, `unknown`; skip reasons `stale`,
+  `consent_revoked`, `no_email`. Logs carry log ids and codes only.
+- Reminders: the worker's `scan-reminders` maintenance job adds `send` jobs.
 
 ## PWA
 

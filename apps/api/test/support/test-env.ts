@@ -6,8 +6,9 @@ const JWT_PRIVATE_KEY_B64 = generateKeyPairSync("ed25519")
   .privateKey.export({ format: "der", type: "pkcs8" })
   .toString("base64");
 const DATA_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+const MANAGE_LINK_SECRET = randomBytes(32).toString("base64");
 
-/** A valid test `Env` (fake OTP, console email, org `test-salon` as in `seedFixture`). */
+/** A valid test `Env` (fake OTP, console email, fake push, background timers off, org `test-salon` as in `seedFixture`). */
 export function testEnv(overrides: Record<string, string> = {}): Env {
   return loadEnv({
     NODE_ENV: "test",
@@ -20,6 +21,10 @@ export function testEnv(overrides: Record<string, string> = {}): Env {
     OTP_PROVIDER: "fake",
     EMAIL_PROVIDER: "console",
     HOLD_SWEEP_INTERVAL_MS: "0",
+    MANAGE_LINK_SECRET,
+    PUSH_PROVIDER: "fake",
+    REMINDER_SCAN_INTERVAL_MS: "0",
+    DELIVERY_RECOVERY_INTERVAL_MS: "0",
     ...overrides,
   });
 }

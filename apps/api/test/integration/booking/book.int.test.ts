@@ -13,6 +13,7 @@ import {
   customerSession,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   staffSession,
   type BookingFixture,
 } from "../helpers.js";
@@ -232,6 +233,7 @@ describe("POST /appointments and GET /me/appointments", () => {
           customerId: opts.customerId === undefined ? f.customerId : opts.customerId,
           status: opts.status,
           source: "ONLINE",
+          timesSetAt: SEEDED_TIMES_SET_AT,
           segments: {
             create: {
               organizationId: f.orgId,

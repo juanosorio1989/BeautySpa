@@ -13,6 +13,7 @@ import {
   customerSession,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   type BookingFixture,
 } from "../helpers.js";
 
@@ -58,6 +59,7 @@ describe("/me profile, export and deletion", () => {
         customerId,
         status: "COMPLETED",
         source: "ONLINE",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         notes,
         segments: {
           create: {
@@ -108,7 +110,7 @@ describe("/me profile, export and deletion", () => {
         name: "Ana",
         email: null,
         locale: "es",
-        consents: { WHATSAPP: false, SMS: false, EMAIL: false },
+        consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
       } satisfies Me);
     });
 
@@ -120,7 +122,7 @@ describe("/me profile, export and deletion", () => {
       const res = await patchMe({ name: "Ana María", consents: { WHATSAPP: true } });
       expect(res.status).toBe(200);
       expect((res.body as Me).name).toBe("Ana María");
-      expect((res.body as Me).consents).toEqual({ WHATSAPP: true, SMS: false, EMAIL: false });
+      expect((res.body as Me).consents).toEqual({ WHATSAPP: true, SMS: false, EMAIL: false, PUSH: false });
 
       const rows = await consentRows();
       expect(rows.map((r) => ({ channel: r.channel, granted: r.granted, source: r.source }))).toEqual([
@@ -438,6 +440,22 @@ describe("/me profile, export and deletion", () => {
       expect(await auditRows("appointment.cancel")).toHaveLength(0);
       expect(events.cancelled).not.toHaveBeenCalled();
       expect(logged).toHaveBeenCalled();
+    });
+
+    it("enqueues the cancelled events in parallel, not one after another", async () => {
+      const a = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "14:00", endsAt: "15:00" });
+      const b = await bookSegment(ctx.prisma, f, { staffUserId: f.staffB, startsAt: "16:00", endsAt: "17:00" });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      events.cancelled.mockImplementation(() => gate);
+
+      const pending = deleteMe().then((r) => r);
+      // A sequential loop would wait on the first event and never start the second.
+      await vi.waitFor(() => expect(events.cancelled).toHaveBeenCalledTimes(2), { timeout: 5000 });
+      release();
+
+      expect((await pending).status).toBe(204);
+      expect(events.cancelled.mock.calls.map((c) => c[0]).sort()).toEqual([a.id, b.id].sort());
     });
 
     it("still answers 204 when the cancelled event fails after commit", async () => {

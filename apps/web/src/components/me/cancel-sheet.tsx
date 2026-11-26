@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiError } from "@beautyspa/api-client";
+import { ApiError, type MeApi } from "@beautyspa/api-client";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import type { Appointment, PublicLocation } from "@beautyspa/contracts";
@@ -8,15 +8,19 @@ import { getBrowserApi } from "@/lib/api/browser";
 import { useFallbackErrorText } from "@/lib/use-error-text";
 import { CallSalon } from "./call-salon";
 
+type CancelBody = NonNullable<Parameters<MeApi["cancel"]>[1]>;
+
 interface Props {
   appointment: Appointment;
-  location: PublicLocation;
+  location: Pick<PublicLocation, "phone">;
+  /** Performs the cancel; defaults to the signed-in `/me` call (the manage page passes its token call). */
+  onConfirm?: (body: CancelBody) => Promise<Appointment>;
   onClose: () => void;
   onCancelled: (updated: Appointment) => void;
 }
 
 /** Confirmation sheet with an optional reason. The API decides the window (409 OUTSIDE_CANCEL_WINDOW). */
-export function CancelSheet({ appointment, location, onClose, onCancelled }: Props) {
+export function CancelSheet({ appointment, location, onConfirm, onClose, onCancelled }: Props) {
   const t = useTranslations("me.cancelSheet");
   const errorText = useFallbackErrorText();
   const [reason, setReason] = useState("");
@@ -54,7 +58,8 @@ export function CancelSheet({ appointment, location, onClose, onCancelled }: Pro
     setError(null);
     const trimmed = reason.trim();
     try {
-      const updated = await getBrowserApi().me.cancel(appointment.id, trimmed ? { reason: trimmed } : {});
+      const body = trimmed ? { reason: trimmed } : {};
+      const updated = await (onConfirm ? onConfirm(body) : getBrowserApi().me.cancel(appointment.id, body));
       onCancelled(updated);
     } catch (err) {
       if (err instanceof ApiError && err.problem.code === "OUTSIDE_CANCEL_WINDOW") setTooLate(true);

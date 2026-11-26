@@ -179,6 +179,30 @@ export const es: Messages = {
         "Uno de estos servicios ya no se puede reservar en línea. Llama al salón para cambiar esta cita.",
     },
   },
+  manage: {
+    loading: "Cargando tu cita…",
+    invalid: "Este enlace ya no es válido",
+    toMyAppointments: "Ir a mis citas",
+    confirm: "Confirmo que asistiré",
+    confirming: "Confirmando…",
+    confirmed: "Confirmada",
+    cancel: "Cancelar cita",
+    cancelled: "Cancelada",
+    addToCalendar: "Agregar al calendario",
+    reschedule: "Cambiar horario",
+    bookAgain: "Reservar de nuevo",
+    total: "Total: {total}",
+  },
+  push: {
+    enable: "Avisarme en este dispositivo",
+    disable: "Desactivar avisos en este dispositivo",
+    working: "Un momento…",
+    needsInstall:
+      "Para recibir avisos en iPhone, agrega BeautySpa a tu pantalla de inicio (Compartir, luego Agregar a inicio) y ábrelo desde ahí.",
+    denied:
+      "Los avisos están bloqueados para este sitio. Permítelos en la configuración de tu navegador y recarga esta página.",
+    failed: "No pudimos cambiar los avisos. Inténtalo de nuevo.",
+  },
   profile: {
     title: "Perfil y privacidad",
     back: "Atrás",

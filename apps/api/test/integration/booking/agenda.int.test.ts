@@ -10,6 +10,7 @@ import {
   bookSegment,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   staffSession,
   type BookingFixture,
 } from "../helpers.js";
@@ -60,6 +61,7 @@ describe("GET /staff/agenda", () => {
         customerId: f.customerId,
         status: "BOOKED",
         source: "ONLINE",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         segments: {
           create: {
             organizationId: f.orgId,
@@ -113,6 +115,7 @@ describe("GET /staff/agenda", () => {
         customerId: f.customerId,
         status: "BOOKED",
         source: "RECEPTION",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         segments: {
           create: {
             organizationId: f.orgId,

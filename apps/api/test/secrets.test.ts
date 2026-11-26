@@ -1,6 +1,6 @@
-import { createPrivateKey } from "node:crypto";
+import { createECDH, createPrivateKey } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { addMissingSecrets, defaultGenerators } from "../scripts/secrets.js";
+import { addMissingSecrets, defaultGenerators, SECRET_GROUPS } from "../scripts/secrets.js";
 
 const gens = {
   JWT_PRIVATE_KEY_B64: () => "jwtvalue",
@@ -34,7 +34,62 @@ describe("addMissingSecrets", () => {
   });
 });
 
+describe("addMissingSecrets groups", () => {
+  const pairGens = { P: () => "pub", Q: () => "priv", S: () => "solo" };
+  const groups = [["P", "Q"]];
+
+  it("fills a group only when every key in it is missing", () => {
+    const { text, added, skipped } = addMissingSecrets("P=\n", pairGens, groups);
+    expect(added).toEqual(["P", "Q", "S"]);
+    expect(skipped).toEqual([]);
+    expect(text).toBe("P=pub\nQ=priv\nS=solo\n");
+  });
+
+  it("leaves a partial group alone and reports the missing key as skipped", () => {
+    const { text, added, skipped } = addMissingSecrets("P=keep\nQ=\n", pairGens, groups);
+    expect(added).toEqual(["S"]);
+    expect(skipped).toEqual(["Q"]);
+    expect(text).toBe("P=keep\nQ=\nS=solo\n");
+  });
+});
+
 describe("defaultGenerators", () => {
+  it("generates MANAGE_LINK_SECRET and a VAPID pair", () => {
+    const gen = defaultGenerators();
+    expect(Buffer.from(gen.MANAGE_LINK_SECRET!(), "base64")).toHaveLength(32);
+
+    const pub = gen.VAPID_PUBLIC_KEY!();
+    const priv = gen.VAPID_PRIVATE_KEY!();
+    expect(pub).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(priv).toMatch(/^[A-Za-z0-9_-]+$/);
+    const pubRaw = Buffer.from(pub, "base64url");
+    const privRaw = Buffer.from(priv, "base64url");
+    expect(pubRaw).toHaveLength(65);
+    expect(pubRaw[0]).toBe(0x04);
+    expect(privRaw).toHaveLength(32);
+    // Same key pair: the public point derived from the private scalar matches.
+    const ecdh = createECDH("prime256v1");
+    ecdh.setPrivateKey(privRaw);
+    expect(ecdh.getPublicKey().equals(pubRaw)).toBe(true);
+  });
+
+  it("the VAPID pair matches when the private key is generated first", () => {
+    const gen = defaultGenerators();
+    const priv = gen.VAPID_PRIVATE_KEY!();
+    const pub = gen.VAPID_PUBLIC_KEY!();
+    const ecdh = createECDH("prime256v1");
+    ecdh.setPrivateKey(Buffer.from(priv, "base64url"));
+    expect(ecdh.getPublicKey("base64url")).toBe(pub);
+  });
+
+  it("each defaultGenerators() call yields a fresh VAPID pair", () => {
+    expect(defaultGenerators().VAPID_PUBLIC_KEY!()).not.toBe(defaultGenerators().VAPID_PUBLIC_KEY!());
+  });
+
+  it("SECRET_GROUPS keeps the VAPID keys together", () => {
+    expect(SECRET_GROUPS).toContainEqual(["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"]);
+  });
+
   it("DATA_ENCRYPTION_KEY decodes to 32 bytes", () => {
     expect(Buffer.from(defaultGenerators().DATA_ENCRYPTION_KEY!(), "base64")).toHaveLength(32);
   });

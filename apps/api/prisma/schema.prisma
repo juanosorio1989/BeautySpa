@@ -57,6 +57,7 @@ enum NotificationChannel {
   WHATSAPP
   SMS
   EMAIL
+  PUSH
 
   @@map("notification_channel")
 }
@@ -133,6 +134,7 @@ model Organization {
   workingHours      WorkingHours[]
   timeOff           TimeOff[]
   consents          NotificationConsent[]
+  pushSubscriptions PushSubscription[]
 
   @@map("organization")
 }
@@ -412,9 +414,10 @@ model Customer {
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization     Organization          @relation(fields: [organizationId], references: [id])
-  consents         NotificationConsent[]
-  appointments     Appointment[]
-  notificationLogs NotificationLog[]
+  consents          NotificationConsent[]
+  appointments      Appointment[]
+  notificationLogs  NotificationLog[]
+  pushSubscriptions PushSubscription[]
 
   @@unique([organizationId, phoneE164])
   @@map("customer")
@@ -559,6 +562,9 @@ model Appointment {
   holdExpiresAt         DateTime?         @map("hold_expires_at") @db.Timestamptz(3)
   confirmedByCustomerAt DateTime?         @map("confirmed_by_customer_at") @db.Timestamptz(3)
   manageVersion         Int               @default(0) @map("manage_version")
+  /// When the current times were fixed (book, staff create, walk-in, reschedule, move);
+  /// a reminder is sent only if it was set at least the reminder offset before the start.
+  timesSetAt            DateTime          @map("times_set_at") @db.Timestamptz(3)
   notes                 String?
   createdByStaffId      String?           @map("created_by_staff_id") @db.Uuid
   cancelledAt           DateTime?         @map("cancelled_at") @db.Timestamptz(3)
@@ -629,6 +635,8 @@ model NotificationLog {
   appointmentId     String?             @map("appointment_id") @db.Uuid
   customerId        String?             @map("customer_id") @db.Uuid
   templateKey       String              @map("template_key")
+  /// The appointment's manage_version the notification was sent for (dedupe key).
+  manageVersion     Int                 @default(0) @map("manage_version")
   locale            String
   channel           NotificationChannel
   provider          String
@@ -644,11 +652,32 @@ model NotificationLog {
   appointment  Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
+  @@unique([appointmentId, templateKey, manageVersion, channel], map: "notification_log_dedupe")
   @@index([providerMessageId])
   @@index([appointmentId])
   @@index([customerId])
   @@index([organizationId])
   @@map("notification_log")
+}
+
+/// A browser's Web Push subscription. Deleted explicitly (no cascade) when the customer
+/// unsubscribes, the push service answers 404/410, or the customer is deleted.
+model PushSubscription {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  customerId     String    @map("customer_id") @db.Uuid
+  endpoint       String    @unique
+  p256dh         String
+  auth           String
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSuccessAt  DateTime? @map("last_success_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
+  @@index([organizationId])
+  @@map("push_subscription")
 }
 
 /// Append-only; `at` is the event time.

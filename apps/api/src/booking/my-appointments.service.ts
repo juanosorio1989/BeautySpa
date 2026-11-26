@@ -10,26 +10,20 @@ import type {
 } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
-import { conflict, invalidRef, notFound, outsideCancelWindow } from "../common/http-errors.js";
-import { readLocationSettings } from "../common/location-settings.js";
+import { invalidRef, notFound } from "../common/http-errors.js";
 import { assertLiveCustomer } from "../common/live-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { APPOINTMENT_INCLUDE, startOf, toAppointmentDto, type AppointmentRow } from "./appointment-mapping.js";
 import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings } from "./appointment-writer.js";
 import { BookingEvents, notifyAfterCommit } from "./booking-events.js";
+import { cancelByCustomer, lockChangeableAppointment, type ChangeableAppointment } from "./customer-cancel.js";
 import { toEngineSegments } from "./plan-mapping.js";
 
 const PAST_LIMIT = 50;
 const UPCOMING_STATUSES = new Set(["BOOKED", "CHECKED_IN"]);
-const HOUR = 3_600_000;
 
 const endOf = (row: AppointmentRow) => Math.max(...row.segments.map((s) => s.endsAt.getTime()));
 const sortedServiceIds = (segments: { serviceId: string }[]) => segments.map((s) => s.serviceId).sort();
-
-interface Changeable {
-  row: AppointmentRow;
-  location: { id: string; organizationId: string; timezone: string };
-}
 
 /** The signed-in customer's own appointments: list, cancel, reschedule and repeat. */
 @Injectable()
@@ -77,26 +71,14 @@ export class MyAppointmentsService {
       await lockOrgBookings(tx, orgId);
       // Read after the lock so `now` never predates the wait.
       const now = this.clock.now();
-      const { row } = await this.lockChangeable(tx, principal, id, now);
-
-      await tx.appointmentSegment.updateMany({
-        where: { appointmentId: id, organizationId: orgId },
-        data: { occupies: false },
-      });
-      const updated = await tx.appointment.update({
-        where: { id, organizationId: orgId },
-        data: {
-          status: "CANCELLED",
-          cancelledAt: new Date(now),
-          cancelledBy: "CUSTOMER",
-          cancelReason: input.reason,
-          manageVersion: { increment: 1 },
-        },
-        include: APPOINTMENT_INCLUDE,
-      });
-      const after = toAppointmentDto(updated);
-      await this.recordAudit(tx, principal, "appointment.cancel", id, toAppointmentDto(row), after, ip);
-      return after;
+      // Under the org booking lock, so a deletion that committed first is seen here.
+      await assertLiveCustomer(tx, principal);
+      const updated = await cancelByCustomer(
+        tx,
+        { audit: this.audit, now: new Date(now) },
+        { orgId, customerId: principal.sub, appointmentId: id, reason: input.reason, ip },
+      );
+      return toAppointmentDto(updated);
     }, BOOKING_TX_OPTIONS);
 
     await notifyAfterCommit(this.events, this.logger, () => this.events.cancelled(id));
@@ -133,7 +115,8 @@ export class MyAppointmentsService {
 
       const updated = await tx.appointment.update({
         where: { id, organizationId: orgId },
-        data: { manageVersion: { increment: 1 } },
+        // A new plan: its times are set now and the customer confirms it again.
+        data: { manageVersion: { increment: 1 }, timesSetAt: new Date(now), confirmedByCustomerAt: null },
         include: APPOINTMENT_INCLUDE,
       });
       const after = toAppointmentDto(updated);
@@ -191,40 +174,27 @@ export class MyAppointmentsService {
     };
   }
 
-  /**
-   * Locks the caller's appointment `FOR UPDATE` (filtered by org and customer; otherwise 404),
-   * then requires `BOOKED` (else 409 `CONFLICT`) and `now <= startsAt - cancelWindowHours` of its
-   * location (else 409 `OUTSIDE_CANCEL_WINDOW`; design call 8).
-   */
+  /** `lockChangeableAppointment` for the caller, after checking the caller is a live customer. */
   private async lockChangeable(
     tx: Prisma.TransactionClient,
     principal: AccessClaims,
     id: string,
     now: number,
-  ): Promise<Changeable> {
+  ): Promise<ChangeableAppointment> {
     // Under the org booking lock, so a deletion that committed first is seen here.
     await assertLiveCustomer(tx, principal);
-    const [locked] = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM appointment
-      WHERE id = ${id}::uuid AND organization_id = ${principal.org}::uuid AND customer_id = ${principal.sub}::uuid
-      FOR UPDATE`;
-    if (!locked) throw notFound("Appointment");
-    const row = await tx.appointment.findUniqueOrThrow({ where: { id }, include: APPOINTMENT_INCLUDE });
-    if (row.status !== "BOOKED") throw conflict("Appointment cannot be changed");
-
-    const location = await tx.location.findFirstOrThrow({
-      where: { id: row.locationId, organizationId: principal.org },
-      select: { id: true, organizationId: true, timezone: true, settings: true },
+    return lockChangeableAppointment(tx, {
+      orgId: principal.org,
+      customerId: principal.sub,
+      appointmentId: id,
+      nowMs: now,
     });
-    const { cancelWindowHours } = readLocationSettings(location.settings);
-    if (now > startOf(row) - cancelWindowHours * HOUR) throw outsideCancelWindow();
-    return { row, location: { id: location.id, organizationId: location.organizationId, timezone: location.timezone } };
   }
 
   private recordAudit(
     tx: Prisma.TransactionClient,
     principal: AccessClaims,
-    action: "appointment.cancel" | "appointment.reschedule",
+    action: "appointment.reschedule",
     id: string,
     before: Appointment,
     after: Appointment,

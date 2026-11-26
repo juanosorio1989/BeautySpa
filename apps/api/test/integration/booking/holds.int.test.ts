@@ -13,6 +13,7 @@ import {
   customerSession,
   fixedClock,
   seedBookingFixture,
+  SEEDED_TIMES_SET_AT,
   type BookingFixture,
 } from "../helpers.js";
 
@@ -144,6 +145,7 @@ describe("POST /holds", () => {
         locationId: location.id,
         status: "HELD",
         source: "ONLINE",
+        timesSetAt: SEEDED_TIMES_SET_AT,
         holdExpiresAt: new Date(BOOKING_NOW - MINUTE),
         segments: {
           create: {
@@ -206,7 +208,13 @@ describe("POST /holds", () => {
     const writer = ctx.app.get(AppointmentWriter);
     const attempt = ctx.prisma.$transaction(async (tx) => {
       const appt = await tx.appointment.create({
-        data: { organizationId: f.orgId, locationId: f.locationId, status: "HELD", source: "ONLINE" },
+        data: {
+          organizationId: f.orgId,
+          locationId: f.locationId,
+          status: "HELD",
+          source: "ONLINE",
+          timesSetAt: SEEDED_TIMES_SET_AT,
+        },
         select: { id: true, organizationId: true },
       });
       await writer.insertSegments(tx, appt, toEngineSegments(slot.segments));
@@ -393,6 +401,7 @@ describe("POST /holds", () => {
           locationId: location.id,
           status: "HELD",
           source: "ONLINE",
+          timesSetAt: SEEDED_TIMES_SET_AT,
           holdExpiresAt: new Date(BOOKING_NOW + MINUTE),
         },
         select: { id: true },

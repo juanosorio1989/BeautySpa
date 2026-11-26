@@ -105,6 +105,9 @@ export interface SegmentInput {
   occupies?: boolean;
 }
 
+/** `times_set_at` of appointments written straight to the DB: before every test clock. */
+export const SEEDED_TIMES_SET_AT = new Date("2026-11-20T00:00:00.000Z");
+
 const at = (hhmm: string) => new Date(`2026-12-01T${hhmm}:00.000Z`);
 
 /** Creates a BOOKED appointment with one segment. */
@@ -118,6 +121,7 @@ export function bookSegment(prisma: PrismaClient, f: Fixture, s: SegmentInput) {
       customerId: f.customerId,
       status: "BOOKED",
       source: "ONLINE",
+      timesSetAt: SEEDED_TIMES_SET_AT,
       segments: {
         create: {
           organizationId: f.orgId,

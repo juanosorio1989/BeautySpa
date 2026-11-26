@@ -70,7 +70,7 @@ export const me = (over: Partial<Me> = {}): Me => ({
   name: null,
   email: null,
   locale: "en",
-  consents: { WHATSAPP: false, SMS: false, EMAIL: false },
+  consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
   ...over,
 });
 

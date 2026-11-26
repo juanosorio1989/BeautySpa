@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
+import { dropPushSubscription } from "@/lib/push";
 import { useSession } from "@/lib/session/use-session";
 import { useFallbackErrorText } from "@/lib/use-error-text";
 
@@ -31,6 +32,7 @@ export function DeleteAccount() {
     setBusy(true);
     setError(null);
     try {
+      await dropPushSubscription().catch(() => undefined); // while the access token is still valid
       await getBrowserApi().me.remove();
     } catch (err) {
       setError(errorText(err));

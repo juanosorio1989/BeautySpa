@@ -164,6 +164,16 @@ describe("RBAC matrix (plan 03 and 04 routes)", () => {
     });
   });
 
+  // Plan 05: the manage link. A bad token is 404, never 401/403 (the token is the capability).
+  it.each([
+    ["get", "/manage/not-a-token"],
+    ["post", "/manage/not-a-token/confirm"],
+    ["post", "/manage/not-a-token/cancel"],
+    ["get", "/manage/not-a-token/calendar.ics"],
+  ] as [Method, string][])("%s %s (public) needs no token", async (method, path) => {
+    expect((await call(method, path)).status).toBe(404);
+  });
+
   it.each(PUBLIC)("%s %s needs no token", async (method, path) => {
     expect((await call(method, path)).status).toBe(200);
   });

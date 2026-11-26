@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
+import { dropPushSubscription } from "@/lib/push";
 import { useSession } from "@/lib/session/use-session";
 
 /**
@@ -33,6 +34,7 @@ export function LogoutButton() {
           setBusy(true);
           setFailed(false);
           try {
+            await dropPushSubscription().catch(() => undefined); // while the access token is still valid
             await session.logout();
           } catch {
             setFailed(true);

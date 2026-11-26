@@ -5,10 +5,15 @@ import {
   CustomerExportSchema,
   HoldInputSchema,
   HoldSchema,
+  ManageCancelInputSchema,
+  ManageViewSchema,
   MePatchSchema,
   MeSchema,
   MyAppointmentsSchema,
   PublicEmployeeSchema,
+  PushPublicKeySchema,
+  PushSubscriptionInputSchema,
+  PushUnsubscribeInputSchema,
   PublicLocationSchema,
   PublicServicesResponseSchema,
   RepeatSchema,
@@ -17,11 +22,13 @@ import {
   type Appointment,
   type CustomerExport,
   type Hold,
+  type ManageView,
   type Me,
   type MyAppointments,
   type PublicEmployee,
   type PublicLocation,
   type PublicServicesResponse,
+  type PushPublicKey,
   type Repeat,
   type ServiceChoice,
   type Slot,
@@ -60,6 +67,21 @@ export interface MeApi {
   remove(): Promise<void>;
 }
 
+/** Token-link actions; never authenticated, so they work whoever is (or is not) logged in. */
+export interface ManageApi {
+  get(token: string): Promise<ManageView>;
+  confirm(token: string): Promise<ManageView>;
+  cancel(token: string, b?: In<typeof ManageCancelInputSchema>): Promise<ManageView>;
+  /** Absolute URL of the `.ics` download. */
+  calendarUrl(token: string): string;
+}
+
+export interface PushApi {
+  publicKey(): Promise<PushPublicKey>;
+  subscribe(b: In<typeof PushSubscriptionInputSchema>): Promise<void>;
+  unsubscribe(b: In<typeof PushUnsubscribeInputSchema>): Promise<void>;
+}
+
 // URLSearchParams is not in this package's lib (no DOM/Node types); encode by hand.
 type Query = [string, string][];
 
@@ -70,10 +92,15 @@ const withQuery = (path: string, params: Query): string =>
 
 const locationQuery = (q?: { locationId?: string }): Query => (q?.locationId ? [["locationId", q.locationId]] : []);
 
-export function createResources(request: <T>(o: RequestOptions<T>) => Promise<T>): {
+export function createResources(
+  request: <T>(o: RequestOptions<T>) => Promise<T>,
+  baseUrl: string,
+): {
   public: PublicApi;
   booking: BookingApi;
   me: MeApi;
+  manage: ManageApi;
+  push: PushApi;
 } {
   const pub: PublicApi = {
     locations: () =>
@@ -141,5 +168,27 @@ export function createResources(request: <T>(o: RequestOptions<T>) => Promise<T>
     remove: () => request({ method: "DELETE", path: "/me", schema: null }),
   };
 
-  return { public: pub, booking, me };
+  const managePath = (token: string, rest = ""): string => `/manage/${encodeURIComponent(token)}${rest}`;
+  const manage: ManageApi = {
+    get: (token) => request({ method: "GET", path: managePath(token), schema: ManageViewSchema, auth: false }),
+    confirm: (token) =>
+      request({ method: "POST", path: managePath(token, "/confirm"), schema: ManageViewSchema, auth: false }),
+    cancel: (token, b) =>
+      request({
+        method: "POST",
+        path: managePath(token, "/cancel"),
+        body: b ?? {},
+        schema: ManageViewSchema,
+        auth: false,
+      }),
+    calendarUrl: (token) => `${baseUrl}/v1${managePath(token, "/calendar.ics")}`,
+  };
+
+  const push: PushApi = {
+    publicKey: () => request({ method: "GET", path: "/push/public-key", schema: PushPublicKeySchema, auth: false }),
+    subscribe: (b) => request({ method: "POST", path: "/me/push-subscriptions", body: b, schema: null }),
+    unsubscribe: (b) => request({ method: "DELETE", path: "/me/push-subscriptions", body: b, schema: null }),
+  };
+
+  return { public: pub, booking, me, manage, push };
 }

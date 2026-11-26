@@ -1,7 +1,6 @@
 import { Logger } from "@nestjs/common";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditService } from "../audit/audit.service.js";
-import type { Env } from "../config/env.js";
 import type { PrismaService } from "../prisma/prisma.service.js";
 import { HoldSweeper } from "./hold-sweeper.js";
 
@@ -16,7 +15,7 @@ describe("HoldSweeper.sweep", () => {
       $transaction: transaction,
     } as unknown as PrismaService;
     const logged = vi.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
-    const sweeper = new HoldSweeper(prisma, {} as AuditService, { now: () => 0 }, {} as Env);
+    const sweeper = new HoldSweeper(prisma, {} as AuditService, { now: () => 0 });
 
     expect(await sweeper.sweep()).toBe(3);
     expect(transaction).toHaveBeenCalledTimes(2);

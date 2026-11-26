@@ -62,14 +62,18 @@ describe("/book/done/:appointmentId", () => {
   });
 
   it("hides the email offer when EMAIL consent exists", async () => {
-    api.me.get.mockResolvedValue(me({ name: "Maria", consents: { WHATSAPP: false, SMS: false, EMAIL: true } }));
+    api.me.get.mockResolvedValue(
+      me({ name: "Maria", consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false } }),
+    );
     mount();
     await screen.findByRole("heading", { name: "You're all set, Maria!" });
     expect(screen.queryByText("Want your confirmation and reminders by email?")).not.toBeInTheDocument();
   });
 
   it("the offer hides after saving", async () => {
-    api.me.patch.mockResolvedValue(me({ name: "Maria", consents: { WHATSAPP: false, SMS: false, EMAIL: true } }));
+    api.me.patch.mockResolvedValue(
+      me({ name: "Maria", consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false } }),
+    );
     mount();
     fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "m@x.co" } });
     fireEvent.click(screen.getByRole("button", { name: "Yes, email me" }));

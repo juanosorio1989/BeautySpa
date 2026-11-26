@@ -29,6 +29,7 @@ Web receives the refresh token only as cookie `bs_refresh` (HttpOnly; SameSite=L
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/public/locations` | all org locations sorted by name: name, address, phone, timezone, hours (an end at midnight is `"24:00"`), `booking` (`bookingHorizonDays`, `cancelWindowHours`, `holdMinutes` from the merged location settings) |
+| GET | `/push/public-key` | `{ publicKey }`: the VAPID public key (base64url) for `pushManager.subscribe`; 404 `NOT_FOUND` when `VAPID_PUBLIC_KEY` is unset. |
 | GET | `/public/services?locationId=` | `{ categories, services }`, both languages. Listed: `active && onlineBookable`, done by ≥ 1 listed employee, and (with a `resourceTypeId`) the location has ≥ 1 active resource of that type. `fromPriceCents` = cheapest listed qualified employee's price (level override, else `priceCents`). Categories: only those with a listed service |
 | GET | `/public/employees?locationId=` | sorted by `displayName`. Listed: active, profile `bookableOnline`, assigned to the location; `serviceIds` only listed services |
 | GET | `/availability` | `locationId?`, repeated `services=<serviceId>:<employeeId\|ANY>` (1-4), one `date=YYYY-MM-DD` per call (the date strip calls per day), `excludeAppointmentId?` → `Slot[]`. Optional auth: the mode comes from the token (none or customer: online rules; staff: no lead time, no horizon, non-online employees and services included). `excludeAppointmentId` needs a token: a customer must own the appointment, staff any in the organization, else 404; no token is 401. Segments of `HELD` appointments whose hold has expired are ignored. Rate-limited per IP (120 per minute). |
@@ -41,26 +42,43 @@ Shapes `Appointment`, `MyAppointments`, `Me`, `CustomerExport`: see `packages/co
 
 | Method | Path | Notes |
 |---|---|---|
-| GET/PATCH | `/me` | name, email, locale, consents per channel; PATCH writes only changed values and audits only changed keys. Optional `consentSource` (`PROFILE` default, or `BOOKING_FORM` from the booking flow) sets the source of the consent rows; sent without `consents` → 400 `VALIDATION_FAILED` on `consentSource` |
+| GET/PATCH | `/me` | name, email, locale, consents per channel (`WHATSAPP`, `SMS`, `EMAIL`, `PUSH`); PATCH writes only changed values and audits only changed keys. Optional `consentSource` (`PROFILE` default, or `BOOKING_FORM` from the booking flow) sets the source of the consent rows; sent without `consents` → 400 `VALIDATION_FAILED` on `consentSource`. `PUSH: false` keeps the device subscriptions but stops push sends. An `EMAIL` or `PUSH` consent that turns granted runs the consent catch-up after commit (a missed confirmation for future `BOOKED` appointments, see notifications spec); its failure never fails the request. |
+| POST | `/me/push-subscriptions` | `{ endpoint (https on a known push service, max 2048), keys: { p256dh, auth }, consentSource? }` → 204. One transaction: upserts by `endpoint` (an endpoint another customer held moves to the caller) and records `PUSH` granted (source `consentSource`, default `PROFILE`) when not already granted; audit `customer.update` `fields: ["consents.PUSH"]` only when the consent changed, then the consent catch-up after commit (also when the consent was already granted but the caller had no subscription before this one). Endpoint host allowlist (no SSRF from the worker): `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`; no port, user info or IP literal; anything else → 400. 20 per customer per hour (shared with DELETE). |
+| DELETE | `/me/push-subscriptions` | `{ endpoint (max 2048) }` → 204. Deletes the caller's row for that endpoint (another customer's or an unknown endpoint is a no-op). Removing the caller's last subscription records `PUSH` revoked (source `PROFILE`) and audits `customer.update` `fields: ["consents.PUSH"]`. |
 | POST | `/appointments` | `{ holdId, notes? }` → 201 `Appointment` (`BOOKED`, the caller attached, `notes` saved). Unknown hold (or another organization's) 404; expired hold (still held past `expiresAt`, or already released) 409 `HOLD_EXPIRED`; a hold already booked or otherwise used 409 `CONFLICT`; a deleted customer's still-valid token 401 `UNAUTHORIZED`; a customer without a name 400 `VALIDATION_FAILED` path `name` (the hold stays in both cases). The segments are not re-validated: the hold already occupies them. Notifications are triggered after commit and never fail the request. 10 per customer per hour. |
 | GET | `/me/appointments` | `{ upcoming, past }` of the caller's appointments, holds excluded. `upcoming`: `BOOKED` or `CHECKED_IN` ending after now, soonest first. `past`: everything else (including future cancelled ones), latest start first, at most 50. |
 | POST | `/me/appointments/:id/cancel` | `{ reason? }` → `Appointment` (200). Own `BOOKED` appointment within the cancel window: `CANCELLED`, segments stop occupying, `manage_version` + 1. Not the caller's → 404; not `BOOKED` → 409 `CONFLICT`; too late → 409 `OUTSIDE_CANCEL_WINDOW` (see flows.md). |
 | POST | `/me/appointments/:id/reschedule` | `{ segments }` (a slot from `/availability?excludeAppointmentId=`) → `Appointment` (200). Atomic swap, no hold; same ownership, status and window rules as cancel; must keep the same services (employees and times may change), else 400 `VALIDATION_FAILED` on `segments`; taken time → 409 `SLOT_TAKEN` with the old time kept (see flows.md). |
 | POST | `/me/appointments/:id/repeat` | → `{ locationId, services: [{ serviceId, employeeId \| "ANY" }] }` (200) to prefill a booking; any status; inactive services dropped, employees no longer bookable become `"ANY"`; an appointment whose services are all inactive returns `services: []`. |
 | GET | `/me/export` | `{ customer, consentHistory, appointments }` (holds excluded) |
-| DELETE | `/me` | 204; anonymizes the customer, cancels future bookings, clears notes and customer cancel reasons (also in audit rows), revokes tokens (see security-quality.md). Every `/me` and `/me/appointments` route, and `POST /appointments`, answers 401 for a deleted customer. |
+| DELETE | `/me` | 204; anonymizes the customer, cancels future bookings, clears notes and customer cancel reasons (also in audit rows), deletes the push subscriptions, revokes tokens (see security-quality.md). Every `/me` and `/me/appointments` route, and `POST /appointments`, answers 401 for a deleted customer. |
 
 An appointment's `notes` are visible to its customer (in `/me/appointments` and `/me/export`), whoever wrote them, so staff must not put internal remarks there; staff-only remarks belong in the customer's private notes (endpoint in a later plan). `cancelReason` is customer-visible only when the customer or the system cancelled (their own text, or a system code such as `HOLD_EXPIRED` / `ACCOUNT_DELETED`); a reason written by staff (`cancelledBy` `STAFF`) is internal: every customer response (`/me/appointments`, `/me/export`, holds, booking) has `cancelReason: null` for it, while staff responses and audit rows keep it. In every request body, a `notes` or `reason` that is blank after trimming is stored as `null`.
 
-## Manage link (from WhatsApp/email, no login)
+## Manage link (from email/push, no login)
 
-`GET /manage/:token`, `POST /manage/:token/confirm`, `POST /manage/:token/cancel`.
-Token **(call)**: stateless, HMAC-SHA256 signed (`MANAGE_LINK_SECRET`) over
-`{appointmentId, manageVersion, exp}`; `exp` = appointment start. Any message
-(including 24 h / 2 h reminders) can mint a fresh link. Revocation: increment
-`appointment.manage_version` (done on cancel and reschedule). Cancel via link
-obeys the same `cancelWindowHours` as the app; inside the window the page shows
-"confirm" plus the salon phone. Reschedule from the link goes through OTP.
+The signed token is the capability (all routes `@Public()`). Token **(call)**: stateless,
+HMAC-SHA256 signed (`MANAGE_LINK_SECRET`) over `{appointmentId, manageVersion, exp}`;
+`exp` = appointment start; every message mints a fresh link (notifications spec,
+`2026-11-22-notifications-design/manage-link.md`). Revocation: `appointment.manage_version`
+increments on cancel and reschedule (customer or staff).
+
+A link is valid only when the signature matches, now < `exp`, the appointment is in the
+organization with the same `manage_version`, its customer exists and is not deleted, and it
+is not `HELD`. Every failure is the same 404 `NOT_FOUND` body (no oracle); the token is
+checked before any database read. 30 requests per IP per minute across `/manage/*`
+(invalid tokens count) → 429 `RATE_LIMITED`. Every response, errors included, carries
+`Cache-Control: no-store` and `Referrer-Policy: no-referrer`. Shapes `ManageView`,
+`ManageCancelInput`: `packages/contracts/src/manage.ts`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/manage/:token` | `ManageView`: the customer-shaped `Appointment` (staff cancel reason is `null`), `location` (`name`, `addressLine` = the address on one line, `phone` or null, `timezone`), `canCancel` (`BOOKED` and inside `cancelWindowHours`, same rule as the client cancel), `canConfirm` (`BOOKED` and `confirmedByCustomerAt` null). |
+| POST | `/manage/:token/confirm` | → `ManageView` (200). Sets `confirmedByCustomerAt` once (conditional update; already confirmed → same 200); audit `appointment.confirm` (CUSTOMER) only on that change. Not `BOOKED` → 409 `CONFLICT`. No `manage_version` change, no message. |
+| POST | `/manage/:token/cancel` | `{ reason? }` → `ManageView` (200) of the cancelled appointment. Same code path as `POST /me/appointments/:id/cancel` (`cancelByCustomer`): too late → 409 `OUTSIDE_CANCEL_WINDOW`, not `BOOKED` → 409 `CONFLICT`, actor CUSTOMER, `manage_version` + 1 (the link is then stale), `appointment.cancelled` message after commit. |
+| GET | `/manage/:token/calendar.ics` | `text/calendar; charset=utf-8`, `Content-Disposition: attachment; filename="appointment.ics"`, `METHOD:PUBLISH` (a download, not an invitation: no organizer or attendee); same UID/SEQUENCE/SUMMARY as the email `.ics`, in the customer's locale. |
+
+Reschedule from the link goes through OTP (`/me`).
 
 ## Staff (staff token, RBAC)
 

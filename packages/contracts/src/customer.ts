@@ -3,10 +3,15 @@ import { IdSchema, IsoInstantSchema, LocaleSchema, PhoneE164Schema } from "./com
 import { EmailSchema } from "./auth";
 import { AppointmentSchema } from "./booking";
 
-export const ChannelSchema = z.enum(["WHATSAPP", "SMS", "EMAIL"]);
+export const ChannelSchema = z.enum(["WHATSAPP", "SMS", "EMAIL", "PUSH"]);
 export type Channel = z.infer<typeof ChannelSchema>;
 
-export const ConsentsSchema = z.object({ WHATSAPP: z.boolean(), SMS: z.boolean(), EMAIL: z.boolean() });
+export const ConsentsSchema = z.object({
+  WHATSAPP: z.boolean(),
+  SMS: z.boolean(),
+  EMAIL: z.boolean(),
+  PUSH: z.boolean(),
+});
 export type Consents = z.infer<typeof ConsentsSchema>;
 
 export const MeSchema = z.object({

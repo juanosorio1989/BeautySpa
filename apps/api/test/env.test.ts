@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createECDH, generateKeyPairSync, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "../src/config/env.js";
 
@@ -12,6 +12,16 @@ const base: Record<string, string> = {
   DEFAULT_ORG_SLUG: "demo-salon",
   JWT_PRIVATE_KEY_B64: jwtKey,
   DATA_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
+  MANAGE_LINK_SECRET: randomBytes(32).toString("base64"),
+};
+
+const vapidPair = createECDH("prime256v1");
+vapidPair.generateKeys();
+
+const vapid: Record<string, string> = {
+  VAPID_PUBLIC_KEY: vapidPair.getPublicKey().toString("base64url"),
+  VAPID_PRIVATE_KEY: vapidPair.getPrivateKey().toString("base64url"),
+  VAPID_SUBJECT: "mailto:owner@example.com",
 };
 
 function errorOf(fn: () => unknown): string {
@@ -33,6 +43,9 @@ describe("loadEnv", () => {
     expect(env.EMAIL_PROVIDER).toBe("console");
     expect(env.TRUST_PROXY).toBe(false);
     expect(env.OTP_CHANNELS).toEqual(["sms"]);
+    expect(env.PUSH_PROVIDER).toBe("console");
+    expect(env.REMINDER_SCAN_INTERVAL_MS).toBe(60000);
+    expect(env.DELIVERY_RECOVERY_INTERVAL_MS).toBe(600000);
   });
 
   it("OTP_CHANNELS is a trimmed, ordered list", () => {
@@ -105,6 +118,8 @@ describe("loadEnv", () => {
       EMAIL_PROVIDER: "resend",
       RESEND_API_KEY: "re_1",
       EMAIL_FROM: "Salon <hi@example.com>",
+      PUSH_PROVIDER: "webpush",
+      ...vapid,
     });
     expect(env.COOKIE_SECURE).toBe(true);
   });
@@ -130,6 +145,82 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, NODE_ENV: "test", OTP_PROVIDER: "fake" }).OTP_PROVIDER).toBe("fake");
   });
 
+  it("requires MANAGE_LINK_SECRET", () => {
+    const rest = { ...base };
+    delete rest.MANAGE_LINK_SECRET;
+    expect(() => loadEnv(rest)).toThrow(/MANAGE_LINK_SECRET/);
+    expect(() => loadEnv({ ...rest, NODE_ENV: "test" })).toThrow(/MANAGE_LINK_SECRET/);
+  });
+
+  it("rejects a short MANAGE_LINK_SECRET", () => {
+    expect(() => loadEnv({ ...base, MANAGE_LINK_SECRET: randomBytes(31).toString("base64") })).toThrow(
+      /MANAGE_LINK_SECRET/,
+    );
+    expect(() => loadEnv({ ...base, MANAGE_LINK_SECRET: "not base64!" })).toThrow(/MANAGE_LINK_SECRET/);
+    expect(
+      loadEnv({ ...base, MANAGE_LINK_SECRET: randomBytes(48).toString("base64") }).MANAGE_LINK_SECRET,
+    ).toBeTruthy();
+  });
+
+  it("webpush requires VAPID keys", () => {
+    const msg = errorOf(() => loadEnv({ ...base, PUSH_PROVIDER: "webpush" }));
+    expect(msg).toMatch(/VAPID_PUBLIC_KEY/);
+    expect(msg).toMatch(/VAPID_PRIVATE_KEY/);
+    expect(msg).toMatch(/VAPID_SUBJECT/);
+    expect(loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid }).PUSH_PROVIDER).toBe("webpush");
+    expect(
+      loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, VAPID_SUBJECT: "https://salon.example" }).VAPID_SUBJECT,
+    ).toBe("https://salon.example");
+    expect(() => loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, VAPID_SUBJECT: "owner@example.com" })).toThrow(
+      /VAPID_SUBJECT/,
+    );
+  });
+
+  it("VAPID_SUBJECT needs something after the scheme", () => {
+    const withSubject = (VAPID_SUBJECT: string) => () =>
+      loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, VAPID_SUBJECT });
+    expect(withSubject("mailto:")).toThrow(/VAPID_SUBJECT/);
+    expect(withSubject("https://")).toThrow(/VAPID_SUBJECT/);
+    expect(withSubject("https:salon.example")).toThrow(/VAPID_SUBJECT/);
+    expect(withSubject("mailto:a")()).toBeTruthy();
+  });
+
+  it("webpush validates the VAPID key shapes", () => {
+    const withKeys = (keys: Record<string, string>) => () =>
+      loadEnv({ ...base, PUSH_PROVIDER: "webpush", ...vapid, ...keys });
+    const pub = Buffer.from(vapid.VAPID_PUBLIC_KEY!, "base64url");
+    const notUncompressed = Buffer.from(pub);
+    notUncompressed[0] = 0x03;
+    expect(withKeys({ VAPID_PUBLIC_KEY: "BPub" })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PUBLIC_KEY: notUncompressed.toString("base64url") })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PUBLIC_KEY: pub.subarray(0, 64).toString("base64url") })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PUBLIC_KEY: pub.toString("base64") + "!" })).toThrow(/VAPID_PUBLIC_KEY/);
+    expect(withKeys({ VAPID_PRIVATE_KEY: "priv" })).toThrow(/VAPID_PRIVATE_KEY/);
+    expect(withKeys({ VAPID_PRIVATE_KEY: randomBytes(31).toString("base64url") })).toThrow(/VAPID_PRIVATE_KEY/);
+    expect(withKeys({})()).toBeTruthy();
+    // Only checked when webpush is selected.
+    expect(loadEnv({ ...base, VAPID_PUBLIC_KEY: "BPub", VAPID_PRIVATE_KEY: "priv" }).PUSH_PROVIDER).toBe("console");
+  });
+
+  it("production requires PUSH_PROVIDER=webpush", () => {
+    expect(errorOf(() => loadEnv({ ...base, NODE_ENV: "production" }))).toMatch(/PUSH_PROVIDER/);
+  });
+
+  it("fake push only in test", () => {
+    expect(() => loadEnv({ ...base, PUSH_PROVIDER: "fake" })).toThrow(/PUSH_PROVIDER/);
+    expect(loadEnv({ ...base, NODE_ENV: "test", PUSH_PROVIDER: "fake" }).PUSH_PROVIDER).toBe("fake");
+  });
+
+  it("REMINDER_SCAN_INTERVAL_MS accepts 0 and rejects negatives", () => {
+    expect(loadEnv({ ...base, REMINDER_SCAN_INTERVAL_MS: "0" }).REMINDER_SCAN_INTERVAL_MS).toBe(0);
+    expect(() => loadEnv({ ...base, REMINDER_SCAN_INTERVAL_MS: "-1" })).toThrow(/REMINDER_SCAN_INTERVAL_MS/);
+  });
+
+  it("DELIVERY_RECOVERY_INTERVAL_MS accepts 0 and rejects negatives", () => {
+    expect(loadEnv({ ...base, DELIVERY_RECOVERY_INTERVAL_MS: "0" }).DELIVERY_RECOVERY_INTERVAL_MS).toBe(0);
+    expect(() => loadEnv({ ...base, DELIVERY_RECOVERY_INTERVAL_MS: "-1" })).toThrow(/DELIVERY_RECOVERY_INTERVAL_MS/);
+  });
+
   it("a 16-byte DATA_ENCRYPTION_KEY names it", () => {
     expect(() => loadEnv({ ...base, DATA_ENCRYPTION_KEY: randomBytes(16).toString("base64") })).toThrow(
       /DATA_ENCRYPTION_KEY/,
@@ -152,6 +243,7 @@ describe("loadEnv", () => {
   it("never includes secret values in the error message", () => {
     const msg = errorOf(() => loadEnv({ ...base, NODE_ENV: "production", DATA_ENCRYPTION_KEY: "short" }));
     expect(msg).not.toContain(base.JWT_PRIVATE_KEY_B64);
+    expect(msg).not.toContain(base.MANAGE_LINK_SECRET);
     expect(msg).not.toContain("short");
   });
 });

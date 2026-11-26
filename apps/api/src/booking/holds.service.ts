@@ -62,6 +62,8 @@ export class HoldsService {
           customerId: null,
           status: "HELD",
           source: "ONLINE",
+          // Required column; POST /appointments sets it again when the hold is confirmed.
+          timesSetAt: new Date(now),
           holdExpiresAt: expiresAt,
         },
         select: { id: true, organizationId: true },

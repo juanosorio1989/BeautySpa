@@ -5,6 +5,8 @@ build of the web app:
 
 - `booking.spec.ts`: in `/es`, book Classic manicure + Spa pedicure, sign in with the fake OTP, see Done,
   open My appointments, cancel from the native dialog, see it under past as cancelled.
+- `manage.spec.ts`: in `/en`, book Classic manicure, open `/en/manage/<token>` (token minted from `MANAGE_LINK_SECRET`
+  by `manage-token.ts`), confirm attendance, cancel, and see the same link invalid after the cancel. Needs no worker.
 - `public.spec.ts`: `/en/services` lists the seeded services; Book opens `/en?service=<id>` preselected.
 
 ## Environment

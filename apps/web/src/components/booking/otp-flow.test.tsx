@@ -111,8 +111,10 @@ describe("OtpFlow", () => {
     });
     expect(resend()).toBeEnabled();
     otpStart.mockResolvedValueOnce({ channel: "sms" });
-    fireEvent.click(resend());
-    await waitFor(() => expect(otpStart).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(resend()).toBeDisabled());
+    await act(async () => {
+      fireEvent.click(resend());
+    });
+    expect(otpStart).toHaveBeenCalledTimes(2);
+    expect(resend()).toBeDisabled();
   });
 });

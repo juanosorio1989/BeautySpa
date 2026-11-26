@@ -40,7 +40,7 @@ const me = {
   name: null,
   email: null,
   locale: "en",
-  consents: { WHATSAPP: false, SMS: false, EMAIL: false },
+  consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
 };
 
 function setup(reply: Reply, token: string | null = "tok") {
@@ -192,5 +192,63 @@ describe("me", () => {
     const { api, calls } = setup({ status: 204 });
     await expect(api.me.remove()).resolves.toBeUndefined();
     expect([calls[0]!.init.method, calls[0]!.url]).toEqual(["DELETE", "http://x/v1/me"]);
+  });
+});
+
+describe("manage and push", () => {
+  const view = {
+    appointment,
+    location: { name: "Demo", addressLine: "1 Main St", phone: null, timezone: "America/New_York" },
+    canCancel: true,
+    canConfirm: true,
+  };
+
+  it("manage.get calls GET /manage/<encoded> without bearer", async () => {
+    const { api, calls } = setup({ status: 200, body: view });
+    await api.manage.get("a/b c");
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(calls[0]!.url).toBe("http://x/v1/manage/a%2Fb%20c");
+    expect(calls[0]!.init.headers.authorization).toBeUndefined();
+  });
+
+  it("manage.cancel posts the reason without bearer", async () => {
+    const { api, calls } = setup({ status: 200, body: view });
+    await api.manage.cancel("tok1", { reason: "sick" });
+    expect(calls[0]!.url).toBe("http://x/v1/manage/tok1/cancel");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual({ reason: "sick" });
+    expect(calls[0]!.init.headers.authorization).toBeUndefined();
+  });
+
+  it("manage.confirm posts to /confirm", async () => {
+    const { api, calls } = setup({ status: 200, body: view });
+    await api.manage.confirm("tok1");
+    expect(calls[0]!.url).toBe("http://x/v1/manage/tok1/confirm");
+    expect(calls[0]!.init.method).toBe("POST");
+  });
+
+  it("calendarUrl encodes the token and is absolute", () => {
+    const { api } = setup({ status: 200 });
+    expect(api.manage.calendarUrl("a/b")).toBe("http://x/v1/manage/a%2Fb/calendar.ics");
+  });
+
+  it("push.subscribe posts body with bearer", async () => {
+    const { api, calls } = setup({ status: 204 });
+    const body = { endpoint: "https://push.example/1", keys: { p256dh: "k", auth: "a" } };
+    await api.push.subscribe(body);
+    expect(calls[0]!.url).toBe("http://x/v1/me/push-subscriptions");
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init.body as string)).toEqual(body);
+    expect(calls[0]!.init.headers.authorization).toBe("Bearer tok");
+  });
+
+  it("push.unsubscribe sends DELETE and publicKey is public", async () => {
+    const a = setup({ status: 204 });
+    await a.api.push.unsubscribe({ endpoint: "https://push.example/1" });
+    expect(a.calls[0]!.init.method).toBe("DELETE");
+    const b = setup({ status: 200, body: { publicKey: "BK" } });
+    await expect(b.api.push.publicKey()).resolves.toEqual({ publicKey: "BK" });
+    expect(b.calls[0]!.url).toBe("http://x/v1/push/public-key");
+    expect(b.calls[0]!.init.headers.authorization).toBeUndefined();
   });
 });

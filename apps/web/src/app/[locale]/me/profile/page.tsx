@@ -6,6 +6,7 @@ import { DeleteAccount } from "@/components/me/delete-account";
 import { DownloadData } from "@/components/me/download-data";
 import { LoadError } from "@/components/me/load-error";
 import { ProfileForm } from "@/components/me/profile-form";
+import { PushToggle } from "@/components/push-toggle";
 import { getBrowserApi } from "@/lib/api/browser";
 import { useAuthedLoad } from "@/lib/session/use-authed-load";
 
@@ -31,6 +32,7 @@ export default function ProfilePage() {
         ) : (
           <>
             <ProfileForm me={me} onSaved={setData} />
+            <PushToggle consentSource="PROFILE" pushConsent={me.consents.PUSH} />
             <hr className="border-line" />
             <DownloadData />
             <DeleteAccount />

@@ -466,6 +466,7 @@ export async function seed(prisma: PrismaClient, opts: { today?: IsoDate } = {})
             customerId: customers.get(customer)!,
             status: "BOOKED",
             source: "RECEPTION",
+            timesSetAt: new Date(),
             notes: `${SEED_NOTE} ${note}`,
           },
         });

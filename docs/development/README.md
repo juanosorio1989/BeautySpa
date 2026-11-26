@@ -16,12 +16,21 @@ pnpm --filter @beautyspa/api secrets:gen
 pnpm --filter @beautyspa/api db:migrate
 pnpm --filter @beautyspa/api db:seed
 pnpm dev
+pnpm dev:worker   # second terminal: BullMQ worker (hold sweep, reminders, notifications)
 ```
 
-The API scripts (`dev`, `start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
+`pnpm dev` runs web and api only. `pnpm dev:worker` runs the worker: it sweeps expired holds, scans for reminders
+and sends notifications. Without it holds expire only on demand and nothing is sent.
 
-`secrets:gen` fills `JWT_PRIVATE_KEY_B64` and `DATA_ENCRYPTION_KEY` in `.env` when they are missing or empty
-(copying `.env.example` first if there is no `.env`). It never changes existing lines and prints only key names.
+Production: run `pnpm build` (it produces `dist` and `dist-worker`), then `start` and `worker:start`.
+
+The API scripts (`dev`, `start`, `worker:dev`, `worker:start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
+
+`secrets:gen` fills `JWT_PRIVATE_KEY_B64`, `DATA_ENCRYPTION_KEY`, `MANAGE_LINK_SECRET` and the VAPID pair
+(`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) in `.env` when they are missing or empty (copying `.env.example` first if
+there is no `.env`). It never changes existing lines and prints only key names. The VAPID keys are generated only
+when both are empty; if just one is set it reports the other as skipped (set both or empty both). If your `.env`
+predates plan 05, run `secrets:gen` again: the API refuses to start without `MANAGE_LINK_SECRET`.
 If your `.env` predates plan 02, also add `DEFAULT_ORG_SLUG=demo-salon` and `REDIS_URL_TEST=redis://localhost:6379/1`
 (see `.env.example`).
 
@@ -48,6 +57,19 @@ The link is a one-time credential: do not paste it into chats or tickets.
 
 In development `EMAIL_PROVIDER=console`: invite and password reset emails are not sent, the API logs them
 (recipient, subject and text with the link) to its console.
+Notification emails (confirmations, reminders, changes, cancellations) are sent by the worker, so with `console`
+they appear in the worker's console (attachment names included, never html or `.ics` content). With
+`PUSH_PROVIDER=console` push messages log their title only. Mailpit is not used yet: the API has no SMTP mailer,
+only Resend (`EMAIL_PROVIDER=resend`).
+
+### Testing web push in Chrome
+
+`secrets:gen` creates the VAPID pair. Set `PUSH_PROVIDER=webpush` in `.env` (default `console` only logs the title) and set `VAPID_SUBJECT` (a `mailto:` or
+`https:` contact, for example `mailto:owner@example.com`; the API and worker refuse to start without it),
+restart `pnpm dev` and `pnpm dev:worker`, open http://localhost:3000/en, sign in, and tap "Notify me on this
+device" on the booking Done page or Profile (Chrome allows the service worker on `localhost`). Allow the permission, then book or cancel
+an appointment: the worker sends the push. Push goes only to the signed-in customer's own appointments, so book while
+signed in as the customer who enabled notifications on that device. On iPhone the PWA must be added to the Home Screen first.
 
 ## Development seed
 
@@ -66,7 +88,7 @@ Customers and appointments are demo data: never run it against a real database. 
 
 - API docs (Swagger UI): http://localhost:3001/v1/docs
 - Web (public booking site): http://localhost:3000 (redirects `/` to `/en` or `/es` by `Accept-Language`)
-- Mailpit: http://localhost:8025
+- Mailpit: http://localhost:8025 (unused until an SMTP mailer exists; email goes through `EMAIL_PROVIDER`)
 
 ## Commands
 
@@ -111,3 +133,7 @@ the API and a seeded test database; see [apps/web/e2e/README.md](../../apps/web/
 - `e2e`: Postgres and Redis services, `.env` from `.env.example` plus `secrets:gen`, Chromium via
   `playwright install --with-deps`, then `pnpm --filter @beautyspa/web test:e2e` (migrates and seeds the test
   database, builds the API and web, starts both, runs the specs). The Playwright report is uploaded on failure.
+
+## PWA icons
+
+`apps/web/public/icons/*.png` are solid plum placeholders written by `node apps/web/scripts/gen-icons.mjs` (no dependencies). Replace them with real artwork once the owner has a logo. `public/sw.js` is a plain-JS, push-only service worker (no fetch handler, no caching).

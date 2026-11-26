@@ -12,10 +12,10 @@ written in detail (so it builds on real code, not guesses).
 | 02 | [Auth](02-auth.md) | Phone OTP (Twilio Verify), staff password + TOTP + recovery, invites/reset, access + rotating refresh tokens, RBAC guards, `create-owner` CLI, `api-client` with `TokenStore` | merged |
 | 03 | [Catalog, staff, schedules API](03-catalog-staff.md) | Services, categories, levels, resources, employees, working hours, time off, settings, closures, public reads, audit log, `CHECK` constraints, full seeds | merged |
 | 04 | [Booking API](04-booking.md) | `/availability`, holds, booking, reschedule/move, cancel, status changes, walk-in, hold sweeper, export/delete | merged (PR #5) |
-| 05 | Notifications | Provider interface, email (Resend) + `.ics` invite + web push providers, channel router, BullMQ reminders and maintenance queue, signed manage links, consent. SMS/WhatsApp later (business not incorporated yet) | to write (after 06) |
-| 06 | [Web: public site and booking](06-web-public-booking.md) | Next.js, next-intl EN/ES, SEO pages, booking flow, client area, manage-link pages | in progress (before 05 by owner decision; manage-link pages moved to 05) |
+| 05 | [Notifications](05-notifications.md) | Provider interface, email (Resend) + `.ics` invite + web push providers, channel router, BullMQ reminders and maintenance queue, signed manage links, consent. SMS/WhatsApp later (business not incorporated yet) | in review (branch feat/mvp-05-notifications) |
+| 06 | [Web: public site and booking](06-web-public-booking.md) | Next.js, next-intl EN/ES, SEO pages, booking flow, client area, manage-link pages moved to 05 | merged (PR #6) |
 | 07 | Web: staff panel | Staff login/2FA, mobile day agenda, quick booking, walk-in, client search, owner catalog screens | to write |
-| 08 | PWA and release hardening | Manifest, service worker offline views, Playwright e2e, Lighthouse CI, Sentry, README | to write |
+| 08 | PWA and release hardening | Manifest and push-only service worker exist (plan 05); remaining: offline views, Playwright e2e, Lighthouse CI, Sentry, README | to write |
 
 Execution for every plan: subagent-driven (implementer per task → `reviewer-opus`
 → fix → re-review), one final branch review, then merge to `main`.

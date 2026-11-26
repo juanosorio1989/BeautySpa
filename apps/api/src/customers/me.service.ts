@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import type { Queue } from "bullmq";
 import type { AccessClaims, CustomerExport, Me, MePatch } from "@beautyspa/contracts";
 import { AuditService } from "../audit/audit.service.js";
 import { RefreshTokenService } from "../auth/refresh-token.service.js";
@@ -8,12 +9,14 @@ import { BOOKING_TX_OPTIONS, lockOrgBookings } from "../booking/appointment-writ
 import { BookingEvents, notifyAfterCommit } from "../booking/booking-events.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { assertLiveCustomer } from "../common/live-customer.js";
+import { catchUpAfterCommit, sendableGrants, type ConsentGrant } from "../notifications/consent-catch-up.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { NOTIFICATIONS_QUEUE_TOKEN } from "../queue/queue.module.js";
 import { currentConsents, recordConsents, toCustomerDto } from "./consents.js";
 
 /** Keys listed in the `customer.delete` audit row (design call 10: keys only, never values). */
 const DELETED_FIELDS = ["name", "email", "phoneE164", "privateNotes"];
-const ALL_REVOKED = { WHATSAPP: false, SMS: false, EMAIL: false } as const;
+const ALL_REVOKED = { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false } as const;
 
 /** Cancel reasons the system writes; they hold no personal data and stay in audit rows. */
 const SYSTEM_CANCEL_REASONS = ["ACCOUNT_DELETED", "HOLD_EXPIRED"];
@@ -61,6 +64,7 @@ export class MeService {
     private readonly refreshTokens: RefreshTokenService,
     private readonly events: BookingEvents,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(NOTIFICATIONS_QUEUE_TOKEN) private readonly queue: Queue,
   ) {}
 
   async get(principal: AccessClaims): Promise<Me> {
@@ -72,10 +76,11 @@ export class MeService {
    * One transaction (customer row locked): writes only the fields whose value changes, appends a
    * consent row (source `input.consentSource`, default `PROFILE`) per channel whose value changes,
    * and records `customer.update` with `after: { fields }` (changed keys, consents as
-   * `consents.<CHANNEL>`) only when something changed.
+   * `consents.<CHANNEL>`) only when something changed. After commit, each `EMAIL`/`PUSH` consent that
+   * turned granted runs the consent catch-up (`catchUpAfterCommit`: errors logged, never returned).
    */
   async patch(principal: AccessClaims, input: MePatch, ip: string | null): Promise<Me> {
-    return this.prisma.$transaction(async (tx) => {
+    const { me, grants } = await this.prisma.$transaction(async (tx) => {
       const row = await assertLiveCustomer(tx, principal, { lock: true });
       const data: Prisma.CustomerUpdateInput = {};
       if (input.name !== undefined && input.name !== row.name) data.name = input.name;
@@ -87,10 +92,10 @@ export class MeService {
         fields.length > 0
           ? await tx.customer.update({ where: { id: row.id, organizationId: principal.org }, data })
           : row;
-      const channels = input.consents
+      const recorded = input.consents
         ? await recordConsents(tx, principal.org, row.id, input.consents, input.consentSource ?? "PROFILE")
         : [];
-      fields.push(...channels.map((c) => `consents.${c}`));
+      fields.push(...recorded.map((c) => `consents.${c.channel}`));
 
       if (fields.length > 0) {
         await this.audit.record(
@@ -108,8 +113,23 @@ export class MeService {
           tx,
         );
       }
-      return toCustomerDto(updated, await currentConsents(tx, row.id));
+      const grants: ConsentGrant[] = sendableGrants(recorded, input.consents ?? {});
+      return { me: toCustomerDto(updated, await currentConsents(tx, row.id)), grants };
     });
+    await this.catchUp(principal, grants);
+    return me;
+  }
+
+  /** Consent catch-up after commit for `grants` (see `enqueueConsentCatchUp`); never throws. */
+  private async catchUp(principal: AccessClaims, grants: ConsentGrant[]): Promise<void> {
+    if (grants.length === 0) return;
+    const deps = {
+      prisma: this.prisma,
+      queue: this.queue,
+      now: new Date(this.clock.now()),
+      organizationId: principal.org,
+    };
+    await catchUpAfterCommit(deps, this.logger, principal.sub, grants);
   }
 
   /** `Me`, the full consent history (oldest first) and every non-`HELD` appointment (earliest first). */
@@ -144,12 +164,13 @@ export class MeService {
    * - future `BOOKED` ones (earliest segment start after now) become `CANCELLED` by `CUSTOMER` with
    *   reason `ACCOUNT_DELETED`, stop occupying time, get `manage_version` + 1 and one
    *   `appointment.cancel` audit each;
-   * - each granted channel gets a `granted:false` consent row (`PROFILE`);
+   * - each granted channel gets a `granted:false` consent row (`PROFILE`) and every push subscription
+   *   of the customer is deleted;
    * - name, email and private notes become null, the phone becomes `deleted:<id>` (frees the
    *   number for a new signup) and `deleted_at` is set;
    * - every refresh token is revoked; `customer.delete` lists the cleared keys only.
    * Appointment rows stay attached to the anonymized customer. `events.cancelled` runs after
-   * commit for each cancellation.
+   * commit for each cancellation, all in parallel.
    */
   async remove(principal: AccessClaims, ip: string | null): Promise<void> {
     const orgId = principal.org;
@@ -212,6 +233,7 @@ export class MeService {
       }
 
       await recordConsents(tx, orgId, customerId, ALL_REVOKED, "PROFILE");
+      await tx.pushSubscription.deleteMany({ where: { organizationId: orgId, customerId } });
       await tx.customer.update({
         where: { id: customerId, organizationId: orgId },
         data: {
@@ -240,8 +262,9 @@ export class MeService {
       return future.map((a) => a.id);
     }, BOOKING_TX_OPTIONS);
 
-    for (const id of cancelledIds) {
-      await notifyAfterCommit(this.events, this.logger, () => this.events.cancelled(id));
-    }
+    // In parallel: each add is bounded and never rejects, so N cancellations cost one wait, not N.
+    await Promise.all(
+      cancelledIds.map((id) => notifyAfterCommit(this.events, this.logger, () => this.events.cancelled(id))),
+    );
   }
 }

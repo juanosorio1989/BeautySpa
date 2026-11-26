@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuditModule } from "../audit/audit.module.js";
+import { NotificationsModule } from "../notifications/notifications.module.js";
+import { QueueBookingEvents } from "../notifications/queue-booking-events.js";
 import { AgendaController } from "./agenda.controller.js";
 import { AgendaService } from "./agenda.service.js";
 import { AppointmentWriter } from "./appointment-writer.js";
@@ -8,7 +10,7 @@ import { AppointmentsService } from "./appointments.service.js";
 import { AvailabilityController } from "./availability.controller.js";
 import { AvailabilityService } from "./availability.service.js";
 import { BookingContextService } from "./booking-context.service.js";
-import { BookingEvents, LoggingBookingEvents } from "./booking-events.js";
+import { BookingEvents } from "./booking-events.js";
 import { HoldSweeper } from "./hold-sweeper.js";
 import { HoldsController } from "./holds.controller.js";
 import { HoldsService } from "./holds.service.js";
@@ -19,7 +21,7 @@ import { StaffAppointmentsService } from "./staff-appointments.service.js";
 import { WalkInService } from "./walk-in.service.js";
 
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, NotificationsModule],
   controllers: [
     AvailabilityController,
     HoldsController,
@@ -39,7 +41,7 @@ import { WalkInService } from "./walk-in.service.js";
     StaffAppointmentsService,
     WalkInService,
     AgendaService,
-    { provide: BookingEvents, useClass: LoggingBookingEvents },
+    { provide: BookingEvents, useExisting: QueueBookingEvents },
   ],
   exports: [BookingContextService, AppointmentWriter, BookingEvents],
 })

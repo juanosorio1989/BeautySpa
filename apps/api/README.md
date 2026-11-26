@@ -24,11 +24,20 @@ invalid key names, never values.
 | `OTP_PROVIDER` | `console` (default) / `twilio` / `fake`; `fake` only when `NODE_ENV=test`; `twilio` needs `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` |
 | `OTP_CHANNELS` | ordered, comma-separated `whatsapp` / `sms` that `OtpService.start` tries (default `sms`); items trimmed; an empty list, unknown values or duplicates fail validation. Use `whatsapp,sms` only once WhatsApp is enabled on the Twilio Verify service |
 | `EMAIL_PROVIDER` | `console` (default) / `resend`; `resend` needs `RESEND_API_KEY`, `EMAIL_FROM` |
+| `MANAGE_LINK_SECRET` | required in every `NODE_ENV`; base64 of at least 32 bytes (`secrets:gen`); HMAC key of manage-link tokens |
+| `PUSH_PROVIDER` | `console` (default) / `webpush` / `fake`; `fake` only when `NODE_ENV=test`; `webpush` needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url pair from `secrets:gen`: a 65-byte public point starting `0x04` and a 32-byte private key, both checked) and `VAPID_SUBJECT` (`mailto:<address>` or `https://<url>`) |
+| `REMINDER_SCAN_INTERVAL_MS` | reminder scan period, default `60000`; `0` disables it |
+| `DELIVERY_RECOVERY_INTERVAL_MS` | period of the orphaned-delivery recovery, default `600000`; `0` disables it |
 | `COOKIE_SECURE` | `true`/`false`; default `true` only in production |
 | `COOKIE_DOMAIN` | optional |
 | `TRUST_PROXY` | `false` (default) / a positive hop count / comma-separated proxy IPs or CIDRs (e.g. `10.0.0.0/8,127.0.0.1`); use `1` on Railway/Fly. `true` is rejected: it trusts the client-forged left-most `X-Forwarded-For` and bypasses every per-IP limit |
 
-`NODE_ENV=production` requires `OTP_PROVIDER=twilio` and `EMAIL_PROVIDER=resend`.
+`NODE_ENV=production` requires `OTP_PROVIDER=twilio`, `EMAIL_PROVIDER=resend` and `PUSH_PROVIDER=webpush`.
+
+Manage-link token (`src/notifications/manage-token.ts`): `signManageToken(secret, { appointmentId, manageVersion, exp })`
+→ `base64url(JSON {a,v,e}) "." base64url(HMAC-SHA256(base64-decoded secret, payload part))`; `verifyManageToken(secret,
+token, nowMs)` returns the claims or `null` (bad shape, signature mismatch compared in constant time, bad JSON or
+types, `nowMs >= exp * 1000`); `manageUrl(webOrigin, locale, token)` → `${webOrigin}/${locale}/manage/${token}`.
 
 Global providers: `REDIS` (`ioredis` client from `REDIS_URL`, `src/redis/`), `RateLimitService` (`src/rate-limit/`,
 Redis fixed window `rl:<key>`: `consume`, `enforce` → 429 `RATE_LIMITED`, `peek`, `reset`, `hashKeyPart` for putting
@@ -203,7 +212,7 @@ The booking exclusion constraints are raw SQL in `prisma/migrations/*_booking_co
 | `db:drift` | fails if `schema.prisma` and `prisma/migrations` differ (shadow DB: `DATABASE_URL_TEST` + `_shadow`, or `SHADOW_DATABASE_URL`) |
 | `db:generate` | regenerate the Prisma client (also runs on `postinstall`) |
 | `test:int` | integration tests (`vitest.int.config.mts`, `test/integration/**/*.int.test.ts`) against `DATABASE_URL_TEST` and `REDIS_URL_TEST` |
-| `secrets:gen` | add missing `JWT_PRIVATE_KEY_B64` / `DATA_ENCRYPTION_KEY` to the repo-root `.env` (prints key names only) |
+| `secrets:gen` | add missing `JWT_PRIVATE_KEY_B64` / `DATA_ENCRYPTION_KEY` / `MANAGE_LINK_SECRET` / VAPID pair to the repo-root `.env` (prints key names only) |
 
 `dev`, `start`, `db:*` and `test:int` are wrapped in `dotenv -e ../../.env --`: they read the repo-root `.env`, shell/CI variables win, and a missing file is ignored.
 
@@ -239,8 +248,45 @@ Tests: `test/integration/locations/{settings,closures}.int.test.ts`.
 `AuditModule` also serves `GET /v1/staff/audit?entity=&id=&cursor=&limit=` (OWNER only), newest first by `id` (UUIDv7); `nextCursor` is the last id when the page is full (`limit` items), else null.
 Tests: `test/integration/public/public.int.test.ts`, `test/integration/audit-read.int.test.ts`, `test/integration/rbac-matrix.int.test.ts` (see Booking and customers below).
 
+## Queues and worker (`src/queue/`, `src/worker/`, `src/worker.ts`)
+
+`QueueModule` (global, in the API and the worker): BullMQ producers `NOTIFICATIONS_QUEUE_TOKEN` (`notifications`) and
+`MAINTENANCE_QUEUE_TOKEN` (`maintenance`) on one dedicated ioredis connection from `REDIS_URL`, closed on shutdown.
+`queue-names.ts`: `SendJob`, `DeliverJob`, `sendJobId(job, suffix?)` → `send|<appointmentId>|<templateKey>|<manageVersion>`
+(+ `|<suffix>`; never `:`, which BullMQ 5 rejects), `SEND_JOB_OPTIONS` (3 attempts, exponential from 10 s) and
+`DELIVER_JOB_OPTIONS` (5 attempts, exponential from 30 s), both removing completed jobs after 1 day and failed after 7.
+
+`QueueBookingEvents` (`src/notifications/`, provided by `NotificationsModule`) adds a `send` job for
+`appointment.confirmed` / `.changed` / `.cancelled` with the appointment's `manageVersion` read after commit; walk-ins and
+appointments without a customer are skipped. Every API enqueue goes through `enqueueBounded(queue, name, data, opts)`
+(`queue-names.ts`), which rejects with `QUEUE_TIMEOUT` after `ENQUEUE_TIMEOUT_MS` (2000) because `add` never settles while
+Redis is down; errors are swallowed by `notifyAfterCommit`. `LoggingBookingEvents` stays
+for unit tests.
+
+The worker process (`worker:dev` with watch, `worker:start` from `dist-worker/worker.js`; `build` also produces `dist-worker`, and `worker:build` builds only the worker) boots `WorkerModule` as an application
+context. The API never starts a BullMQ `Worker`. `MaintenanceProcessor` upserts the job schedulers `sweep-holds`
+(`HOLD_SWEEP_INTERVAL_MS`), `scan-reminders` (`REMINDER_SCAN_INTERVAL_MS`) and `recover-deliveries`
+(`DELIVERY_RECOVERY_INTERVAL_MS`) at start, removing a scheduler whose interval is `0`, then consumes `maintenance`:
+`handle("sweep-holds")` → `HoldSweeper.sweep()`, `handle("scan-reminders")` → `ReminderScanner.scan()`,
+`handle("recover-deliveries")` → `OrphanedDeliveries.run()` (`QUEUED` rows older than 1 h get their `deliver` job
+back; older than 24 h → `FAILED` `orphaned`).
+Tests: `src/queue/queue-names.test.ts`, `test/integration/notifications/queue-events.int.test.ts`,
+`test/integration/worker/maintenance.int.test.ts`.
+
 ## Booking and customers (`src/booking/`, `src/customers/`)
 
-`BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` and `DELETE /v1/holds/:holdId` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus the hold sweeper. `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
+`BookingModule`: `GET /v1/availability` (`@OptionalAuth()`), `POST /v1/holds` and `DELETE /v1/holds/:holdId` (`@Public()`), `POST /v1/appointments` and `/v1/me/appointments*` (`@CustomerAuth()`: list, cancel, reschedule, repeat), `GET /v1/staff/agenda`, `POST /v1/staff/appointments`, `PATCH /v1/staff/appointments/:id`, `POST /v1/staff/appointments/:id/status` and `POST /v1/staff/walk-in` (`@StaffAuth()`), plus `HoldSweeper` (run by the worker's `sweep-holds` job). `BookingEvents` is bound to `QueueBookingEvents` (see Queues and worker). `CustomersModule`: `/v1/me` (GET, PATCH, DELETE), `GET /v1/me/export` (`@CustomerAuth()`) and `/v1/staff/customers` (search for all staff, create for OWNER and RECEPTION). Route contracts, rate limits and error codes: `docs/superpowers/specs/2026-11-17-mvp-design/api.md`.
 
 Tests: `test/integration/rbac-matrix.int.test.ts` covers every plan 03 and 04 route: 401 without a token, 403 for each disallowed caller (a CUSTOMER token on a staff route and a staff token on a customer route included); `@Public()` routes answer 200 or at least pass the guard; `GET /availability` needs no token but answers 401 to an invalid one.
+
+## Web push (`src/push/`, `src/notifications/providers/web-push.provider.ts`)
+
+`PushModule`: `GET /v1/push/public-key` (`@Public()`, 404 `NOT_FOUND` without `VAPID_PUBLIC_KEY`) and
+`POST`/`DELETE /v1/me/push-subscriptions` (`@CustomerAuth()`, 20 per customer per hour). Subscribe upserts by endpoint and
+grants `PUSH`; removing the last subscription revokes it. `WebPushProvider` (`PUSH_PROVIDER=webpush`) sends to every
+subscription of the customer and deletes those the push service answers 404/410; it logs subscription ids, never
+endpoints. A consent that turns granted (`PATCH /me`, subscribe) runs `enqueueConsentCatchUp`
+(`src/notifications/consent-catch-up.ts`) after commit; its errors are logged and swallowed. Contracts and behaviour:
+`api.md`, `docs/superpowers/specs/2026-11-22-notifications-design/push.md`.
+Tests: `src/notifications/providers/web-push.provider.test.ts`, `test/integration/push/push.int.test.ts`,
+`test/integration/notifications/catch-up.int.test.ts`.

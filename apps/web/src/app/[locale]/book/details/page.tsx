@@ -12,6 +12,7 @@ import { OtpFlow } from "@/components/booking/otp-flow";
 import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { bookingStore, useBookingStore } from "@/lib/booking/store";
+import { dropPushSubscription } from "@/lib/push";
 import { useSession } from "@/lib/session/use-session";
 import { useFallbackErrorText, useFieldErrorText, type FormField } from "@/lib/use-error-text";
 
@@ -79,6 +80,7 @@ export default function DetailsPage() {
     setMeError(null);
     setLogoutError(false);
     try {
+      await dropPushSubscription().catch(() => undefined); // while the access token is still valid
       await session.logout();
     } catch {
       // Still signed in and the store is untouched (hold included); say why and offer a retry.

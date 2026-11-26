@@ -17,17 +17,18 @@ tables `staff_location` and `employee_service` use a composite primary key); tim
 | `location_closure` | `location_id`, `starts_at`, `ends_at`, `reason` |
 
 **Tenancy columns.** Top-level tables and the hot child tables `resource`,
-`appointment_segment`, `working_hours`, `time_off` and `notification_consent`
-carry `organization_id` directly (NOT NULL, FK, indexed) so the busiest queries
+`appointment_segment`, `working_hours`, `time_off`, `notification_consent` and
+`push_subscription` carry `organization_id` directly (NOT NULL, FK, indexed) so the busiest queries
 filter by tenant without a join. All other child tables (`location_hours`,
 `staff_location`, `employee_profile`, `service_level_price`, ...) inherit
 tenancy through their parent; RLS will join through it.
 
 **Deletes keep history.** FKs from history rows are `ON DELETE RESTRICT`:
 `appointment.customer_id`, `appointment_segment.resource_id`,
-`service.resource_type_id` and `notification_consent.customer_id` (consent is
-evidence). Customers are soft-deleted (`deleted_at`); resources are
-deactivated (`active = false`).
+`service.resource_type_id`, `notification_consent.customer_id` (consent is
+evidence) and `push_subscription.customer_id` (rows are deleted explicitly).
+Customers are soft-deleted (`deleted_at`); resources are deactivated
+(`active = false`).
 
 ## Staff and auth
 
@@ -49,7 +50,7 @@ deactivated (`active = false`).
 | Table | Key columns |
 |---|---|
 | `customer` | `organization_id`, `phone_e164` (unique per org), `name` (nullable: the row is created at OTP verify, before the name step), `email` (optional), `locale`, `phone_verified_at`, `created_via` (`ONLINE`, `RECEPTION`), `private_notes_enc` (staff-only, encrypted), `deleted_at` |
-| `notification_consent` | `organization_id`, `customer_id`, `channel` (`WHATSAPP`, `SMS`, `EMAIL`), `granted`, `source` (`BOOKING_FORM`, `PROFILE`, `RECEPTION`, `INBOUND_STOP`), `changed_at`. Append-only history; current state = latest row per channel. |
+| `notification_consent` | `organization_id`, `customer_id`, `channel` (`WHATSAPP`, `SMS`, `EMAIL`, `PUSH`), `granted`, `source` (`BOOKING_FORM`, `PROFILE`, `RECEPTION`, `INBOUND_STOP`), `changed_at`. Append-only history; current state = latest row per channel. |
 
 ## Catalog and resources
 
@@ -65,7 +66,7 @@ deactivated (`active = false`).
 
 | Table | Key columns |
 |---|---|
-| `appointment` | `organization_id`, `location_id`, `customer_id` (nullable while `HELD` anonymous), `status` (`HELD`, `BOOKED`, `CHECKED_IN`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), `source` (`ONLINE`, `RECEPTION`, `WALK_IN`), `hold_expires_at`, `confirmed_by_customer_at`, `manage_version` int, `notes`, `created_by_staff_id`, `cancelled_at`, `cancel_reason`, `cancelled_by` |
+| `appointment` | `organization_id`, `location_id`, `customer_id` (nullable while `HELD` anonymous), `status` (`HELD`, `BOOKED`, `CHECKED_IN`, `COMPLETED`, `CANCELLED`, `NO_SHOW`), `source` (`ONLINE`, `RECEPTION`, `WALK_IN`), `hold_expires_at`, `confirmed_by_customer_at`, `manage_version` int, `times_set_at` (when the current times were fixed: book, staff create, walk-in, reschedule, move; reminder eligibility), `notes`, `created_by_staff_id`, `cancelled_at`, `cancel_reason`, `cancelled_by` |
 | `appointment_segment` | `organization_id`, `appointment_id`, `service_id`, `staff_user_id`, `resource_id` (nullable), `starts_at`, `ends_at`, `block_ends_at` (`ends_at + buffer_after_min`, or `ends_at` when the buffer is dropped for a same-employee back-to-back segment (see availability.md); the API always stores `blockEnd` from the validated plan, never recomputes it), `duration_min`, `price_cents` (snapshots), `occupies` bool |
 
 ### No double booking (raw SQL migration)
@@ -167,7 +168,8 @@ segment insert answers both as 409 `SLOT_TAKEN`.
 
 | Table | Key columns |
 |---|---|
-| `notification_log` | `organization_id`, `appointment_id`, `customer_id`, `template_key`, `locale`, `channel`, `provider`, `provider_message_id`, `status` (`QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `SKIPPED`), `error`, `attempts`, `sent_at`, `updated_at` |
+| `notification_log` | `organization_id`, `appointment_id`, `customer_id`, `template_key`, `manage_version` (the appointment version it was sent for; unique `notification_log_dedupe` on `(appointment_id, template_key, manage_version, channel)`), `locale`, `channel`, `provider`, `provider_message_id`, `status` (`QUEUED`, `SENT`, `DELIVERED`, `READ`, `FAILED`, `SKIPPED`), `error`, `attempts`, `sent_at`, `updated_at` |
+| `push_subscription` | `organization_id`, `customer_id` (index), `endpoint` (unique), `p256dh`, `auth`, `created_at`, `last_success_at`. One row per browser subscribed to Web Push. `POST /me/push-subscriptions` upserts by `endpoint` (an endpoint another customer held moves to the caller). Rows are deleted by `DELETE /me/push-subscriptions` (the caller's own row only), when the push service answers 404 or 410 to a send, and inside the `DELETE /me` anonymization transaction. |
 | `audit_log` | `organization_id`, `actor_type` (`STAFF`, `CUSTOMER`, `SYSTEM`), `actor_id`, `action` (e.g. `appointment.create`, `appointment.move`, `appointment.cancel`), `entity`, `entity_id` (text, so composite or non-UUID keys fit), `before` jsonb, `after` jsonb, `ip`, `at`. Append-only, except that `DELETE /me` sets `notes` and non-system `cancelReason` to null inside the customer's appointment audit rows (see security-quality.md). |
 
 ## Encryption
