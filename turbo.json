@@ -6,7 +6,7 @@
     "build": {
       "dependsOn": ["^build"],
       "env": ["API_URL", "NEXT_PUBLIC_*"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", "dist-worker/**", ".next/**", "!.next/cache/**"]
     },
     "dev": {
       "dependsOn": ["^build"],

@@ -263,7 +263,7 @@ appointments without a customer are skipped. Every API enqueue goes through `enq
 Redis is down; errors are swallowed by `notifyAfterCommit`. `LoggingBookingEvents` stays
 for unit tests.
 
-The worker process (`worker:dev` with watch, `worker:start` from `dist-worker/worker.js`) boots `WorkerModule` as an application
+The worker process (`worker:dev` with watch, `worker:start` from `dist-worker/worker.js`; `build` also produces `dist-worker`, and `worker:build` builds only the worker) boots `WorkerModule` as an application
 context. The API never starts a BullMQ `Worker`. `MaintenanceProcessor` upserts the job schedulers `sweep-holds`
 (`HOLD_SWEEP_INTERVAL_MS`), `scan-reminders` (`REMINDER_SCAN_INTERVAL_MS`) and `recover-deliveries`
 (`DELIVERY_RECOVERY_INTERVAL_MS`) at start, removing a scheduler whose interval is `0`, then consumes `maintenance`:

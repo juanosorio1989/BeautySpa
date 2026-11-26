@@ -79,7 +79,8 @@ Dev/test use `ConsoleProvider` and a fake Verify (code `000000` only when
 ## Infra and delivery
 
 - Local: `docker compose up` (Postgres 16, Redis 7, Mailpit); `pnpm dev` runs
-  web, api, worker. Seeds: one organization + location, categories, ~20
+  web and api; `pnpm dev:worker` runs the worker. Production: `build` produces `dist` and
+  `dist-worker`; run `start` and `worker:start`. Seeds: one organization + location, categories, ~20
   services (nails, hair, brows, facials, massages and body) with EN/ES names,
   5 employees on 2 levels, 3 pedicure chairs, 2 treatment cabins, sample
   customers and appointments.

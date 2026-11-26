@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && nest build --path tsconfig.worker.json",
+    "worker:build": "nest build --path tsconfig.worker.json",
     "dev": "dotenv -e ../../.env -- nest start --watch",
     "start": "dotenv -e ../../.env -- node dist/main.js",
     "worker:dev": "dotenv -e ../../.env -- nest start --watch --entryFile worker --path tsconfig.worker.json",

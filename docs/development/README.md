@@ -22,6 +22,8 @@ pnpm dev:worker   # second terminal: BullMQ worker (hold sweep, reminders, notif
 `pnpm dev` runs web and api only. `pnpm dev:worker` runs the worker: it sweeps expired holds, scans for reminders
 and sends notifications. Without it holds expire only on demand and nothing is sent.
 
+Production: run `pnpm build` (it produces `dist` and `dist-worker`), then `start` and `worker:start`.
+
 The API scripts (`dev`, `start`, `worker:dev`, `worker:start`, `db:*`, `test:int`) load the repo-root `.env` through `dotenv-cli`; variables already set in the shell (for example in CI) take precedence, and a missing `.env` is ignored.
 
 `secrets:gen` fills `JWT_PRIVATE_KEY_B64`, `DATA_ENCRYPTION_KEY`, `MANAGE_LINK_SECRET` and the VAPID pair

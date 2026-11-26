@@ -296,6 +296,19 @@ F6 review follow-ups (reviewer-opus approved F6 with minors):
 | F6c | Spec does not say recovery can re-send a message the provider already accepted (`sent_update_failed`) | One clause in the "Orphaned rows" paragraph: at-least-once, same as `deliver` retries | implementer-sonnet |
 | F6d | Redis outage can stretch one run past the interval (500 × 2 s) | Note in the `run()` doc comment; no code change | implementer-sonnet |
 
+Fix-round re-review (reviewer-opus, 2026-11-25): F1–F9 OK; two blocking, four minor.
+
+| Id | Finding | Ruling | Implementer |
+|---|---|---|---|
+| R1 | F10 incomplete: "Not you?" on `book/details/page.tsx` calls `session.logout()` without dropping push (blocking) | Move `dropPushSubscription` from `logout-button.tsx` to `apps/web/src/lib/push.ts`; call it before logout in `notYou()` and before sign-out in `delete-account.tsx`; unit tests for both call sites | implementer-sonnet |
+| R2 | F11: no build produces `dist-worker`, so `worker:start` fails after a clean build (blocking) | Option (a): api `build` = `nest build && nest build --path tsconfig.worker.json`, add `worker:build`; turbo `build.outputs` adds `dist-worker/**`; README and dev docs say so | implementer-sonnet |
+| R3 | F8–F10 changed no docs | `push.md` Web section: subscribe after `serviceWorker.ready`; toggle "subscribed" only with `consents.PUSH`, re-POST on load; logout drops this device's subscription (best effort, ≤ 2 s) | implementer-sonnet (with R1) |
+| R4 | `security-quality.md` still says `pnpm dev` runs the worker | Match `notifications.md` (worker is `pnpm dev:worker`) | implementer-sonnet (with R2) |
+| R5 | Re-POST on every page load uses the 20/h push rate limit shared with DELETE | Re-POST at most once per browser session per endpoint (`sessionStorage` flag in `lib/push.ts`) | implementer-sonnet (with R1) |
+| R6 | Logout on the only push device revokes PUSH consent everywhere (undocumented) | Accepted behavior; record it in `push.md` | implementer-sonnet (with R1) |
+
+R1–R6 re-review: APPROVED; test nits recorded in handoff; delete-before-drop order accepted and documented in `push.md`.
+
 Deferred (recorded in handoff):
 - D4: partial index `notification_log (created_at) WHERE status = 'QUEUED'` for the recovery query; schema change, not needed at MVP volume.
 - D5: `deliver` can send a recovered `confirmed`/`reminder` after the appointment started (manage link already expired); skip with a `too_late` reason when `start <= now` and the template is not `cancelled`.
