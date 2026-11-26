@@ -26,6 +26,9 @@ vi.mock("@/lib/api/browser", () => ({
   setSessionExpiredHandler: vi.fn(),
 }));
 
+let dropImpl: () => Promise<void> = async () => undefined;
+vi.mock("@/lib/push", () => ({ dropPushSubscription: () => dropImpl() }));
+
 import { SessionProvider } from "@/lib/session/session-provider";
 import DetailsPage from "./page";
 
@@ -209,6 +212,36 @@ describe("/book/details", () => {
       expect(bookingStore.getState().hold?.holdId).toBe(id(500));
       expect(bookingStore.getState().serviceIds).toEqual([id(1)]);
       expect(replace).not.toHaveBeenCalled();
+    });
+
+    it("Not you? drops the push subscription before logging out", async () => {
+      api.me.get.mockResolvedValue(me({ name: "Ana" }));
+      const order: string[] = [];
+      dropImpl = async () => void order.push("push");
+      api.auth.logout.mockImplementation(async () => {
+        order.push("logout");
+        signedOut();
+      });
+      mount();
+      await screen.findByText("Booking as Ana");
+      fireEvent.click(screen.getByRole("button", { name: "Not you?" }));
+      expect(await screen.findByLabelText("Your mobile number")).toBeInTheDocument();
+      expect(order).toEqual(["push", "logout"]);
+      dropImpl = async () => undefined;
+    });
+
+    it("Not you? still logs out when the push cleanup rejects", async () => {
+      api.me.get.mockResolvedValue(me({ name: "Ana" }));
+      dropImpl = () => Promise.reject(new Error("offline"));
+      api.auth.logout.mockImplementation(async () => {
+        signedOut();
+      });
+      mount();
+      await screen.findByText("Booking as Ana");
+      fireEvent.click(screen.getByRole("button", { name: "Not you?" }));
+      expect(await screen.findByLabelText("Your mobile number")).toBeInTheDocument();
+      expect(api.auth.logout).toHaveBeenCalled();
+      dropImpl = async () => undefined;
     });
 
     it("HOLD_EXPIRED on confirm returns to time", async () => {

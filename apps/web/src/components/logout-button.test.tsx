@@ -6,8 +6,7 @@ import { SessionContext, type Session } from "@/lib/session/use-session";
 
 // A plain function behind the mock: vitest's spy flags a rejection it wraps even when the caller handles it.
 let pushImpl: () => Promise<void> = async () => undefined;
-vi.mock("@/lib/push", () => ({ disablePush: () => pushImpl() }));
-vi.mock("@/lib/api/browser", () => ({ getBrowserApi: () => ({ push: {} }) }));
+vi.mock("@/lib/push", () => ({ dropPushSubscription: () => pushImpl() }));
 vi.mock("@/i18n/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 
 import { LogoutButton } from "./logout-button";
@@ -51,14 +50,4 @@ describe("LogoutButton push cleanup", () => {
     fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(logout).toHaveBeenCalled());
   });
-
-  it("does not wait more than about 2 s for a stuck cleanup", async () => {
-    pushImpl = () => new Promise<void>((resolve) => setTimeout(resolve, 4000));
-    const logout = vi.fn().mockResolvedValue(undefined);
-    mount(logout);
-    const start = Date.now();
-    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
-    await waitFor(() => expect(logout).toHaveBeenCalled(), { timeout: 3500 });
-    expect(Date.now() - start).toBeGreaterThanOrEqual(1900);
-  }, 6000);
 });

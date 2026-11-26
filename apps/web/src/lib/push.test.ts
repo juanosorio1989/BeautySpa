@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeBase64Url, disablePush, enablePush, getPushSupport } from "./push";
+import { decodeBase64Url, disablePush, dropPushSubscription, enablePush, getPushSupport } from "./push";
+
+const browserApi = vi.hoisted(() => ({ push: { publicKey: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } }));
+vi.mock("@/lib/api/browser", () => ({ getBrowserApi: () => browserApi }));
 
 const UA_DESKTOP = "Mozilla/5.0 (X11; Linux x86_64) Chrome/130";
 const UA_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1";
@@ -44,6 +47,7 @@ function stub(opts: { ua?: string; push?: boolean; permission?: string; standalo
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   api.push.publicKey.mockReset().mockResolvedValue({ publicKey: "AQID_w" });
   api.push.subscribe.mockReset().mockResolvedValue(undefined);
   api.push.unsubscribe.mockReset().mockResolvedValue(undefined);
@@ -96,6 +100,39 @@ describe("getPushSupport", () => {
       keys: { p256dh: "P", auth: "A" },
       consentSource: "PROFILE",
     });
+  });
+
+  it("re-posts at most once per browser session per endpoint", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    await getPushSupport(pushApi, CONSENT);
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("subscribed");
+    expect(api.push.subscribe).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("bs-push-reposted:https://push.example/abc")).not.toBeNull();
+  });
+
+  it("does not mark the endpoint when the re-post fails, so the next load retries", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    api.push.subscribe.mockRejectedValueOnce(new Error("down"));
+    await getPushSupport(pushApi, CONSENT);
+    await getPushSupport(pushApi, CONSENT);
+    expect(api.push.subscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it("posts when sessionStorage throws", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("subscribed");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("subscribed");
+    expect(api.push.subscribe).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
   });
 
   it("offers enable, without posting, when the browser has a subscription but PUSH consent is off", async () => {
@@ -200,5 +237,46 @@ describe("enablePush / disablePush", () => {
 
   it("decodes base64url", () => {
     expect([...decodeBase64Url("AQID_w")]).toEqual([1, 2, 3, 255]);
+  });
+});
+
+describe("disablePush clears the re-post marker", () => {
+  it("so the next subscription posts again", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    await getPushSupport(pushApi, CONSENT);
+    expect(sessionStorage.getItem("bs-push-reposted:https://push.example/abc")).not.toBeNull();
+    await disablePush(pushApi);
+    expect(sessionStorage.getItem("bs-push-reposted:https://push.example/abc")).toBeNull();
+  });
+});
+
+describe("dropPushSubscription", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("unsubscribes this device", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    browserApi.push.unsubscribe.mockReset().mockResolvedValue(undefined);
+    await dropPushSubscription();
+    expect(browserApi.push.unsubscribe).toHaveBeenCalledWith({ endpoint: "https://push.example/abc" });
+  });
+
+  it("never throws", async () => {
+    stub();
+    pushManager.getSubscription.mockRejectedValue(new Error("boom"));
+    await expect(dropPushSubscription()).resolves.toBeUndefined();
+  });
+
+  it("waits at most about 2 s for a stuck cleanup", async () => {
+    stub();
+    vi.useFakeTimers();
+    pushManager.getSubscription.mockReturnValue(new Promise(() => undefined));
+    let done = false;
+    void dropPushSubscription().then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(1900);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(done).toBe(true);
   });
 });

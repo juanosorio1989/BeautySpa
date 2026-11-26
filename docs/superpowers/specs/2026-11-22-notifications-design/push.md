@@ -46,3 +46,16 @@ error, retry. No subscription at all (`push_none`) → row `SKIPPED`, no retry.
   Hidden when unsupported. iOS Safari outside standalone mode shows a short
   hint: "Add this site to your Home Screen to get notifications". Permission
   denied → explains how to re-enable in browser settings.
+- Subscribe runs on `await navigator.serviceWorker.ready`.
+- The toggle shows "subscribed" only when the browser has a subscription AND
+  `me.consents.PUSH` is true; on load it re-POSTs that subscription
+  (idempotent), at most once per browser session per endpoint.
+- Customer logout, "Not you?" on booking details, and account deletion drop
+  this device's subscription first (best effort, at most about 2 s, never
+  blocks).
+- Removing the last subscription revokes PUSH consent on the server (source
+  `PROFILE`, audited), so signing out on the customer's only push device turns
+  PUSH off everywhere. This is accepted behavior.
+- Account deletion drops this device's subscription before `DELETE /me`; if
+  the delete then fails, the account stays and this device is unsubscribed
+  (accepted: the customer can turn push on again).

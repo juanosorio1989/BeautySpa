@@ -1,4 +1,5 @@
 import type { ApiClient } from "@beautyspa/api-client";
+import { getBrowserApi } from "@/lib/api/browser";
 
 export type PushSupport = "unsupported" | "needs-install" | "denied" | "available" | "subscribed";
 export type PushConsentSource = "PROFILE" | "BOOKING_FORM";
@@ -35,6 +36,33 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return registration ? await registration.pushManager.getSubscription() : null;
 }
 
+const REPOSTED_PREFIX = "bs-push-reposted:";
+const PUSH_CLEANUP_MS = 2000;
+
+function wasReposted(endpoint: string): boolean {
+  try {
+    return sessionStorage.getItem(REPOSTED_PREFIX + endpoint) !== null;
+  } catch {
+    return false; // storage blocked (private mode): post
+  }
+}
+
+function markReposted(endpoint: string): void {
+  try {
+    sessionStorage.setItem(REPOSTED_PREFIX + endpoint, "1");
+  } catch {
+    // ignored on purpose
+  }
+}
+
+function clearReposted(endpoint: string): void {
+  try {
+    sessionStorage.removeItem(REPOSTED_PREFIX + endpoint);
+  } catch {
+    // ignored on purpose
+  }
+}
+
 async function postSubscription(api: PushApi, subscription: PushSubscription, consentSource: PushConsentSource) {
   const json = subscription.toJSON();
   await api.push.subscribe({
@@ -61,7 +89,13 @@ export async function getPushSupport(
     if (Notification.permission === "denied") return "denied";
     const subscription = await currentSubscription();
     if (!subscription || !opts.pushConsent) return "available";
-    await postSubscription(api, subscription, opts.consentSource).catch(() => undefined);
+    // Re-send at most once per browser session per endpoint; marked only after a successful POST.
+    if (!wasReposted(subscription.endpoint)) {
+      await postSubscription(api, subscription, opts.consentSource).then(
+        () => markReposted(subscription.endpoint),
+        () => undefined,
+      );
+    }
     return "subscribed";
   } catch {
     return "unsupported";
@@ -99,6 +133,24 @@ export async function disablePush(api: PushApi): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) return;
   const endpoint = subscription.endpoint;
+  clearReposted(endpoint);
   await subscription.unsubscribe();
   await api.push.unsubscribe({ endpoint });
+}
+
+/** Best effort: drop this device's push subscription before signing out; never fails, waits at most ~2 s. */
+export async function dropPushSubscription(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      disablePush(getBrowserApi()),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, PUSH_CLEANUP_MS);
+      }),
+    ]);
+  } catch {
+    // ignored on purpose
+  } finally {
+    clearTimeout(timer);
+  }
 }
