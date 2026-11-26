@@ -20,7 +20,12 @@ import { appointmentIcsEvent } from "./appointment-ics.js";
 import { buildIcs } from "./ics.js";
 import { manageUrl, signManageToken } from "./manage-token.js";
 import { MessageContextService, messageLocale, statusFits, type LoadedAppointment } from "./message-context.service.js";
-import { CHANNEL_PROVIDERS, type ChannelProvider, type DeliveryTarget } from "./providers/channel-provider.js";
+import {
+  CHANNEL_PROVIDERS,
+  PushError,
+  type ChannelProvider,
+  type DeliveryTarget,
+} from "./providers/channel-provider.js";
 import { selectChannels, type SendChannel } from "./router.js";
 import { renderMessage } from "./templates/render.js";
 import type { MessageContext, RenderedMessage, TemplateKey } from "./templates/types.js";
@@ -170,7 +175,8 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
    * row's channel revoked since → `SKIPPED` (`consent_revoked`); appointment changed (version, status, customer
    * deleted) → `SKIPPED` (`stale`); an EMAIL row whose customer no longer has an email → `SKIPPED`
    * (`no_email`). Renders in the row's locale; a render (or `.ics`) failure → `FAILED` (`render_failed`), not
-   * retried. Success → `SENT`. A provider error → `attempts + 1`, `error = errorCode(err)`, `FAILED` on the last
+   * retried. Success → `SENT`. `PushError("none")` (no subscription left) → `SKIPPED` (`push_none`), not retried.
+   * Any other provider error → `attempts + 1`, `error = errorCode(err)`, `FAILED` on the last
    * attempt (`attemptsMade + 1 >= maxAttempts`) else still `QUEUED`; then rethrows so BullMQ retries. Any other
    * error before the send (database, Redis) is rethrown too, and on the last attempt first marks the row
    * `FAILED`, so no row stays `QUEUED` after BullMQ gives up. A failure to record `SENT` after the provider
@@ -203,6 +209,15 @@ export class NotificationsProcessor implements OnApplicationBootstrap, OnModuleD
       ({ providerMessageId } = await this.provider(channel).send(msg, target));
     } catch (err) {
       const code = errorCode(err);
+      if (err instanceof PushError && err.status === "none") {
+        // No subscription left (deleted on 404/410 since `send`): a retry cannot succeed.
+        await this.prisma.notificationLog.updateMany({
+          where: { id: row.id, status: "QUEUED" },
+          data: { status: "SKIPPED", error: code, attempts: { increment: 1 } },
+        });
+        this.logger.debug(`deliver ${row.id}: skipped (${code})`);
+        return;
+      }
       await this.prisma.notificationLog.updateMany({
         where: { id: row.id, status: "QUEUED" },
         data: { status: last ? "FAILED" : "QUEUED", error: code, attempts: { increment: 1 } },

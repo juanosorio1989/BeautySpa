@@ -27,7 +27,7 @@ checks consent). `GET /me` reports `PUSH` like `EMAIL`.
 holds a worker slot; a timeout counts as `push_0`). One `deliver` per channel sends to all the
 customer's subscriptions; success when at least one succeeds. 404/410 from the
 push service deletes that subscription (error code `push_410`). All failing →
-error, retry.
+error, retry. No subscription at all (`push_none`) → row `SKIPPED`, no retry.
 
 ## Web
 

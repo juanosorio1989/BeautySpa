@@ -10,7 +10,11 @@ import { verifyManageToken } from "../../../src/notifications/manage-token.js";
 import { MessageContextService } from "../../../src/notifications/message-context.service.js";
 import { channelProvidersFactory } from "../../../src/notifications/notifications.module.js";
 import { NotificationsProcessor, organizerEmail } from "../../../src/notifications/notifications.processor.js";
-import { CHANNEL_PROVIDERS, type ChannelProvider } from "../../../src/notifications/providers/channel-provider.js";
+import {
+  CHANNEL_PROVIDERS,
+  PushError,
+  type ChannelProvider,
+} from "../../../src/notifications/providers/channel-provider.js";
 import type { FakePushProvider } from "../../../src/notifications/providers/fake-push.provider.js";
 import type { TemplateKey } from "../../../src/notifications/templates/types.js";
 import { PrismaService } from "../../../src/prisma/prisma.service.js";
@@ -270,7 +274,7 @@ describe("notification pipeline: send and deliver", () => {
       data: {
         organizationId: f.orgId,
         customerId: f.customerId,
-        endpoint: "https://push.example.test/abc",
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
         p256dh: "key",
         auth: "auth",
       },
@@ -290,6 +294,54 @@ describe("notification pipeline: send and deliver", () => {
     expect(mailer.sent.at(-1)!.attachments).toBeUndefined();
     expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: pushRow.id } })).toMatchObject({
       status: "SENT",
+      attempts: 1,
+    });
+  });
+
+  it("push_none (no subscription left) is SKIPPED without retry", async () => {
+    await grant("PUSH");
+    await prisma.pushSubscription.create({
+      data: {
+        organizationId: f.orgId,
+        customerId: f.customerId,
+        endpoint: "https://fcm.googleapis.com/fcm/send/gone",
+        p256dh: "key",
+        auth: "auth",
+      },
+    });
+    await send("appointment.reminder_24h");
+    const [row] = await rows();
+    expect(row!.channel).toBe("PUSH");
+    // The subscription went away (404/410 elsewhere) between send and deliver.
+    vi.spyOn(push, "send").mockRejectedValue(new PushError("none"));
+
+    await expect(processor.handleDeliver({ logId: row!.id }, 0, 5)).resolves.toBeUndefined();
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "SKIPPED",
+      error: "push_none",
+      attempts: 1,
+    });
+  });
+
+  it("other push errors still retry", async () => {
+    await grant("PUSH");
+    await prisma.pushSubscription.create({
+      data: {
+        organizationId: f.orgId,
+        customerId: f.customerId,
+        endpoint: "https://fcm.googleapis.com/fcm/send/slow",
+        p256dh: "key",
+        auth: "auth",
+      },
+    });
+    await send("appointment.reminder_24h");
+    const [row] = await rows();
+    vi.spyOn(push, "send").mockRejectedValue(new PushError(503));
+
+    await expect(processor.handleDeliver({ logId: row!.id }, 0, 5)).rejects.toBeInstanceOf(PushError);
+    expect(await prisma.notificationLog.findUniqueOrThrow({ where: { id: row!.id } })).toMatchObject({
+      status: "QUEUED",
+      error: "push_503",
       attempts: 1,
     });
   });

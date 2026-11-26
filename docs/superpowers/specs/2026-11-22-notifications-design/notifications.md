@@ -53,7 +53,9 @@ confirmation and reminders") stays true.
    through the channel's provider, and updates the row: `SENT` +
    `providerMessageId` + `sentAt`, or on error `attempts + 1`, `error`, and
    rethrows so BullMQ retries. After the last attempt the row is `FAILED`.
-   It re-checks consent first; revoked since → `SKIPPED`.
+   It re-checks consent first; revoked since → `SKIPPED`. A push send that
+   finds no subscription left (`push_none`: all deleted on 404/410 since
+   `send`) → `SKIPPED`, error `push_none`, no retry.
 
 Retries **(call)**: `deliver` 5 attempts, exponential backoff from 30 s.
 `send` 3 attempts, backoff 10 s. Completed jobs removed after 1 day, failed
