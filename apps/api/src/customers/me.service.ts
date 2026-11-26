@@ -170,7 +170,7 @@ export class MeService {
    *   number for a new signup) and `deleted_at` is set;
    * - every refresh token is revoked; `customer.delete` lists the cleared keys only.
    * Appointment rows stay attached to the anonymized customer. `events.cancelled` runs after
-   * commit for each cancellation.
+   * commit for each cancellation, all in parallel.
    */
   async remove(principal: AccessClaims, ip: string | null): Promise<void> {
     const orgId = principal.org;
@@ -262,8 +262,9 @@ export class MeService {
       return future.map((a) => a.id);
     }, BOOKING_TX_OPTIONS);
 
-    for (const id of cancelledIds) {
-      await notifyAfterCommit(this.events, this.logger, () => this.events.cancelled(id));
-    }
+    // In parallel: each add is bounded and never rejects, so N cancellations cost one wait, not N.
+    await Promise.all(
+      cancelledIds.map((id) => notifyAfterCommit(this.events, this.logger, () => this.events.cancelled(id))),
+    );
   }
 }
