@@ -32,7 +32,7 @@ export default function ProfilePage() {
         ) : (
           <>
             <ProfileForm me={me} onSaved={setData} />
-            <PushToggle consentSource="PROFILE" />
+            <PushToggle consentSource="PROFILE" pushConsent={me.consents.PUSH} />
             <hr className="border-line" />
             <DownloadData />
             <DeleteAccount />

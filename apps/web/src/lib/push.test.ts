@@ -4,6 +4,8 @@ import { decodeBase64Url, disablePush, enablePush, getPushSupport } from "./push
 const UA_DESKTOP = "Mozilla/5.0 (X11; Linux x86_64) Chrome/130";
 const UA_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1";
 
+const CONSENT = { pushConsent: true, consentSource: "PROFILE" as const };
+
 const subscription = {
   endpoint: "https://push.example/abc",
   toJSON: () => ({ endpoint: "https://push.example/abc", keys: { p256dh: "P", auth: "A" } }),
@@ -25,7 +27,11 @@ function stub(opts: { ua?: string; push?: boolean; permission?: string; standalo
   vi.stubGlobal("navigator", {
     userAgent: opts.ua ?? UA_DESKTOP,
     maxTouchPoints: 0,
-    serviceWorker: { register: vi.fn(async () => registration), getRegistration: vi.fn(async () => registration) },
+    serviceWorker: {
+      register: vi.fn(async () => registration),
+      ready: Promise.resolve(registration),
+      getRegistration: vi.fn(async () => registration),
+    },
   });
   if (opts.push !== false) vi.stubGlobal("PushManager", class {});
   else vi.stubGlobal("PushManager", undefined);
@@ -50,35 +56,60 @@ afterEach(() => vi.unstubAllGlobals());
 describe("getPushSupport", () => {
   it("unsupported without PushManager", async () => {
     stub({ push: false });
-    expect(await getPushSupport(pushApi)).toBe("unsupported");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("unsupported");
   });
 
   it("unsupported when the server has no VAPID key", async () => {
     stub();
     api.push.publicKey.mockRejectedValue(new Error("404"));
-    expect(await getPushSupport(pushApi)).toBe("unsupported");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("unsupported");
   });
 
   it("needs-install on iOS Safari not standalone", async () => {
     stub({ ua: UA_IOS, push: false });
-    expect(await getPushSupport(pushApi)).toBe("needs-install");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("needs-install");
   });
 
   it("is available on an installed iOS app", async () => {
     stub({ ua: UA_IOS, standalone: true });
-    expect(await getPushSupport(pushApi)).toBe("available");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("available");
   });
 
   it("denied when permission denied", async () => {
     stub({ permission: "denied" });
-    expect(await getPushSupport(pushApi)).toBe("denied");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("denied");
   });
 
   it("available without a subscription, subscribed with one", async () => {
     stub();
-    expect(await getPushSupport(pushApi)).toBe("available");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("available");
     pushManager.getSubscription.mockResolvedValue(subscription);
-    expect(await getPushSupport(pushApi)).toBe("subscribed");
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("subscribed");
+  });
+
+  it("re-posts an existing subscription to the API", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    await getPushSupport(pushApi, CONSENT);
+    expect(api.push.subscribe).toHaveBeenCalledWith({
+      endpoint: "https://push.example/abc",
+      keys: { p256dh: "P", auth: "A" },
+      consentSource: "PROFILE",
+    });
+  });
+
+  it("offers enable, without posting, when the browser has a subscription but PUSH consent is off", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    expect(await getPushSupport(pushApi, { ...CONSENT, pushConsent: false })).toBe("available");
+    expect(api.push.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("stays subscribed when the re-post fails", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    api.push.subscribe.mockRejectedValue(new Error("down"));
+    expect(await getPushSupport(pushApi, CONSENT)).toBe("subscribed");
   });
 });
 
@@ -97,6 +128,28 @@ describe("enablePush / disablePush", () => {
       keys: { p256dh: "P", auth: "A" },
       consentSource: "BOOKING_FORM",
     });
+  });
+
+  it("enablePush subscribes on the ready registration when register() resolves too early", async () => {
+    stub();
+    const early = {
+      pushManager: {
+        getSubscription: vi.fn(async () => null),
+        subscribe: vi.fn().mockRejectedValue(new Error("no active worker")),
+      },
+    };
+    (navigator.serviceWorker.register as ReturnType<typeof vi.fn>).mockResolvedValue(early);
+    expect(await enablePush(pushApi, "PROFILE")).toBe("subscribed");
+    expect(early.pushManager.subscribe).not.toHaveBeenCalled();
+    expect(pushManager.subscribe).toHaveBeenCalled();
+  });
+
+  it("enablePush reuses an existing browser subscription", async () => {
+    stub();
+    pushManager.getSubscription.mockResolvedValue(subscription);
+    await enablePush(pushApi, "PROFILE");
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(api.push.subscribe).toHaveBeenCalled();
   });
 
   it("enablePush asks for permission before registering the worker", async () => {
@@ -126,7 +179,7 @@ describe("enablePush / disablePush", () => {
 
   it("getPushSupport looks up the registration at scope /", async () => {
     stub();
-    await getPushSupport(pushApi);
+    await getPushSupport(pushApi, CONSENT);
     expect(navigator.serviceWorker.getRegistration).toHaveBeenCalledWith("/");
   });
 

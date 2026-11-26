@@ -3,7 +3,28 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
+import { getBrowserApi } from "@/lib/api/browser";
+import { disablePush } from "@/lib/push";
 import { useSession } from "@/lib/session/use-session";
+
+const PUSH_CLEANUP_MS = 2000;
+
+/** Best effort: drop this device's push subscription before signing out; never fails, waits at most ~2 s. */
+async function dropPushSubscription(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      disablePush(getBrowserApi()),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, PUSH_CLEANUP_MS);
+      }),
+    ]);
+  } catch {
+    // ignored on purpose
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * "Log out" for signed-in visitors. On success the session is signed out (booking store cleared)
@@ -33,6 +54,7 @@ export function LogoutButton() {
           setBusy(true);
           setFailed(false);
           try {
+            await dropPushSubscription(); // while the access token is still valid
             await session.logout();
           } catch {
             setFailed(true);

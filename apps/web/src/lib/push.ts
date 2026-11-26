@@ -35,15 +35,34 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return registration ? await registration.pushManager.getSubscription() : null;
 }
 
-/** What the toggle should offer on this device. Never throws. */
-export async function getPushSupport(api: PushApi): Promise<PushSupport> {
+async function postSubscription(api: PushApi, subscription: PushSubscription, consentSource: PushConsentSource) {
+  const json = subscription.toJSON();
+  await api.push.subscribe({
+    endpoint: subscription.endpoint,
+    keys: { p256dh: json.keys?.p256dh ?? "", auth: json.keys?.auth ?? "" },
+    consentSource,
+  });
+}
+
+/**
+ * What the toggle should offer on this device. Never throws. "subscribed" needs both a browser
+ * subscription and the customer's PUSH consent; with both, the subscription is re-sent to the API
+ * (idempotent upsert) so a lost server row heals.
+ */
+export async function getPushSupport(
+  api: PushApi,
+  opts: { pushConsent: boolean; consentSource: PushConsentSource },
+): Promise<PushSupport> {
   try {
     // iOS Safari has no PushManager until the site is added to the home screen, so check this first.
     if (isIos() && !isStandalone()) return "needs-install";
     if (!hasPushApis()) return "unsupported";
     await api.push.publicKey(); // 404: the server has no VAPID key
     if (Notification.permission === "denied") return "denied";
-    return (await currentSubscription()) ? "subscribed" : "available";
+    const subscription = await currentSubscription();
+    if (!subscription || !opts.pushConsent) return "available";
+    await postSubscription(api, subscription, opts.consentSource).catch(() => undefined);
+    return "subscribed";
   } catch {
     return "unsupported";
   }
@@ -55,7 +74,9 @@ export async function enablePush(api: PushApi, consentSource: PushConsentSource)
   // First await: registering the worker first would use up the tap's transient user activation.
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return permission === "denied" ? "denied" : "available";
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.register("/sw.js");
+  // `subscribe()` needs an active worker; `register()` can resolve before it is.
+  const registration = await navigator.serviceWorker.ready;
   const { publicKey } = await api.push.publicKey();
   const subscription =
     (await registration.pushManager.getSubscription()) ??
@@ -63,13 +84,8 @@ export async function enablePush(api: PushApi, consentSource: PushConsentSource)
       userVisibleOnly: true,
       applicationServerKey: decodeBase64Url(publicKey),
     }));
-  const json = subscription.toJSON();
   try {
-    await api.push.subscribe({
-      endpoint: subscription.endpoint,
-      keys: { p256dh: json.keys?.p256dh ?? "", auth: json.keys?.auth ?? "" },
-      consentSource,
-    });
+    await postSubscription(api, subscription, consentSource);
   } catch (err) {
     // Keep the browser and the server in step: no server row, no browser subscription.
     await subscription.unsubscribe().catch(() => false);

@@ -6,7 +6,14 @@ import { getBrowserApi } from "@/lib/api/browser";
 import { disablePush, enablePush, getPushSupport, type PushConsentSource, type PushSupport } from "@/lib/push";
 
 /** "Notify me on this device": web push opt-in. Hidden when the browser or server cannot do push. */
-export function PushToggle({ consentSource }: { consentSource: PushConsentSource }) {
+export function PushToggle({
+  consentSource,
+  pushConsent,
+}: {
+  consentSource: PushConsentSource;
+  /** The signed-in customer's `consents.PUSH`. */
+  pushConsent: boolean;
+}) {
   const t = useTranslations("push");
   const [support, setSupport] = useState<PushSupport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -14,13 +21,13 @@ export function PushToggle({ consentSource }: { consentSource: PushConsentSource
 
   useEffect(() => {
     let live = true;
-    void getPushSupport(getBrowserApi()).then((s) => {
+    void getPushSupport(getBrowserApi(), { pushConsent, consentSource }).then((s) => {
       if (live) setSupport(s);
     });
     return () => {
       live = false;
     };
-  }, []);
+  }, [pushConsent, consentSource]);
 
   if (support === null || support === "unsupported") return null;
   if (support === "needs-install" || support === "denied") {

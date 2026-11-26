@@ -87,7 +87,7 @@ export default function DonePage() {
         locale={locale}
       />
       {!me.consents.EMAIL && !offerDone ? <EmailOffer email={me.email} onSaved={() => setOfferDone(true)} /> : null}
-      <PushToggle consentSource="BOOKING_FORM" />
+      <PushToggle consentSource="BOOKING_FORM" pushConsent={me.consents.PUSH} />
       <div className="mt-2 flex flex-col gap-2.5">
         <Link
           href="/me"

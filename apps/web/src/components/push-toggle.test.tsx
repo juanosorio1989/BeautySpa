@@ -15,10 +15,10 @@ vi.mock("@/lib/api/browser", () => ({ getBrowserApi: () => ({ push: {} }) }));
 
 import { PushToggle } from "./push-toggle";
 
-const mount = () =>
+const mount = (pushConsent = true) =>
   render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <PushToggle consentSource="BOOKING_FORM" />
+      <PushToggle consentSource="BOOKING_FORM" pushConsent={pushConsent} />
     </NextIntlClientProvider>,
   );
 
@@ -75,6 +75,18 @@ describe("PushToggle", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Turn off notifications on this device" }));
     expect(await screen.findByRole("button", { name: "Notify me on this device" })).toBeInTheDocument();
     expect(disablePush).toHaveBeenCalled();
+  });
+
+  it("passes the PUSH consent to the support check", async () => {
+    getPushSupport.mockResolvedValue("available");
+    mount(false);
+    await waitFor(() =>
+      expect(getPushSupport).toHaveBeenCalledWith(expect.anything(), {
+        pushConsent: false,
+        consentSource: "BOOKING_FORM",
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "Notify me on this device" })).toBeInTheDocument();
   });
 
   it("shows an error when enabling fails", async () => {
