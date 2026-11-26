@@ -268,3 +268,26 @@ Production-data branch (tasks 1, 5, 6, 8, 9): **two independent final branch rev
 - [ ] **Step 3: Docs** as listed; handoff: done, next (plan 07), owner to-dos (verify a sending domain in Resend and set `EMAIL_FROM`; `secrets:gen` for VAPID and `MANAGE_LINK_SECRET`; deploy must run the `worker` process next to the API; Resend free tier limits).
 - [ ] **Step 4:** full green command + `test:int` → PASS.
 - [ ] **Step 5: Commit** `test(web): manage link e2e; docs for notifications`.
+
+## Final review rulings (2026-11-25)
+
+Two independent final reviews (A, B). Fix round F1–F11; deferred items D1–D3.
+
+| Id | Finding | Ruling | Implementer |
+|---|---|---|---|
+| F1 | Push send has no timeout; a tarpit endpoint fills all notification slots (A, B) | `timeout: 10_000` in web-push options; unit test asserts it | implementer-opus |
+| F2 | Push endpoint accepts any https host (blind SSRF) (A, B) | Contract allowlist: `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`, https only, no port, no IP literals; unsubscribe endpoint `.max(2048)` | implementer-opus |
+| F3 | Reminder scan: failed/completed `send` job id blocks re-add for its whole window; customers with no channel crowd the 500 batch (A, B) | SQL also requires a sendable channel (EMAIL consent granted and email present, or PUSH consent granted and ≥1 subscription); before adding, if a job with the id exists in state `failed` or `completed`, remove it, then add | implementer-opus |
+| F4 | `push_none` retried 5 times (A) | `PushError("none")` → row `SKIPPED`, error `push_none`, no retry | implementer-opus |
+| F5 | PUSH consent granted with zero subscriptions (endpoint moved, 404/410 delete) blocks catch-up on a new device (A, B) | On subscribe, when the customer had zero rows before, run the PUSH consent catch-up even if consent did not change (catch-up stays idempotent) | implementer-opus |
+| F6 | `QUEUED` row orphaned with no `deliver` job (B) | Maintenance job every 10 min: `QUEUED` rows older than 1 h → if no waiting/active/delayed `deliver|<id>` job, remove any finished one and re-add; rows older than 24 h → `FAILED`, error `orphaned` | implementer-opus |
+| F7 | `DELETE /me` awaits each cancelled enqueue in sequence (B) | Run the adds with `Promise.all` | implementer-opus |
+| F8 | Service worker not active when `subscribe()` runs (Chrome first tap fails) (B) | Subscribe on `await navigator.serviceWorker.ready`; unit test | implementer-sonnet |
+| F9 | Toggle trusts the browser subscription only (A, B) | When the browser already has a subscription, `enablePush`/load path re-POSTs it (idempotent) and the toggle shows "subscribed" only when `me.consents.PUSH` is true | implementer-sonnet |
+| F10 | Shared device keeps the previous customer's pushes (manage-link bearer URLs) after logout (B) | Customer logout calls `disablePush()` (best effort, never blocks logout) before signing out | implementer-sonnet |
+| F11 | `dev` and `worker:dev` share `dist` with `deleteOutDir` (A, B); spec says `pnpm dev` runs the worker (A) | `worker:dev` builds with `tsconfig.worker.json` (`outDir: dist-worker`), `worker:start` runs `dist-worker/worker.js`; `.gitignore` adds it; fix `notifications.md:89`; dev README and Docker/deploy notes updated | implementer-sonnet |
+
+Deferred (recorded in handoff):
+- D1: two adjacent events can both send at one `manageVersion` (version read after commit); needs the version returned from the write transaction → changes `BookingEvents`; plan 07 or later.
+- D2: `POST /manage/:token/cancel` validates the body before the rate limit and headers; low impact, no data returned.
+- D3: none else.
