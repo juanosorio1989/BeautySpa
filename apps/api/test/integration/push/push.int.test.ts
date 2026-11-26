@@ -15,7 +15,7 @@ import {
   type BookingFixture,
 } from "../helpers.js";
 
-const ENDPOINT = "https://push.example/sub/1";
+const ENDPOINT = "https://fcm.googleapis.com/fcm/send/1";
 const KEYS = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA", auth: "tBHItJI5svbpez7KI4CCXg" };
 
 describe("push subscriptions API", () => {
@@ -116,13 +116,13 @@ describe("push subscriptions API", () => {
 
   it("unsubscribe last row revokes PUSH", async () => {
     await subscribe();
-    await subscribe({ endpoint: "https://push.example/sub/2", keys: KEYS });
+    await subscribe({ endpoint: "https://fcm.googleapis.com/fcm/send/2", keys: KEYS });
 
     expect((await unsubscribe()).status).toBe(204);
     expect(await subs()).toHaveLength(1);
     expect((await pushConsents()).map((c) => c.granted)).toEqual([true]);
 
-    expect((await unsubscribe("https://push.example/sub/2")).status).toBe(204);
+    expect((await unsubscribe("https://fcm.googleapis.com/fcm/send/2")).status).toBe(204);
     expect(await subs()).toHaveLength(0);
     const consents = await pushConsents();
     expect(consents.map((c) => ({ granted: c.granted, source: c.source }))).toEqual([
@@ -150,6 +150,19 @@ describe("push subscriptions API", () => {
   it("non-https endpoint is 400", async () => {
     const res = await subscribe({ endpoint: "http://push.example/sub/1", keys: KEYS });
     expect(res.status).toBe(400);
+    expect(await subs()).toHaveLength(0);
+    expect(await pushConsents()).toHaveLength(0);
+  });
+
+  it("endpoint outside the push service allowlist is 400", async () => {
+    for (const endpoint of [
+      "https://push.example/sub/1",
+      "https://169.254.169.254/x",
+      "https://fcm.googleapis.com:8443/x",
+    ]) {
+      const res = await subscribe({ endpoint, keys: KEYS });
+      expect(res.status).toBe(400);
+    }
     expect(await subs()).toHaveLength(0);
     expect(await pushConsents()).toHaveLength(0);
   });
@@ -194,8 +207,13 @@ describe("push subscriptions API", () => {
     await ctx.prisma.pushSubscription.createMany({
       data: [
         { organizationId: f.orgId, customerId: f.customerId, endpoint: ENDPOINT, ...KEYS },
-        { organizationId: f.orgId, customerId: f.customerId, endpoint: "https://push.example/sub/2", ...KEYS },
-        { organizationId: f.orgId, customerId: bea.id, endpoint: "https://push.example/sub/bea", ...KEYS },
+        {
+          organizationId: f.orgId,
+          customerId: f.customerId,
+          endpoint: "https://fcm.googleapis.com/fcm/send/2",
+          ...KEYS,
+        },
+        { organizationId: f.orgId, customerId: bea.id, endpoint: "https://fcm.googleapis.com/fcm/send/bea", ...KEYS },
       ],
     });
 
