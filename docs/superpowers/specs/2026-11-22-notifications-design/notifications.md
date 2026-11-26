@@ -88,5 +88,5 @@ never a provider response body, phone or email.
   reused by the job and still takes `lockOrgBookings` per org.
 - BullMQ connection from `REDIS_URL` (separate ioredis connections with
   `maxRetriesPerRequest: null` as BullMQ requires).
-- Dev: `pnpm dev` runs web, api and worker (turbo). CI integration tests run
+- Dev: `pnpm dev` runs web and api only; the worker is `pnpm dev:worker` (builds into `dist-worker`, so it never clears the API's `dist`). CI integration tests run
   the handlers directly and through a real worker against the CI Redis.
