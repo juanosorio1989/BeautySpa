@@ -12,7 +12,7 @@ New enum value `NotificationChannel.PUSH`. New table `push_subscription`:
 | Method | Path | Result |
 |---|---|---|
 | GET | `/push/public-key` | `{ publicKey }` (VAPID, public) |
-| POST | `/me/push-subscriptions` | `{ endpoint, keys: { p256dh, auth }, consentSource? }` → 204. The endpoint must be `https://` on a known push service (`fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`; no port, no IP literal), else 400: the worker POSTs to it. Upserts by endpoint (moves it to the caller if another customer had it) and records `PUSH granted: true` when the current consent is not already granted (source `PROFILE` default or `BOOKING_FORM`). |
+| POST | `/me/push-subscriptions` | `{ endpoint, keys: { p256dh, auth }, consentSource? }` → 204. The endpoint must be `https://` on a known push service (`fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`; no port, no IP literal), else 400: the worker POSTs to it. Upserts by endpoint (moves it to the caller if another customer had it) and records `PUSH granted: true` when the current consent is not already granted (source `PROFILE` default or `BOOKING_FORM`). After commit, the consent catch-up runs when the consent changed or when the caller had no subscription before this one. |
 | DELETE | `/me/push-subscriptions` | `{ endpoint }` (max 2048) → 204; removes the caller's row. Last one gone → `PUSH granted: false` (source `PROFILE`). |
 
 `PATCH /me { consents: { PUSH: false } }` keeps rows but stops sends (router

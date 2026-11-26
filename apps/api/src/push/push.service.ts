@@ -43,19 +43,23 @@ export class PushService {
    * One transaction (customer row locked): upserts the subscription by `endpoint` (an endpoint another
    * customer held moves to the caller, keys replaced) and records `PUSH` granted (source `consentSource`,
    * default `PROFILE`) when it is not already. `customer.update` with `fields: ["consents.PUSH"]` only when the
-   * consent changed; then, after commit, the consent catch-up (errors logged, never returned).
+   * consent changed; then, after commit, the consent catch-up (errors logged, never returned). The catch-up also
+   * runs when the consent did not change but the customer had no subscription before this one (job id suffix
+   * `grant|PUSH|<subscription id>`); it stays idempotent (log unique key).
    */
   async subscribe(principal: AccessClaims, input: PushSubscriptionInput, ip: string | null): Promise<void> {
     await this.enforceLimit(principal);
-    const recorded = await this.prisma.$transaction(async (tx) => {
+    const { recorded, firstSubscriptionId } = await this.prisma.$transaction(async (tx) => {
       const customer = await assertLiveCustomer(tx, principal, { lock: true });
       const owner = { organizationId: principal.org, customerId: customer.id };
       const keys = { p256dh: input.keys.p256dh, auth: input.keys.auth };
+      const hadNone = (await tx.pushSubscription.count({ where: owner })) === 0;
       // Unique on endpoint across orgs: the browser's subscription belongs to whoever subscribed last.
-      await tx.pushSubscription.upsert({
+      const sub = await tx.pushSubscription.upsert({
         where: { endpoint: input.endpoint },
         create: { ...owner, endpoint: input.endpoint, ...keys },
         update: { ...owner, ...keys },
+        select: { id: true },
       });
       const changed = await recordConsents(
         tx,
@@ -65,14 +69,13 @@ export class PushService {
         input.consentSource ?? "PROFILE",
       );
       await this.auditConsent(tx, principal, changed, ip);
-      return changed;
+      return { recorded: changed, firstSubscriptionId: hadNone ? sub.id : null };
     });
-    await catchUpAfterCommit(
-      this.catchUpDeps(principal),
-      this.logger,
-      principal.sub,
-      sendableGrants(recorded, { PUSH: true }),
-    );
+    const grants = sendableGrants(recorded, { PUSH: true });
+    // PUSH already granted but no device left (all deleted on 404/410): this first device catches up too,
+    // keyed by the subscription row so an earlier catch-up job id never blocks it.
+    if (grants.length === 0 && firstSubscriptionId !== null) grants.push({ channel: "PUSH", id: firstSubscriptionId });
+    await catchUpAfterCommit(this.catchUpDeps(principal), this.logger, principal.sub, grants);
   }
 
   /**

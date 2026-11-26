@@ -28,6 +28,12 @@ future that has no `notification_log` row on that channel at its current
 log unique key still prevents a double send. The offer's wording ("your
 confirmation and reminders") stays true.
 
+`POST /me/push-subscriptions` also runs the `PUSH` catch-up when the consent
+was already granted but the customer had no subscription before this one
+(every device was deleted on 404/410, or the browser moved the endpoint):
+without it a new device would never get the confirmations missed meanwhile.
+Its job id suffix is `|grant|PUSH|<subscription row id>`.
+
 ## Flow
 
 1. The API's `QueueBookingEvents` (replaces `LoggingBookingEvents`) adds a job

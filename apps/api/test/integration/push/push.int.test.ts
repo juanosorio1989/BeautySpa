@@ -202,6 +202,38 @@ describe("push subscriptions API", () => {
     expect(await queue.count()).toBe(1);
   });
 
+  it("subscribe with zero subscriptions runs the catch-up even when PUSH is already granted", async () => {
+    const appt = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "14:00", endsAt: "15:00" });
+    await subscribe();
+    expect(await queue.count()).toBe(1);
+    // The push service answered 404/410: the worker deleted the row, the consent stays granted.
+    await ctx.prisma.pushSubscription.deleteMany({});
+    await queue.obliterate({ force: true });
+
+    const second = "https://fcm.googleapis.com/fcm/send/new-device";
+    expect((await subscribe({ endpoint: second, keys: KEYS })).status).toBe(204);
+
+    expect((await pushConsents()).map((c) => c.granted)).toEqual([true]);
+    const [row] = await subs();
+    const job = await queue.getJob(
+      sendJobId(
+        { appointmentId: appt.id, templateKey: "appointment.confirmed", manageVersion: 0 },
+        `grant|PUSH|${row!.id}`,
+      ),
+    );
+    expect(job?.data).toEqual({
+      appointmentId: appt.id,
+      templateKey: "appointment.confirmed",
+      manageVersion: 0,
+      channels: ["PUSH"],
+    });
+    expect(await queue.count()).toBe(1);
+
+    // A further device while one is subscribed: no catch-up.
+    expect((await subscribe({ endpoint: `${second}-2`, keys: KEYS })).status).toBe(204);
+    expect(await queue.count()).toBe(1);
+  });
+
   it("DELETE /me removes subscriptions", async () => {
     const bea = await otherCustomer();
     await ctx.prisma.pushSubscription.createMany({
