@@ -21,6 +21,9 @@ and starts_at - H <= now            -- due
 and starts_at - H >= times_set_at   -- booked at least H before
 and now < starts_at - L(K)          -- not too late
 and no notification_log row for (appointment, K, manage_version)
+and the customer has a sendable channel:
+    (latest EMAIL consent granted and email is not null)
+    or (latest PUSH consent granted and at least one push_subscription)
 ```
 
 `L(24h) = 2 h` and `L(2h) = 0` **(call)**: after worker downtime a 24 h reminder
@@ -28,7 +31,12 @@ may still go out late, but never once the 2 h one is due; a 2 h reminder never
 goes out after the start. `starts_at` is the first segment's start.
 
 Each match enqueues `send` with the appointment's current `manageVersion`
-(same job id scheme, so a scan that runs twice adds nothing). The `send`
+(same job id scheme, so a scan that runs twice adds nothing while that job is
+waiting, delayed or active). A job with that id already `failed` or
+`completed` (kept 7 days / 1 day by retention) is removed first and the job is
+added again, so it never blocks the reminder for its whole window. The
+sendable-channel condition keeps customers who cannot receive anything from
+crowding the batch (and from being re-added every minute). The `send`
 handler applies all checks again. Scan batch **(call)**: at most 500 rows per
 kind per run, oldest due first; the next minute picks up the rest.
 

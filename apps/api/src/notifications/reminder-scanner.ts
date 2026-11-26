@@ -27,8 +27,10 @@ export class ReminderScanner {
 
   /**
    * One run: per reminder kind, adds a `send` job for each due appointment (same job id scheme as every other
-   * `send`, so repeated scans add nothing). The `send` handler re-checks everything. A failed enqueue is logged
-   * and skipped. Returns the number of jobs enqueued.
+   * `send`, so repeated scans add nothing while that job waits or runs). A job with that id already `failed` or
+   * `completed` (kept by BullMQ retention) would block the add for its whole window, so it is removed first.
+   * The `send` handler re-checks everything. A failed enqueue is logged and skipped. Returns the number of jobs
+   * enqueued.
    */
   async scan(): Promise<number> {
     const now = new Date(this.clock.now());
@@ -37,8 +39,10 @@ export class ReminderScanner {
       const rows = await this.due(r, now);
       for (const row of rows) {
         const job: SendJob = { appointmentId: row.id, templateKey: r.key, manageVersion: row.manage_version };
+        const jobId = sendJobId(job);
         try {
-          await enqueueBounded(this.queue, "send", job, { ...SEND_JOB_OPTIONS, jobId: sendJobId(job) });
+          await this.removeFinished(jobId);
+          await enqueueBounded(this.queue, "send", job, { ...SEND_JOB_OPTIONS, jobId });
           enqueued += 1;
         } catch (err) {
           this.logger.error(`Reminder enqueue failed for appointment ${row.id}: ${(err as Error).message}`);
@@ -48,10 +52,20 @@ export class ReminderScanner {
     return enqueued;
   }
 
+  /** Removes the job `jobId` when it exists in state `failed` or `completed`, so the same id can be added again. */
+  private async removeFinished(jobId: string): Promise<void> {
+    const existing = await this.queue.getJob(jobId);
+    if (!existing) return;
+    const state = await existing.getState();
+    if (state === "failed" || state === "completed") await existing.remove();
+  }
+
   /**
    * SQL mirror of `isReminderDue`, with `start` = first segment start:
    * `start - offset <= now` -> `start <= now + offset`; `start - offset >= times_set_at` ->
-   * `start >= times_set_at + offset`; `now < start - late` -> `start > now + late`.
+   * `start >= times_set_at + offset`; `now < start - late` -> `start > now + late`. Also requires a channel the
+   * router could send on (latest consent row per channel, as `currentConsents`): `EMAIL` granted and an email, or
+   * `PUSH` granted and at least one subscription; customers without one never fill the batch.
    */
   private due(r: Reminder, now: Date): Promise<DueRow[]> {
     const offset = `${r.offsetMs} milliseconds`;
@@ -62,12 +76,33 @@ export class ReminderScanner {
       JOIN LATERAL (
         SELECT min(s.starts_at) AS starts_at FROM appointment_segment s WHERE s.appointment_id = a.id
       ) first ON true
+      JOIN customer c ON c.id = a.customer_id AND c.organization_id = a.organization_id
       WHERE a.status = 'BOOKED'
         AND a.customer_id IS NOT NULL
         AND a.source <> 'WALK_IN'
         AND first.starts_at <= ${now}::timestamptz + ${offset}::interval
         AND first.starts_at >= a.times_set_at + ${offset}::interval
         AND first.starts_at > ${now}::timestamptz + ${late}::interval
+        AND (
+          (
+            c.email IS NOT NULL
+            AND (
+              SELECT nc.granted FROM notification_consent nc
+              WHERE nc.customer_id = c.id AND nc.organization_id = a.organization_id AND nc.channel = 'EMAIL'
+              ORDER BY nc.changed_at DESC, nc.id DESC LIMIT 1
+            ) IS TRUE
+          )
+          OR (
+            (
+              SELECT nc.granted FROM notification_consent nc
+              WHERE nc.customer_id = c.id AND nc.organization_id = a.organization_id AND nc.channel = 'PUSH'
+              ORDER BY nc.changed_at DESC, nc.id DESC LIMIT 1
+            ) IS TRUE
+            AND EXISTS (
+              SELECT 1 FROM push_subscription p WHERE p.customer_id = c.id AND p.organization_id = a.organization_id
+            )
+          )
+        )
         AND NOT EXISTS (
           SELECT 1 FROM notification_log n
           WHERE n.appointment_id = a.id AND n.template_key = ${r.key} AND n.manage_version = a.manage_version

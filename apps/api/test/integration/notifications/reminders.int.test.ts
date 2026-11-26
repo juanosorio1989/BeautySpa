@@ -1,6 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
-import type { Queue } from "bullmq";
-import type { Redis } from "ioredis";
+import { randomUUID } from "node:crypto";
+import { type Job, type Queue, Worker } from "bullmq";
+import { Redis } from "ioredis";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { CLOCK } from "../../../src/common/clock.js";
 import { ENV } from "../../../src/config/env.js";
@@ -8,7 +9,7 @@ import { ReminderScanner } from "../../../src/notifications/reminder-scanner.js"
 import type { TemplateKey } from "../../../src/notifications/templates/types.js";
 import { PrismaService } from "../../../src/prisma/prisma.service.js";
 import { NOTIFICATIONS_QUEUE_TOKEN } from "../../../src/queue/queue.module.js";
-import { sendJobId } from "../../../src/queue/queue-names.js";
+import { NOTIFICATIONS_QUEUE, sendJobId } from "../../../src/queue/queue-names.js";
 import { REDIS } from "../../../src/redis/redis.module.js";
 import { WorkerModule } from "../../../src/worker/worker.module.js";
 import { testEnv } from "../../support/test-env.js";
@@ -51,7 +52,45 @@ describe("reminder scan", () => {
     clock.set(S - 24 * H);
     f = await seedBookingFixture(prisma);
     apptId = (await bookSegment(prisma, f, { staffUserId: f.staffA, startsAt: "14:00", endsAt: "15:00" })).id;
+    // A sendable channel (EMAIL consent + email): the scan skips customers who cannot receive anything.
+    await prisma.customer.update({ where: { id: f.customerId }, data: { email: "ana@example.test" } });
+    await consent("EMAIL", true);
   });
+
+  let consentAt = 0;
+  async function consent(channel: "EMAIL" | "PUSH", granted: boolean) {
+    consentAt += 1;
+    await prisma.notificationConsent.create({
+      data: {
+        organizationId: f.orgId,
+        customerId: f.customerId,
+        channel,
+        granted,
+        source: "PROFILE",
+        changedAt: new Date(Date.parse("2026-11-20T00:00:00.000Z") + consentAt * 1000),
+      },
+    });
+  }
+
+  /** Takes the next waiting job off the queue by hand (no processor) and fails or completes it. */
+  async function finishNext(outcome: "failed" | "completed") {
+    const worker = new Worker(NOTIFICATIONS_QUEUE, null, {
+      connection: new Redis(testRedisUrl(), { maxRetriesPerRequest: null }),
+      autorun: false,
+    });
+    try {
+      const token = randomUUID();
+      const next = (await worker.getNextJob(token)) as Job;
+      expect(next).toBeDefined();
+      if (outcome === "failed") {
+        next.discard(); // last attempt: straight to `failed`, no retry
+        await next.moveToFailed(new Error("boom"), token, false);
+      } else await next.moveToCompleted("ok", token, false);
+      expect(await next.getState()).toBe(outcome);
+    } finally {
+      await worker.close();
+    }
+  }
 
   it("scan enqueues due 24h reminder once", async () => {
     expect(await scanner.scan()).toBe(1);
@@ -121,6 +160,74 @@ describe("reminder scan", () => {
     expect(await scanner.scan()).toBe(1);
     expect(await job("appointment.reminder_2h")).toBeDefined();
     expect(await job("appointment.reminder_24h")).toBeUndefined();
+  });
+
+  it("customer without a sendable channel is not scanned", async () => {
+    // EMAIL consent revoked: nothing to send.
+    await consent("EMAIL", false);
+    expect(await scanner.scan()).toBe(0);
+    // EMAIL consent granted but no email.
+    await consent("EMAIL", true);
+    await prisma.customer.update({ where: { id: f.customerId }, data: { email: null } });
+    expect(await scanner.scan()).toBe(0);
+    // PUSH consent without a subscription.
+    await consent("PUSH", true);
+    expect(await scanner.scan()).toBe(0);
+    // PUSH consent and a subscription.
+    await prisma.pushSubscription.create({
+      data: {
+        organizationId: f.orgId,
+        customerId: f.customerId,
+        endpoint: "https://fcm.googleapis.com/fcm/send/r1",
+        p256dh: "k",
+        auth: "a",
+      },
+    });
+    expect(await scanner.scan()).toBe(1);
+    expect(await job("appointment.reminder_24h")).toBeDefined();
+  });
+
+  it("customers without a channel do not crowd out sendable ones", async () => {
+    await prisma.customer.update({ where: { id: f.customerId }, data: { email: null } });
+    const other = await prisma.customer.create({
+      data: {
+        organizationId: f.orgId,
+        phoneE164: "+13055550199",
+        name: "Bea",
+        email: "bea@example.test",
+        locale: "en",
+        createdVia: "ONLINE",
+      },
+    });
+    await prisma.notificationConsent.create({
+      data: { organizationId: f.orgId, customerId: other.id, channel: "EMAIL", granted: true, source: "PROFILE" },
+    });
+    const otherAppt = await bookSegment(prisma, f, { staffUserId: f.staffB, startsAt: "14:00", endsAt: "15:00" });
+    await prisma.appointment.update({ where: { id: otherAppt.id }, data: { customerId: other.id } });
+
+    expect(await scanner.scan()).toBe(1);
+    expect(await job("appointment.reminder_24h", 0, otherAppt.id)).toBeDefined();
+    expect(await job("appointment.reminder_24h")).toBeUndefined();
+  });
+
+  it.each(["failed", "completed"] as const)("a %s send job with the id is removed and re-added", async (outcome) => {
+    expect(await scanner.scan()).toBe(1);
+    await finishNext(outcome);
+
+    expect(await scanner.scan()).toBe(1);
+
+    const j = await job("appointment.reminder_24h");
+    expect(await j?.getState()).toBe("waiting");
+    expect(await queue.getJobCountByTypes("failed", "completed")).toBe(0);
+  });
+
+  it("a waiting send job is left alone", async () => {
+    expect(await scanner.scan()).toBe(1);
+    const before = await job("appointment.reminder_24h");
+    expect(await scanner.scan()).toBe(1);
+    const after = await job("appointment.reminder_24h");
+    expect(after?.timestamp).toBe(before?.timestamp);
+    expect(await queue.getJobCountByTypes("waiting")).toBe(1);
   });
 
   it("2h reminder not sent after the start", async () => {
