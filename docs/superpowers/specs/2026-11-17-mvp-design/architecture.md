@@ -42,7 +42,7 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   custom ids). A separate process from the same codebase consumes them:
   `apps/api/src/worker.ts` (`WorkerModule`, a Nest application context, no HTTP),
   run with `pnpm --filter @beautyspa/api worker:dev` (watch) or `worker:start`
-  (`dist/worker.js`). `pnpm dev` runs only web and api, so in dev the worker must
+  (`dist-worker/worker.js`). `pnpm dev` runs only web and api, so in dev the worker must
   also run, or expired holds are not swept.
 - Hold sweeper **(call, plan 04; moved in plan 05)**: `HoldSweeper.sweep()`
   (`apps/api/src/booking/hold-sweeper.ts`) has no timer of its own. At start the
