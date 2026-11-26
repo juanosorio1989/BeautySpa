@@ -1,6 +1,6 @@
 # Handoff
 
-Updated: 2026-11-25
+Updated: 2026-11-25 (plan 05 merged)
 
 ## Done
 
@@ -16,7 +16,7 @@ Updated: 2026-11-25
   - `BookingEvents` port (booked/changed/cancelled) is a logging no-op until notifications land.
   - Execution rulings R1–R16 are listed at the end of `docs/superpowers/plans/2026-11-17-mvp/04-booking.md`.
 - Plan 06 — web public site and booking — merged (branch `feat/mvp-06-web`, two independent final reviews + fix round): next-intl EN/ES, SEO pages, booking flow with holds and OTP (hold countdown from device receipt time + `holdMinutes`; own hold released when returning to step 2), client area (`/me`), header Log out only signs out after the server confirms, staff cancel reasons hidden from customers, `OTP_CHANNELS` (default `sms`), Playwright e2e smoke tests and the CI `e2e` job.
-- Plan 05 — notifications — branch `feat/mvp-05-notifications`, Tasks 1–12 implemented and reviewed per task; final branch reviews pending:
+- Plan 05 — notifications — merged (PR #7; two independent final reviews, fix round F1–F11, follow-ups F6a–F6d and R1–R6, all re-reviewed):
   - Channels: email (Resend; `console` in dev) with `.ics` invite (REQUEST/CANCEL), web push (VAPID; `console` in dev). SMS/WhatsApp stay pluggable for later.
   - BullMQ queues and a separate `worker` process (`pnpm dev:worker`): hold sweep (moved from the API), reminder scan, `send` / `deliver` jobs with `notification_log` rows (idempotent per appointment, key, channel, `manage_version`).
   - Signed manage links (`/[locale]/manage/<token>`): view, confirm, cancel, add to calendar; any version bump invalidates old links.
@@ -25,8 +25,10 @@ Updated: 2026-11-25
 
 ## Next
 
-1. Plan 05: two independent final branch reviews, fix round, push, PR, merge. Then plan 07, 08. For PRs use `gh api` REST for edit/merge (`gh pr edit/merge` fail on a GraphQL deprecation).
-2. Watch the first CI run of the `e2e` job on GitHub (never run there before plan 06 merged).
+1. Plan 07 (staff app). Write/verify its plan first; carried items are listed below under "Plan 07".
+2. Then plan 08. For PRs use `gh api` REST for edit/merge (`gh pr edit/merge` fail on a GraphQL deprecation).
+3. CI `e2e` job passed on GitHub for the first time (PR #7, 2026-11-25).
+4. Local note: chaining lint+typecheck+build+test+test:int in one shell once got the int run SIGKILLed (exit 137, likely memory); run `pnpm test:int` on its own.
 
 ## Owner decisions (2026-11-21)
 
