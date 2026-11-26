@@ -6,6 +6,7 @@ import { ConfigModule } from "../config/config.module.js";
 import { MailModule } from "../mail/mail.module.js";
 import { NotificationDeliveryModule } from "../notifications/notifications.module.js";
 import { NotificationsProcessor } from "../notifications/notifications.processor.js";
+import { OrphanedDeliveries } from "../notifications/orphaned-deliveries.js";
 import { ReminderScanner } from "../notifications/reminder-scanner.js";
 import { PrismaModule } from "../prisma/prisma.module.js";
 import { QueueModule } from "../queue/queue.module.js";
@@ -24,6 +25,6 @@ import { MaintenanceProcessor } from "./maintenance.processor.js";
     QueueModule,
     NotificationDeliveryModule,
   ],
-  providers: [HoldSweeper, ReminderScanner, MaintenanceProcessor, NotificationsProcessor],
+  providers: [HoldSweeper, ReminderScanner, OrphanedDeliveries, MaintenanceProcessor, NotificationsProcessor],
 })
 export class WorkerModule {}

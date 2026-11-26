@@ -103,10 +103,15 @@ describe("worker maintenance queue", () => {
     await first.close();
     opened.pop();
 
-    const worker = await start({ HOLD_SWEEP_INTERVAL_MS: "60000", REMINDER_SCAN_INTERVAL_MS: "30000" });
+    const worker = await start({
+      HOLD_SWEEP_INTERVAL_MS: "60000",
+      REMINDER_SCAN_INTERVAL_MS: "30000",
+      DELIVERY_RECOVERY_INTERVAL_MS: "600000",
+    });
     const schedulers = await worker.get<Queue>(MAINTENANCE_QUEUE_TOKEN).getJobSchedulers();
     const byKey = Object.fromEntries(schedulers.map((s) => [s.key, s]));
-    expect(Object.keys(byKey).sort()).toEqual(["scan-reminders", "sweep-holds"]);
+    expect(Object.keys(byKey).sort()).toEqual(["recover-deliveries", "scan-reminders", "sweep-holds"]);
+    expect(byKey["recover-deliveries"]).toMatchObject({ name: "recover-deliveries", every: 600_000 });
     expect(byKey["sweep-holds"]).toMatchObject({ name: "sweep-holds", every: 60_000 });
     expect(byKey["scan-reminders"]).toMatchObject({ name: "scan-reminders", every: 30_000 });
   });

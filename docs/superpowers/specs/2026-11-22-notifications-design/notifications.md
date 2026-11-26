@@ -63,6 +63,15 @@ Its job id suffix is `|grant|PUSH|<subscription row id>`.
    finds no subscription left (`push_none`: all deleted on 404/410 since
    `send`) → `SKIPPED`, error `push_none`, no retry.
 
+Orphaned rows: a `QUEUED` row can lose its `deliver` job (the enqueue after
+the insert failed, or Redis lost it). The `recover-deliveries` maintenance job
+(every 10 min) takes `QUEUED` rows older than 1 h, oldest first, 500 per run:
+older than 24 h → `FAILED`, error `orphaned`; otherwise, when no
+`deliver|<logId>` job is waiting, active or delayed, it removes a finished
+(`completed`/`failed`) job with that id and adds the `deliver` job again. Re-queuing is at-least-once, like `deliver`
+retries: a row left `QUEUED` after the provider accepted the message
+(`sent_update_failed` on the last attempt) is sent again.
+
 Retries **(call)**: `deliver` 5 attempts, exponential backoff from 30 s.
 `send` 3 attempts, backoff 10 s. Completed jobs removed after 1 day, failed
 after 7 days.
@@ -90,7 +99,8 @@ never a provider response body, phone or email.
 - Queue `maintenance`, repeatable jobs (upserted at worker start with
   `upsertJobScheduler`): `sweep-holds` every `HOLD_SWEEP_INTERVAL_MS` (0 = not
   scheduled), `scan-reminders` every `REMINDER_SCAN_INTERVAL_MS` (default
-  60000). The in-process `HoldSweeper` timer is removed; its `sweep()` logic is
+  60000), `recover-deliveries` every `DELIVERY_RECOVERY_INTERVAL_MS` (default
+  600000 = 10 min). The in-process `HoldSweeper` timer is removed; its `sweep()` logic is
   reused by the job and still takes `lockOrgBookings` per org.
 - BullMQ connection from `REDIS_URL` (separate ioredis connections with
   `maxRetriesPerRequest: null` as BullMQ requires).

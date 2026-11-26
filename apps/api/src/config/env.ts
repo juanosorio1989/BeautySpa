@@ -134,6 +134,8 @@ const EnvSchema = z
     VAPID_SUBJECT: vapidSubject.optional(),
     /** Reminder scan period in the worker; 0 disables it (tests). */
     REMINDER_SCAN_INTERVAL_MS: z.coerce.number().int().min(0).default(60000),
+    /** Period of the worker's `recover-deliveries` job (orphaned `QUEUED` rows); 0 disables it (tests). */
+    DELIVERY_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(0).default(600000),
   })
   .superRefine((e, ctx) => {
     const require = (key: keyof typeof e, message: string) => {

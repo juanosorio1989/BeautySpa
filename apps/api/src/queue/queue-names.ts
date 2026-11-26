@@ -3,7 +3,7 @@ import type { TemplateKey } from "../notifications/templates/types.js";
 
 /** Queue of `send` (router) and `deliver` (one channel) notification jobs. */
 export const NOTIFICATIONS_QUEUE = "notifications";
-/** Queue of the repeatable `sweep-holds` and `scan-reminders` jobs. */
+/** Queue of the repeatable `sweep-holds`, `scan-reminders` and `recover-deliveries` jobs. */
 export const MAINTENANCE_QUEUE = "maintenance";
 
 /** `send` job: route one template of one appointment version to the customer's channels. */

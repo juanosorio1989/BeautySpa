@@ -24,6 +24,7 @@ export function testEnv(overrides: Record<string, string> = {}): Env {
     MANAGE_LINK_SECRET,
     PUSH_PROVIDER: "fake",
     REMINDER_SCAN_INTERVAL_MS: "0",
+    DELIVERY_RECOVERY_INTERVAL_MS: "0",
     ...overrides,
   });
 }

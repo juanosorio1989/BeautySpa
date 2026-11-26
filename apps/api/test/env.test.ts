@@ -45,6 +45,7 @@ describe("loadEnv", () => {
     expect(env.OTP_CHANNELS).toEqual(["sms"]);
     expect(env.PUSH_PROVIDER).toBe("console");
     expect(env.REMINDER_SCAN_INTERVAL_MS).toBe(60000);
+    expect(env.DELIVERY_RECOVERY_INTERVAL_MS).toBe(600000);
   });
 
   it("OTP_CHANNELS is a trimmed, ordered list", () => {
@@ -213,6 +214,11 @@ describe("loadEnv", () => {
   it("REMINDER_SCAN_INTERVAL_MS accepts 0 and rejects negatives", () => {
     expect(loadEnv({ ...base, REMINDER_SCAN_INTERVAL_MS: "0" }).REMINDER_SCAN_INTERVAL_MS).toBe(0);
     expect(() => loadEnv({ ...base, REMINDER_SCAN_INTERVAL_MS: "-1" })).toThrow(/REMINDER_SCAN_INTERVAL_MS/);
+  });
+
+  it("DELIVERY_RECOVERY_INTERVAL_MS accepts 0 and rejects negatives", () => {
+    expect(loadEnv({ ...base, DELIVERY_RECOVERY_INTERVAL_MS: "0" }).DELIVERY_RECOVERY_INTERVAL_MS).toBe(0);
+    expect(() => loadEnv({ ...base, DELIVERY_RECOVERY_INTERVAL_MS: "-1" })).toThrow(/DELIVERY_RECOVERY_INTERVAL_MS/);
   });
 
   it("a 16-byte DATA_ENCRYPTION_KEY names it", () => {

@@ -3,6 +3,7 @@ import { type Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 import { HoldSweeper } from "../booking/hold-sweeper.js";
 import { ENV, type Env } from "../config/env.js";
+import { OrphanedDeliveries } from "../notifications/orphaned-deliveries.js";
 import { ReminderScanner } from "../notifications/reminder-scanner.js";
 import { MAINTENANCE_QUEUE_TOKEN } from "../queue/queue.module.js";
 import { MAINTENANCE_QUEUE } from "../queue/queue-names.js";
@@ -11,6 +12,7 @@ import { MAINTENANCE_QUEUE } from "../queue/queue-names.js";
 const SCHEDULES = [
   { name: "sweep-holds", every: "HOLD_SWEEP_INTERVAL_MS" },
   { name: "scan-reminders", every: "REMINDER_SCAN_INTERVAL_MS" },
+  { name: "recover-deliveries", every: "DELIVERY_RECOVERY_INTERVAL_MS" },
 ] as const;
 
 /** Maintenance runs are frequent and carry no data: keep the last 100 completed, failed for 7 days. */
@@ -31,6 +33,7 @@ export class MaintenanceProcessor implements OnApplicationBootstrap, OnModuleDes
     @Inject(ENV) private readonly env: Env,
     private readonly sweeper: HoldSweeper,
     private readonly reminders: ReminderScanner,
+    private readonly orphans: OrphanedDeliveries,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -63,13 +66,18 @@ export class MaintenanceProcessor implements OnApplicationBootstrap, OnModuleDes
     this.connection = undefined;
   }
 
-  /** Runs one maintenance job by name; returns the count it handled (holds released, reminders enqueued). */
+  /**
+   * Runs one maintenance job by name; returns the count it handled (holds released, reminders enqueued, orphaned
+   * deliveries failed or re-queued).
+   */
   handle(name: string): Promise<number> {
     switch (name) {
       case "sweep-holds":
         return this.sweeper.sweep();
       case "scan-reminders":
         return this.reminders.scan();
+      case "recover-deliveries":
+        return this.orphans.run();
       default:
         return Promise.reject(new Error(`Unknown maintenance job: ${name}`));
     }

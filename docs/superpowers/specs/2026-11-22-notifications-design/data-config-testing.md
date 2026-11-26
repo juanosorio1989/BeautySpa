@@ -18,6 +18,7 @@
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | — | required when `webpush`; `secrets:gen` generates the pair |
 | `VAPID_SUBJECT` | — | required when `webpush` (`mailto:…`) |
 | `REMINDER_SCAN_INTERVAL_MS` | `60000` | 0 = not scheduled (tests) |
+| `DELIVERY_RECOVERY_INTERVAL_MS` | `600000` | orphaned `QUEUED` rows; 0 = not scheduled (tests) |
 | `HOLD_SWEEP_INTERVAL_MS` | `60000` | now read by the worker |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | — | **(call)** not used; web fetches `/push/public-key` |
 

@@ -287,7 +287,18 @@ Two independent final reviews (A, B). Fix round F1–F11; deferred items D1–D3
 | F10 | Shared device keeps the previous customer's pushes (manage-link bearer URLs) after logout (B) | Customer logout calls `disablePush()` (best effort, never blocks logout) before signing out | implementer-sonnet |
 | F11 | `dev` and `worker:dev` share `dist` with `deleteOutDir` (A, B); spec says `pnpm dev` runs the worker (A) | `worker:dev` builds with `tsconfig.worker.json` (`outDir: dist-worker`), `worker:start` runs `dist-worker/worker.js`; `.gitignore` adds it; fix `notifications.md:89`; dev README and Docker/deploy notes updated | implementer-sonnet |
 
+F6 review follow-ups (reviewer-opus approved F6 with minors):
+
+| Id | Finding | Ruling | Implementer |
+|---|---|---|---|
+| F6a | Tests cover only a `waiting` job; per-row try/catch untested | Add tests: `delayed` job left alone, `active` job left alone, one failing row does not stop the others | implementer-sonnet |
+| F6b | Job deleted between `getJob` and `remove` → `getState()` `unknown`, `remove()` throws a misleading lock error | Skip `remove()` when the state is `unknown` | implementer-sonnet |
+| F6c | Spec does not say recovery can re-send a message the provider already accepted (`sent_update_failed`) | One clause in the "Orphaned rows" paragraph: at-least-once, same as `deliver` retries | implementer-sonnet |
+| F6d | Redis outage can stretch one run past the interval (500 × 2 s) | Note in the `run()` doc comment; no code change | implementer-sonnet |
+
 Deferred (recorded in handoff):
+- D4: partial index `notification_log (created_at) WHERE status = 'QUEUED'` for the recovery query; schema change, not needed at MVP volume.
+- D5: `deliver` can send a recovered `confirmed`/`reminder` after the appointment started (manage link already expired); skip with a `too_late` reason when `start <= now` and the template is not `cancelled`.
 - D1: two adjacent events can both send at one `manageVersion` (version read after commit); needs the version returned from the write transaction → changes `BookingEvents`; plan 07 or later.
 - D2: `POST /manage/:token/cancel` validates the body before the rate limit and headers; low impact, no data returned.
-- D3: none else.
+- D3: none else (see D4, D5 above).

@@ -49,7 +49,9 @@ Modules: `auth`, `tenancy` (organization, location, settings), `catalog`
   worker upserts the job scheduler `sweep-holds` on queue `maintenance` every
   `HOLD_SWEEP_INTERVAL_MS` (default 60000; `0` removes the scheduler, and tests
   use 0), and `MaintenanceProcessor` runs `sweep()` for each job; likewise
-  `scan-reminders` every `REMINDER_SCAN_INTERVAL_MS`. Each sweep takes the org
+  `scan-reminders` every `REMINDER_SCAN_INTERVAL_MS` and `recover-deliveries`
+  (orphaned `QUEUED` notification rows) every `DELIVERY_RECOVERY_INTERVAL_MS`
+  (default 600000). Each sweep takes the org
   booking lock per organization and writes one `appointment.hold_release`
   audit row per organization that had holds released (`actorType "SYSTEM"`,
   `after: { released: n }`); booking writes that release expired holds write the

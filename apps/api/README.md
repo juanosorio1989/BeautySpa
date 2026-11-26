@@ -27,6 +27,7 @@ invalid key names, never values.
 | `MANAGE_LINK_SECRET` | required in every `NODE_ENV`; base64 of at least 32 bytes (`secrets:gen`); HMAC key of manage-link tokens |
 | `PUSH_PROVIDER` | `console` (default) / `webpush` / `fake`; `fake` only when `NODE_ENV=test`; `webpush` needs `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url pair from `secrets:gen`: a 65-byte public point starting `0x04` and a 32-byte private key, both checked) and `VAPID_SUBJECT` (`mailto:<address>` or `https://<url>`) |
 | `REMINDER_SCAN_INTERVAL_MS` | reminder scan period, default `60000`; `0` disables it |
+| `DELIVERY_RECOVERY_INTERVAL_MS` | period of the orphaned-delivery recovery, default `600000`; `0` disables it |
 | `COOKIE_SECURE` | `true`/`false`; default `true` only in production |
 | `COOKIE_DOMAIN` | optional |
 | `TRUST_PROXY` | `false` (default) / a positive hop count / comma-separated proxy IPs or CIDRs (e.g. `10.0.0.0/8,127.0.0.1`); use `1` on Railway/Fly. `true` is rejected: it trusts the client-forged left-most `X-Forwarded-For` and bypasses every per-IP limit |
@@ -264,9 +265,11 @@ for unit tests.
 
 The worker process (`worker:dev` with watch, `worker:start` from `dist-worker/worker.js`) boots `WorkerModule` as an application
 context. The API never starts a BullMQ `Worker`. `MaintenanceProcessor` upserts the job schedulers `sweep-holds`
-(`HOLD_SWEEP_INTERVAL_MS`) and `scan-reminders` (`REMINDER_SCAN_INTERVAL_MS`) at start, removing a scheduler whose
-interval is `0`, then consumes `maintenance`: `handle("sweep-holds")` → `HoldSweeper.sweep()`, `handle("scan-reminders")`
-→ `ReminderScanner.scan()` (stub until Task 7).
+(`HOLD_SWEEP_INTERVAL_MS`), `scan-reminders` (`REMINDER_SCAN_INTERVAL_MS`) and `recover-deliveries`
+(`DELIVERY_RECOVERY_INTERVAL_MS`) at start, removing a scheduler whose interval is `0`, then consumes `maintenance`:
+`handle("sweep-holds")` → `HoldSweeper.sweep()`, `handle("scan-reminders")` → `ReminderScanner.scan()`,
+`handle("recover-deliveries")` → `OrphanedDeliveries.run()` (`QUEUED` rows older than 1 h get their `deliver` job
+back; older than 24 h → `FAILED` `orphaned`).
 Tests: `src/queue/queue-names.test.ts`, `test/integration/notifications/queue-events.int.test.ts`,
 `test/integration/worker/maintenance.int.test.ts`.
 
