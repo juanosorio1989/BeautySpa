@@ -345,4 +345,13 @@ Production-data branch (task 5: migration + encrypted customer data): **two inde
 
 ## Execution notes
 
-(Rulings recorded here during execution.)
+Rulings made by the controller (Opus) during execution:
+
+- T1: `BookingCatalog.services[].categoryId` is nullable (uncategorized services exist; non-null would drop them).
+- T2: an EMPLOYEE's agenda `employees` is only themselves (their column shows only their own segments).
+- T4: context loaded once, `findSlots` run twice (normal + override) on the same snapshot.
+- T4→T10: quick booking "Other time…" lists override slots starting 06:00–22:59 local only; the API stays full-day.
+- T7: the customer `SiteHeader` hides on `/<locale>/staff*` through a client wrapper (no route-group move); ES OWNER label "Propietario/a".
+- T9: phone swipe uses a touch handler rendering only the active column (spec: "swipe or chip tap").
+- Final reviews (two independent, both "changes needed"): one fix wave F1–F11. F1 override keeps the normal plan at normal starts (fixes an unbookable "Any professional" slot); `reachable` on `StaffCustomer`; `deleted` on `CustomerSummary` (API decides, web hides phone/link); no `lastVisit` for EMPLOYEE; sign-in error copy and start-over; agenda sheet lifecycle; 403 → staff login; `next` keeps the query; consent tick needs an email. Footer copy became "The client gets a confirmation" (push counts).
+- Deferred to 07b/08 (see `docs/handoff.md` "Carried into later plans"): FK index on `customer.private_notes_updated_by`, quick booking "today" frozen at mount, inactive service names on client history, hour ticks for non-whole-hour zones, enroll-step "Back to sign in" no-op on `/staff/login`, and the per-task minors.

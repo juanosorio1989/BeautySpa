@@ -27,7 +27,7 @@ Updated: 2026-11-27 (plan 07a final-review fix wave done; merge pending)
 
 ## Next
 
-1. Plan 07a: review of the fix wave, then push and merge. Remaining 07a minors are listed under "Carried into later plans".
+1. Plan 07a: all reviews passed (two independent final reviews + fix wave re-review); push, PR and merge. Remaining 07a minors are listed under "Carried into later plans".
 2. Then plan 07b (owner admin: catalog, employees, hours, time off, closures, settings); write/verify its plan first. Carried items are listed below under "Plan 07".
 3. Then plan 08. For PRs use `gh api` REST for edit/merge (`gh pr edit/merge` fail on a GraphQL deprecation).
 4. CI `e2e` job passed on GitHub for the first time (PR #7, 2026-11-25).
@@ -56,6 +56,8 @@ Updated: 2026-11-27 (plan 07a final-review fix wave done; merge pending)
 - Before deploy: Twilio's **Primary Compliance Profile** must be approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Done: `OTP_CHANNELS` (default `sms`) skips the WhatsApp attempt; set `whatsapp,sms` once WhatsApp is enabled on the Verify service.
 
 ## Carried into later plans
+
+- Plan 07a leftover: the enroll step's "Back to sign in" link is a no-op on `/staff/login` (use an `onBack` that calls `startOver`; "Try again" works).
 
 - Plan 06 (web): `api-client` with `createCookieTokenStore()` and `refreshLock: (fn) => navigator.locks.request("bs-refresh", fn)`; decide whether one browser may hold a customer and a staff session (both use cookie `bs_refresh`); pages `/[locale]/staff/invite?token=` and `/[locale]/staff/reset?token=`; post-booking consent offer via `PATCH /me { consents }`; the public employees list can include professionals with empty `serviceIds` (decide whether to hide them). Appointment `notes` are customer-visible (R11); a staff-written `cancelReason` is not (customer responses show `null`).
 - From plan 07a (to 07b/08): FK index on `customer.private_notes_updated_by`; quick booking "today" is frozen at mount (a page left open past midnight); client detail shows no name for services that are now inactive (add `services` to `StaffCustomerAppointments`); agenda hour ticks assume whole-hour UTC offsets. Ledger minors that can wait (`.superpowers/sdd/07a-staff-reception/deferred-minors.md`), by area: API — popularity counts segments and lacks an id tiebreak, employee `serviceIds` can list inactive services, unbounded `lastVisits` read, missing scoping/edge int tests (popularity, cross-org reachability, time-off override, notes clear-path audit), small JSDoc fixes; web — duplicated customer/service label logic, timeline widened by hidden columns, unused i18n keys, `usePolling` may double-fire on tab return, device-timezone fallback when `locations()` fails, move-sheet date strip, booking-context retry has no busy state, rejected `?date=` still applies `?time=` prefill, password errors under the confirm field, whitespace email enables sign-in; tests — no user-event, fake-timer resets outside `afterEach`, e2e midnight/23:00 edges, flaky "otp resend timing" web test under load.
