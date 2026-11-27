@@ -64,6 +64,8 @@ const MATRIX: [Method, string, Role[], Role[]?][] = [
   ["post", `/me/appointments/${ID}/reschedule`, CUSTOMER_ONLY],
   ["post", `/me/appointments/${ID}/repeat`, CUSTOMER_ONLY],
   ["get", "/staff/agenda", ALL],
+  ["get", "/staff/me", ALL],
+  ["get", "/staff/booking-catalog", OWNER_RECEPTION],
   ["get", "/staff/customers", ALL],
   ["post", "/staff/customers", OWNER_RECEPTION],
   ["post", "/staff/appointments", OWNER_RECEPTION],

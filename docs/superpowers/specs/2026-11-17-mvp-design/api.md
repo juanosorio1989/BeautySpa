@@ -82,11 +82,13 @@ Reschedule from the link goes through OTP (`/me`).
 
 ## Staff (staff token, RBAC)
 
-Shapes `StaffAppointment`, `Agenda`, `StaffCustomer`: see `packages/contracts/src/booking.ts` and `customer.ts`.
+Shapes `StaffAppointment`, `Agenda`, `StaffCustomer`: see `packages/contracts/src/booking.ts` and `customer.ts`; `StaffMe`, `BookingCatalog`: `staff-panel.ts`.
 
 | Method | Path | Roles |
 |---|---|---|
 | GET | `/staff/agenda?date=&locationId=&employeeId=` | all (EMPLOYEE: own only; another `employeeId` is 403) |
+| GET | `/staff/me` | all staff — `StaffMe` `{ id, name, email, role }`; `name` = `employee_profile.display_name`, else the email |
+| GET | `/staff/booking-catalog?locationId=` | OWNER, RECEPTION — `BookingCatalog`: `categories` (by `sort`), active `services` (catalog order, includes `onlineBookable: false`; `categoryId` null when uncategorized), `employees` (active, with a profile, at the location, includes not bookable online; `serviceIds`, `levelId`), `popularServiceIds` (top 6 by non-`HELD`, non-`CANCELLED` appointments starting in the last 90 days, ties by English name) |
 | GET | `/staff/customers?q=` | all; EMPLOYEE: only customers with a non-held appointment with them. `q` 2-80 chars; name match, plus phone match with 4+ digits; 20 max |
 | POST | `/staff/customers` | OWNER, RECEPTION — `{ name, phone, locale, email?, consents }`; 201; duplicate phone 409 `CONFLICT`; audit `customer.create` lists keys only |
 | POST | `/staff/appointments` | OWNER, RECEPTION — `{ customerId, locationId?, segments, notes?, override? }` → 201 `StaffAppointment` (`BOOKED`, source `RECEPTION`, `createdByStaffId` = caller). Skips the hold; validated in STAFF mode (no lead time or horizon); `override: true` also ignores working hours, time off, location hours and closures, never overlaps (409 `SLOT_TAKEN`). `customerId` not an active customer of the org → 400 `VALIDATION_FAILED` path `customerId`. |

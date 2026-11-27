@@ -9,6 +9,8 @@ import { AppointmentsController } from "./appointments.controller.js";
 import { AppointmentsService } from "./appointments.service.js";
 import { AvailabilityController } from "./availability.controller.js";
 import { AvailabilityService } from "./availability.service.js";
+import { BookingCatalogController } from "./booking-catalog.controller.js";
+import { BookingCatalogService } from "./booking-catalog.service.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { BookingEvents } from "./booking-events.js";
 import { HoldSweeper } from "./hold-sweeper.js";
@@ -29,6 +31,7 @@ import { WalkInService } from "./walk-in.service.js";
     MyAppointmentsController,
     StaffAppointmentsController,
     AgendaController,
+    BookingCatalogController,
   ],
   providers: [
     BookingContextService,
@@ -41,6 +44,7 @@ import { WalkInService } from "./walk-in.service.js";
     StaffAppointmentsService,
     WalkInService,
     AgendaService,
+    BookingCatalogService,
     { provide: BookingEvents, useExisting: QueueBookingEvents },
   ],
   exports: [BookingContextService, AppointmentWriter, BookingEvents],
