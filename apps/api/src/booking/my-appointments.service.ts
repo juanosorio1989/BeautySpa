@@ -13,13 +13,7 @@ import { CLOCK, type Clock } from "../common/clock.js";
 import { invalidRef, notFound } from "../common/http-errors.js";
 import { assertLiveCustomer } from "../common/live-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import {
-  APPOINTMENT_INCLUDE,
-  isUpcoming,
-  startOf,
-  toAppointmentDto,
-  type AppointmentRow,
-} from "./appointment-mapping.js";
+import { APPOINTMENT_INCLUDE, isUpcoming, startOf, toAppointmentDto } from "./appointment-mapping.js";
 import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings } from "./appointment-writer.js";
 import { BookingEvents, notifyAfterCommit } from "./booking-events.js";
 import { cancelByCustomer, lockChangeableAppointment, type ChangeableAppointment } from "./customer-cancel.js";
