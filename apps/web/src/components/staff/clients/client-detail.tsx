@@ -31,11 +31,13 @@ function AppointmentRow({
   catalog,
   timezone,
   locale,
+  dateStyle,
 }: {
   a: StaffAppointment;
   catalog: BookingContext["catalog"] | null;
   timezone: string;
   locale: Locale;
+  dateStyle: "short" | "medium";
 }) {
   const t = useTranslations("staff.clientsPage");
   const services = [...a.segments]
@@ -49,7 +51,7 @@ function AppointmentRow({
   return (
     <li className="flex flex-col gap-0.5 rounded-xl border border-line bg-card px-3.5 py-2.5">
       <span className="flex items-center justify-between gap-2">
-        <span className="font-semibold">{formatDate(a.startsAt, timezone, locale, "short")}</span>
+        <span className="font-semibold">{formatDate(a.startsAt, timezone, locale, dateStyle)}</span>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[a.status]}`}>
           {t(`status.${a.status}`)}
         </span>
@@ -79,6 +81,7 @@ function AppointmentList({
   catalog: BookingContext["catalog"] | null;
   timezone: string;
   locale: Locale;
+  dateStyle: "short" | "medium";
 }) {
   return (
     <section className="flex flex-col gap-2">
@@ -100,7 +103,7 @@ export function ClientDetail({ customerId }: { customerId: string }) {
   const t = useTranslations("staff.clientsPage");
   const errorText = useErrorText();
   const locale = useLocale() as Locale;
-  const { context } = useBookingContext();
+  const { context, error: contextError, reload } = useBookingContext();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [attemptError, setAttemptError] = useState<unknown>(null);
@@ -144,8 +147,6 @@ export function ClientDetail({ customerId }: { customerId: string }) {
   if (!loaded) return <p className="px-5 py-6 text-sm text-muted">{t("loading")}</p>;
 
   const c = loaded.customer;
-  const timezone = context?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const catalog = context?.catalog ?? null;
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-5 px-5 py-6">
@@ -181,27 +182,44 @@ export function ClientDetail({ customerId }: { customerId: string }) {
           {errorText(attemptError)}
         </p>
       ) : null}
-      {loaded.appointments ? (
+      {contextError ? (
+        <div className="flex flex-col items-start gap-2">
+          <p role="alert" className="text-sm text-warn">
+            {errorText(contextError)}
+          </p>
+          <button type="button" onClick={reload} className="min-h-11 px-3 text-sm font-semibold text-plum">
+            {t("retry")}
+          </button>
+        </div>
+      ) : context ? (
         <>
-          <AppointmentList
-            title={t("upcoming")}
-            empty={t("noUpcoming")}
-            rows={loaded.appointments.upcoming}
-            catalog={catalog}
-            timezone={timezone}
-            locale={locale}
-          />
-          <AppointmentList
-            title={t("past")}
-            empty={t("noPast")}
-            rows={loaded.appointments.past}
-            catalog={catalog}
-            timezone={timezone}
-            locale={locale}
-          />
+          {loaded.appointments ? (
+            <>
+              <AppointmentList
+                title={t("upcoming")}
+                empty={t("noUpcoming")}
+                rows={loaded.appointments.upcoming}
+                catalog={context.catalog}
+                timezone={context.timezone}
+                locale={locale}
+                dateStyle="short"
+              />
+              <AppointmentList
+                title={t("past")}
+                empty={t("noPast")}
+                rows={loaded.appointments.past}
+                catalog={context.catalog}
+                timezone={context.timezone}
+                locale={locale}
+                dateStyle="medium"
+              />
+            </>
+          ) : null}
+          <NotesEditor customerId={c.id} timezone={context.timezone} />
         </>
-      ) : null}
-      <NotesEditor customerId={c.id} timezone={timezone} />
+      ) : (
+        <p className="text-sm text-muted">{t("loading")}</p>
+      )}
     </div>
   );
 }

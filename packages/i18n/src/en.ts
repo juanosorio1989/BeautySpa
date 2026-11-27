@@ -437,6 +437,7 @@ export const en = {
       back: "All clients",
       notFound: "This client was not found.",
       loading: "Loading the client…",
+      retry: "Try again",
       phone: "Phone",
       email: "Email",
       noEmail: "No email",

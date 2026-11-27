@@ -5,10 +5,10 @@ import type { Locale } from "@beautyspa/i18n";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { getBrowserApi } from "@/lib/api/browser";
+import { formatDate } from "@/lib/format";
 import { useErrorText } from "@/lib/use-error-text";
 
 export const NOTES_MAX = 2000;
-const INTL_LOCALE: Record<Locale, string> = { en: "en-US", es: "es-US" };
 
 /** Staff-only private notes for one client; a failed save keeps the typed text. */
 export function NotesEditor({ customerId, timezone }: { customerId: string; timezone: string }) {
@@ -52,11 +52,7 @@ export function NotesEditor({ customerId, timezone }: { customerId: string; time
     }
   }
 
-  const when = saved?.updatedAt
-    ? new Intl.DateTimeFormat(INTL_LOCALE[locale], { dateStyle: "medium", timeZone: timezone }).format(
-        new Date(saved.updatedAt),
-      )
-    : null;
+  const when = saved?.updatedAt ? formatDate(saved.updatedAt, timezone, locale, "medium") : null;
 
   return (
     <section className="flex flex-col gap-2">
@@ -76,7 +72,7 @@ export function NotesEditor({ customerId, timezone }: { customerId: string; time
             value={text}
             maxLength={NOTES_MAX}
             rows={5}
-            disabled={!saved}
+            disabled={!saved || busy}
             onChange={(e) => setText(e.target.value)}
             className="w-full rounded-xl border border-line-strong bg-card p-3.5 text-base text-ink"
           />

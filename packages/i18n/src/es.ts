@@ -441,6 +441,7 @@ export const es: Messages = {
       back: "Todos los clientes",
       notFound: "No se encontró este cliente.",
       loading: "Cargando el cliente…",
+      retry: "Intentar de nuevo",
       phone: "Teléfono",
       email: "Correo",
       noEmail: "Sin correo",

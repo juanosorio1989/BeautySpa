@@ -1,11 +1,11 @@
 import { ApiError } from "@beautyspa/api-client";
 import type { StaffMe } from "@beautyspa/contracts";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { en } from "@beautyspa/i18n";
 import { StaffContext } from "@/lib/staff/use-staff";
-import { CUSTOMER, MANI, PEDI, appointment, catalog, client, id } from "../booking/test-fixtures";
+import { CUSTOMER, MANI, appointment, catalog, client, id } from "../booking/test-fixtures";
 
 vi.mock("@/i18n/navigation", () => ({
   Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -20,6 +20,7 @@ const customer = vi.fn();
 const customerAppointments = vi.fn();
 const notes = vi.fn();
 const saveNotes = vi.fn();
+const bookingCatalog = vi.fn();
 vi.mock("@/lib/api/browser", () => ({
   getBrowserApi: () => ({
     public: {
@@ -32,7 +33,7 @@ vi.mock("@/lib/api/browser", () => ({
       customerAppointments,
       notes,
       saveNotes,
-      bookingCatalog: () => Promise.resolve(catalog),
+      bookingCatalog,
     },
   }),
 }));
@@ -84,6 +85,7 @@ function seed() {
 describe("staff clients", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    bookingCatalog.mockResolvedValue(catalog);
     seed();
   });
   afterEach(cleanup);
@@ -113,6 +115,13 @@ describe("staff clients", () => {
     expect(await screen.findByText("Reason: Client is sick")).toBeInTheDocument();
     expect(screen.getByText(/^Manicure/)).toBeInTheDocument();
     expect(screen.getByText(/^Service ·/)).toBeInTheDocument(); // inactive/unknown service fallback
+    const upcoming = screen.getByRole("heading", { name: "Upcoming" }).parentElement!;
+    const past = screen.getByRole("heading", { name: "Past" }).parentElement!;
+    expect(within(upcoming).getByText("Booked")).toBeInTheDocument();
+    expect(within(upcoming).queryByText("Cancelled")).toBeNull();
+    expect(within(past).getByText("Cancelled")).toBeInTheDocument();
+    expect(within(past).getByText("Done")).toBeInTheDocument();
+    expect(within(past).getAllByText(/2026/)).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Book" })).toHaveAttribute("href", `/staff/book?customerId=${CUSTOMER}`);
   });
 
@@ -120,6 +129,17 @@ describe("staff clients", () => {
     customer.mockRejectedValue(new ApiError(404, { type: "x", title: "x", status: 404, code: "NOT_FOUND" }));
     mount(<ClientDetail customerId={CUSTOMER} />);
     expect(await screen.findByText("This client was not found.")).toBeInTheDocument();
+  });
+
+  it("a failing catalog shows an alert with retry and no appointment times", async () => {
+    bookingCatalog.mockRejectedValue(new ApiError(500, { type: "x", title: "x", status: 500, code: "INTERNAL" }));
+    mount(<ClientDetail customerId={CUSTOMER} />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByText(/AM|PM/)).toBeNull();
+    expect(screen.queryByLabelText("Notes about this client")).toBeNull();
+    bookingCatalog.mockResolvedValue(catalog);
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Reason: Client is sick")).toBeInTheDocument();
   });
 
   it("notes save shows updated by", async () => {
@@ -156,4 +176,3 @@ describe("staff clients", () => {
     expect(customer).not.toHaveBeenCalled();
   });
 });
-void PEDI;
