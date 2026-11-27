@@ -217,16 +217,17 @@ model StaffUser {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization        Organization         @relation(fields: [organizationId], references: [id])
-  recoveryCodes       StaffRecoveryCode[]
-  authTokens          StaffAuthToken[]
-  staffLocations      StaffLocation[]
-  employeeProfile     EmployeeProfile?
-  employeeServices    EmployeeService[]
-  workingHours        WorkingHours[]
-  timeOff             TimeOff[]
-  segments            AppointmentSegment[]
-  createdAppointments Appointment[]        @relation("AppointmentCreatedBy")
+  organization         Organization         @relation(fields: [organizationId], references: [id])
+  recoveryCodes        StaffRecoveryCode[]
+  authTokens           StaffAuthToken[]
+  staffLocations       StaffLocation[]
+  employeeProfile      EmployeeProfile?
+  employeeServices     EmployeeService[]
+  workingHours         WorkingHours[]
+  timeOff              TimeOff[]
+  segments             AppointmentSegment[]
+  createdAppointments  Appointment[]        @relation("AppointmentCreatedBy")
+  customerNotesWritten Customer[]           @relation("CustomerPrivateNotesAuthor")
 
   @@unique([organizationId, email])
   @@map("staff_user")
@@ -398,26 +399,31 @@ model RefreshToken {
 // ---------------------------------------------------------------- customers
 
 model Customer {
-  id              String     @id @default(uuid(7)) @db.Uuid
-  organizationId  String     @map("organization_id") @db.Uuid
-  phoneE164       String     @map("phone_e164")
+  id                    String     @id @default(uuid(7)) @db.Uuid
+  organizationId        String     @map("organization_id") @db.Uuid
+  phoneE164             String     @map("phone_e164")
   /// Null until the customer enters it (the row is created at OTP verify).
-  name            String?
-  email           String?
-  locale          String
-  phoneVerifiedAt DateTime?  @map("phone_verified_at") @db.Timestamptz(3)
-  createdVia      CreatedVia @map("created_via")
+  name                  String?
+  email                 String?
+  locale                String
+  phoneVerifiedAt       DateTime?  @map("phone_verified_at") @db.Timestamptz(3)
+  createdVia            CreatedVia @map("created_via")
   /// Staff-only, AES-256-GCM application-level encryption.
-  privateNotesEnc String?    @map("private_notes_enc")
-  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(3)
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  privateNotesEnc       String?    @map("private_notes_enc")
+  /// Last write of the private notes (set or cleared); null until first written.
+  privateNotesUpdatedAt DateTime?  @map("private_notes_updated_at") @db.Timestamptz(3)
+  /// Staff user who last wrote the private notes; null when that user is deleted.
+  privateNotesUpdatedBy String?    @map("private_notes_updated_by") @db.Uuid
+  deletedAt             DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization     Organization          @relation(fields: [organizationId], references: [id])
-  consents          NotificationConsent[]
-  appointments      Appointment[]
-  notificationLogs  NotificationLog[]
-  pushSubscriptions PushSubscription[]
+  organization       Organization          @relation(fields: [organizationId], references: [id])
+  privateNotesAuthor StaffUser?            @relation("CustomerPrivateNotesAuthor", fields: [privateNotesUpdatedBy], references: [id], onDelete: SetNull)
+  consents           NotificationConsent[]
+  appointments       Appointment[]
+  notificationLogs   NotificationLog[]
+  pushSubscriptions  PushSubscription[]
 
   @@unique([organizationId, phoneE164])
   @@map("customer")

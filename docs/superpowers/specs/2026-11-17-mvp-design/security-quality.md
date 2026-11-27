@@ -31,7 +31,8 @@
 - `GET /me/export` (JSON): the profile, the full consent history (oldest
   first) and every appointment except holds (earliest first).
 - `DELETE /me` anonymizes the account in one transaction (org booking lock
-  first): `name`, `email` and `private_notes_enc` become null, `phone_e164`
+  first): `name`, `email`, `private_notes_enc`, `private_notes_updated_at`
+  and `private_notes_updated_by` become null, `phone_e164`
   becomes `deleted:<customerId>` (frees the number, so the same phone signs up
   as a new customer), `deleted_at` is set; every appointment of the customer
   loses its `notes`, and earlier customer cancellations lose their

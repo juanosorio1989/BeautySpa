@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { StaffRoleSchema } from "./auth";
-import { IdSchema, LocalizedTextSchema } from "./common";
+import { IdSchema, IsoInstantSchema, LocalizedTextSchema } from "./common";
 
 /** `GET /staff/me`: the signed-in staff user (name = profile display name, else email). */
 export const StaffMeSchema = z.object({ id: IdSchema, name: z.string(), email: z.string(), role: StaffRoleSchema });
@@ -31,3 +31,25 @@ export const BookingCatalogSchema = z.object({
   popularServiceIds: z.array(IdSchema).max(6),
 });
 export type BookingCatalog = z.infer<typeof BookingCatalogSchema>;
+
+/**
+ * `GET`/`PUT /staff/customers/:id/notes`: staff-only private notes (OWNER, RECEPTION).
+ * `updatedAt`/`updatedBy` are null until the first write; `updatedBy` is null when the author was deleted.
+ */
+export const CustomerNotesSchema = z.object({
+  notes: z.string().nullable(),
+  updatedAt: IsoInstantSchema.nullable(),
+  updatedBy: z.object({ id: IdSchema, name: z.string() }).nullable(),
+});
+export type CustomerNotes = z.infer<typeof CustomerNotesSchema>;
+
+/** `PUT /staff/customers/:id/notes` body: trimmed, at most 2,000 characters; blank or null clears the notes. */
+export const CustomerNotesInputSchema = z.object({
+  notes: z
+    .string()
+    .trim()
+    .max(2000)
+    .nullable()
+    .transform((v) => (v === "" ? null : v)),
+});
+export type CustomerNotesInput = z.infer<typeof CustomerNotesInputSchema>;

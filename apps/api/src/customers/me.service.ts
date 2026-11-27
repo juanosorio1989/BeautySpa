@@ -166,7 +166,7 @@ export class MeService {
    *   `appointment.cancel` audit each;
    * - each granted channel gets a `granted:false` consent row (`PROFILE`) and every push subscription
    *   of the customer is deleted;
-   * - name, email and private notes become null, the phone becomes `deleted:<id>` (frees the
+   * - name, email and private notes (text, `updatedAt`, `updatedBy`) become null, the phone becomes `deleted:<id>` (frees the
    *   number for a new signup) and `deleted_at` is set;
    * - every refresh token is revoked; `customer.delete` lists the cleared keys only.
    * Appointment rows stay attached to the anonymized customer. `events.cancelled` runs after
@@ -240,6 +240,8 @@ export class MeService {
           name: null,
           email: null,
           privateNotesEnc: null,
+          privateNotesUpdatedAt: null,
+          privateNotesUpdatedBy: null,
           phoneE164: `deleted:${customerId}`,
           deletedAt: new Date(now),
         },

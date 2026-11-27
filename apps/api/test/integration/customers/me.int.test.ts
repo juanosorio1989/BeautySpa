@@ -236,7 +236,12 @@ describe("/me profile, export and deletion", () => {
     const seedDeletable = async () => {
       await ctx.prisma.customer.update({
         where: { id: f.customerId },
-        data: { email: "ana@example.com", privateNotesEnc: "v1:secret" },
+        data: {
+          email: "ana@example.com",
+          privateNotesEnc: "v1:secret",
+          privateNotesUpdatedAt: new Date(BOOKING_NOW - 60_000),
+          privateNotesUpdatedBy: f.staffA,
+        },
       });
       await patchMe({ consents: { WHATSAPP: true } });
       const future = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "14:00", endsAt: "15:00" });
@@ -259,6 +264,8 @@ describe("/me profile, export and deletion", () => {
         name: null,
         email: null,
         privateNotesEnc: null,
+        privateNotesUpdatedAt: null,
+        privateNotesUpdatedBy: null,
         phoneE164: `deleted:${f.customerId}`,
         deletedAt: new Date(BOOKING_NOW),
       });

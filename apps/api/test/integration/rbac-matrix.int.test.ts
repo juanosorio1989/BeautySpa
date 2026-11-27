@@ -70,6 +70,8 @@ const MATRIX: [Method, string, Role[], Role[]?][] = [
   ["post", "/staff/customers", OWNER_RECEPTION],
   ["get", `/staff/customers/${ID}`, OWNER_RECEPTION],
   ["get", `/staff/customers/${ID}/appointments`, OWNER_RECEPTION],
+  ["get", `/staff/customers/${ID}/notes`, OWNER_RECEPTION],
+  ["put", `/staff/customers/${ID}/notes`, OWNER_RECEPTION],
   ["post", "/staff/appointments", OWNER_RECEPTION],
   ["patch", `/staff/appointments/${ID}`, OWNER_RECEPTION],
   ["post", `/staff/appointments/${ID}/status`, ALL],
