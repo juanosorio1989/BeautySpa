@@ -69,7 +69,7 @@ export class MeService {
 
   async get(principal: AccessClaims): Promise<Me> {
     const row = await assertLiveCustomer(this.prisma, principal);
-    return toCustomerDto(row, await currentConsents(this.prisma, row.id));
+    return toCustomerDto(row, await currentConsents(this.prisma, row.id, row.organizationId));
   }
 
   /**
@@ -114,7 +114,7 @@ export class MeService {
         );
       }
       const grants: ConsentGrant[] = sendableGrants(recorded, input.consents ?? {});
-      return { me: toCustomerDto(updated, await currentConsents(tx, row.id)), grants };
+      return { me: toCustomerDto(updated, await currentConsents(tx, row.id, row.organizationId)), grants };
     });
     await this.catchUp(principal, grants);
     return me;
@@ -136,7 +136,7 @@ export class MeService {
   async export(principal: AccessClaims): Promise<CustomerExport> {
     const row = await assertLiveCustomer(this.prisma, principal);
     const [consents, history, appointments] = await Promise.all([
-      currentConsents(this.prisma, row.id),
+      currentConsents(this.prisma, row.id, row.organizationId),
       this.prisma.notificationConsent.findMany({
         where: { organizationId: principal.org, customerId: row.id },
         orderBy: [{ changedAt: "asc" }, { id: "asc" }],

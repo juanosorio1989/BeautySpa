@@ -12,8 +12,7 @@ import { AuditService } from "../audit/audit.service.js";
 import { isUniqueViolation } from "../common/db-errors.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { conflict, notFound } from "../common/http-errors.js";
-import { APPOINTMENT_INCLUDE, startOf, toStaffAppointmentDto } from "../booking/appointment-mapping.js";
-import { isUpcoming } from "../booking/my-appointments.service.js";
+import { APPOINTMENT_INCLUDE, isUpcoming, startOf, toStaffAppointmentDto } from "../booking/appointment-mapping.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { currentConsents, recordConsents, toCustomerDto } from "./consents.js";
 import { loadConsents, loadReachableFor } from "./reachability.js";
@@ -54,7 +53,10 @@ export class StaffCustomersService {
       take: SEARCH_LIMIT,
     });
     const ids = rows.map((r) => r.id);
-    const [consents, visits] = await Promise.all([loadConsents(this.prisma, ids), this.lastVisits(principal.org, ids)]);
+    const [consents, visits] = await Promise.all([
+      loadConsents(this.prisma, principal.org, ids),
+      this.lastVisits(principal.org, ids),
+    ]);
     return rows.map((r) => ({ ...toCustomerDto(r, consents.get(r.id)!), lastVisit: visits.get(r.id) ?? null }));
   }
 
@@ -62,7 +64,7 @@ export class StaffCustomersService {
   async get(principal: AccessClaims, id: string): Promise<StaffCustomer> {
     const row = await this.prisma.customer.findFirst({ where: { id, organizationId: principal.org, deletedAt: null } });
     if (!row) throw notFound("Customer");
-    return toCustomerDto(row, await currentConsents(this.prisma, id));
+    return toCustomerDto(row, await currentConsents(this.prisma, id, principal.org));
   }
 
   /**
@@ -86,7 +88,7 @@ export class StaffCustomersService {
       .filter((r) => !isUpcoming(r, now))
       .sort((a, b) => startOf(b) - startOf(a))
       .slice(0, PAST_LIMIT);
-    const reachable = await loadReachableFor(this.prisma, [...upcoming, ...past]);
+    const reachable = await loadReachableFor(this.prisma, principal.org, [...upcoming, ...past]);
     return {
       upcoming: upcoming.map((r) => toStaffAppointmentDto(r, reachable)),
       past: past.map((r) => toStaffAppointmentDto(r, reachable)),
@@ -161,7 +163,7 @@ export class StaffCustomersService {
           },
           tx,
         );
-        return toCustomerDto(row, await currentConsents(tx, row.id));
+        return toCustomerDto(row, await currentConsents(tx, row.id, orgId));
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict("A customer with that phone already exists");

@@ -233,6 +233,11 @@ describe("staff customers", () => {
       expect(body.past[0]!.customer).toMatchObject({ id: f.customerId, reachable: false });
     });
 
+    it("answers 404 for a deleted customer", async () => {
+      await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { deletedAt: new Date() } });
+      expect((await list(f.customerId)).status).toBe(404);
+    });
+
     it("answers 404 for another organization's customer and 403 for an EMPLOYEE", async () => {
       const otherOrg = await ctx.prisma.organization.create({
         data: { name: "Other", slug: "other-org", defaultLocale: "en" },

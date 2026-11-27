@@ -13,20 +13,20 @@ import { CLOCK, type Clock } from "../common/clock.js";
 import { invalidRef, notFound } from "../common/http-errors.js";
 import { assertLiveCustomer } from "../common/live-customer.js";
 import { PrismaService } from "../prisma/prisma.service.js";
-import { APPOINTMENT_INCLUDE, startOf, toAppointmentDto, type AppointmentRow } from "./appointment-mapping.js";
+import {
+  APPOINTMENT_INCLUDE,
+  isUpcoming,
+  startOf,
+  toAppointmentDto,
+  type AppointmentRow,
+} from "./appointment-mapping.js";
 import { AppointmentWriter, BOOKING_TX_OPTIONS, lockOrgBookings } from "./appointment-writer.js";
 import { BookingEvents, notifyAfterCommit } from "./booking-events.js";
 import { cancelByCustomer, lockChangeableAppointment, type ChangeableAppointment } from "./customer-cancel.js";
 import { toEngineSegments } from "./plan-mapping.js";
 
 const PAST_LIMIT = 50;
-const UPCOMING_STATUSES = new Set(["BOOKED", "CHECKED_IN"]);
 
-const endOf = (row: AppointmentRow) => Math.max(...row.segments.map((s) => s.endsAt.getTime()));
-
-/** The upcoming/past split shared with the staff customer view: `BOOKED` or `CHECKED_IN` ending after `now`. */
-export const isUpcoming = (row: AppointmentRow, now: number): boolean =>
-  UPCOMING_STATUSES.has(row.status) && endOf(row) > now;
 const sortedServiceIds = (segments: { serviceId: string }[]) => segments.map((s) => s.serviceId).sort();
 
 /** The signed-in customer's own appointments: list, cancel, reschedule and repeat. */

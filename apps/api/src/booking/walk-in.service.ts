@@ -88,7 +88,7 @@ export class WalkInService {
         },
         tx,
       );
-      return toStaffAppointmentDto(row, await loadReachableFor(tx, [row]));
+      return toStaffAppointmentDto(row, await loadReachableFor(tx, orgId, [row]));
     }, BOOKING_TX_OPTIONS);
 
     await notifyAfterCommit(this.events, this.logger, () => this.events.booked(created.id));

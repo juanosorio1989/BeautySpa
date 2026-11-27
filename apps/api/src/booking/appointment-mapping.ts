@@ -13,6 +13,16 @@ export type AppointmentRow = Prisma.AppointmentGetPayload<{ include: typeof APPO
 export const startOf = (row: Pick<AppointmentRow, "segments">): number =>
   Math.min(...row.segments.map((s) => s.startsAt.getTime()));
 
+const UPCOMING_STATUSES = new Set(["BOOKED", "CHECKED_IN"]);
+
+/** Latest segment end (epoch ms), as in the DTO's `endsAt`. */
+const endOf = (row: Pick<AppointmentRow, "segments">): number =>
+  Math.max(...row.segments.map((s) => s.endsAt.getTime()));
+
+/** The upcoming/past split of customer and staff views: `BOOKED` or `CHECKED_IN` ending after `now`. */
+export const isUpcoming = (row: AppointmentRow, now: number): boolean =>
+  UPCOMING_STATUSES.has(row.status) && endOf(row) > now;
+
 const iso = (d: Date) => d.toISOString();
 const isoOrNull = (d: Date | null) => (d ? d.toISOString() : null);
 

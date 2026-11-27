@@ -57,7 +57,7 @@ export class AgendaService {
         return s >= start && s < end;
       })
       .sort((a, b) => startOf(a) - startOf(b) || a.id.localeCompare(b.id));
-    const reachable = await loadReachableFor(this.prisma, dayRows);
+    const reachable = await loadReachableFor(this.prisma, principal.org, dayRows);
     const appointments = dayRows.map((r) => toStaffAppointmentDto(r, reachable));
     const segments = dayRows.flatMap((r) => r.segments);
     const [employees, services, resources] = await Promise.all([

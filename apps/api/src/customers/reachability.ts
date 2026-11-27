@@ -12,7 +12,7 @@ export interface ConsentRow {
   id: string;
 }
 
-/** Current consents per customer from history rows (latest row per channel wins; no row means false). */
+/** Current consents per customer from history rows (the one latest-row-per-channel rule) (latest row per channel wins; no row means false). */
 export function consentsFromRows(ids: readonly string[], rows: readonly ConsentRow[]): Map<string, Consents> {
   const result = new Map<string, Consents>(
     ids.map((id) => [id, { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false }]),
@@ -35,11 +35,10 @@ export function consentsFromRows(ids: readonly string[], rows: readonly ConsentR
 /** Pure core of `loadReachable`: who has a consented channel the router can use. */
 export function reachableIds(
   ids: readonly string[],
-  rows: readonly ConsentRow[],
+  consents: ReadonlyMap<string, Consents>,
   withEmail: ReadonlySet<string>,
   withPush: ReadonlySet<string>,
 ): Set<string> {
-  const consents = consentsFromRows(ids, rows);
   const out = new Set<string>();
   for (const id of ids) {
     const c = consents.get(id)!;
@@ -50,13 +49,17 @@ export function reachableIds(
 
 type Db = Prisma.TransactionClient | PrismaService;
 
-/** Current consents of many customers: one query. */
-export async function loadConsents(db: Db, customerIds: readonly string[]): Promise<Map<string, Consents>> {
+/** Current consents of many customers of the org: one query. */
+export async function loadConsents(
+  db: Pick<Db, "notificationConsent">,
+  orgId: string,
+  customerIds: readonly string[],
+): Promise<Map<string, Consents>> {
   const rows =
     customerIds.length === 0
       ? []
       : await db.notificationConsent.findMany({
-          where: { customerId: { in: [...customerIds] } },
+          where: { organizationId: orgId, customerId: { in: [...customerIds] } },
           select: { customerId: true, channel: true, granted: true, changedAt: true, id: true },
         });
   return consentsFromRows(customerIds, rows);
@@ -66,28 +69,33 @@ export async function loadConsents(db: Db, customerIds: readonly string[]): Prom
  * The customers (of `customerIds`) the router can message today: a consented channel that also has
  * an address (`EMAIL`) or a push subscription (`PUSH`). One query per table, whatever the count.
  */
-export async function loadReachable(db: Db, customerIds: readonly string[]): Promise<Set<string>> {
+export async function loadReachable(db: Db, orgId: string, customerIds: readonly string[]): Promise<Set<string>> {
   const ids = [...new Set(customerIds)];
   if (ids.length === 0) return new Set();
-  const [rows, customers, subs] = await Promise.all([
-    db.notificationConsent.findMany({
-      where: { customerId: { in: ids } },
-      select: { customerId: true, channel: true, granted: true, changedAt: true, id: true },
+  const [consents, customers, subs] = await Promise.all([
+    loadConsents(db, orgId, ids),
+    db.customer.findMany({
+      where: { id: { in: ids }, organizationId: orgId, deletedAt: null, email: { not: null } },
+      select: { id: true },
     }),
-    db.customer.findMany({ where: { id: { in: ids }, email: { not: null } }, select: { id: true } }),
     db.pushSubscription.findMany({
-      where: { customerId: { in: ids } },
+      where: { organizationId: orgId, customerId: { in: ids } },
       select: { customerId: true },
       distinct: ["customerId"],
     }),
   ]);
-  return reachableIds(ids, rows, new Set(customers.map((c) => c.id)), new Set(subs.map((s) => s.customerId)));
+  return reachableIds(ids, consents, new Set(customers.map((c) => c.id)), new Set(subs.map((s) => s.customerId)));
 }
 
 /** `loadReachable` for the customers of appointment rows (a walk-in has none). */
-export function loadReachableFor(db: Db, rows: readonly { customerId: string | null }[]): Promise<Set<string>> {
+export function loadReachableFor(
+  db: Db,
+  orgId: string,
+  rows: readonly { customerId: string | null }[],
+): Promise<Set<string>> {
   return loadReachable(
     db,
+    orgId,
     rows.flatMap((r) => (r.customerId ? [r.customerId] : [])),
   );
 }
