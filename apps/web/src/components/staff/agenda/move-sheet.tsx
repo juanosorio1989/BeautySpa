@@ -26,6 +26,7 @@ export function MoveSheet({
   locale,
   onClose,
   onChanged,
+  onConflict,
 }: {
   appointment: StaffAppointment;
   agenda: Agenda;
@@ -34,6 +35,8 @@ export function MoveSheet({
   locale: Locale;
   onClose: () => void;
   onChanged: () => Promise<void> | void;
+  /** Someone else changed the appointment; the page shows the notice even if this sheet unmounts. */
+  onConflict: () => void;
 }) {
   const t = useTranslations("staff.agenda");
   const errorText = useErrorText();
@@ -109,6 +112,7 @@ export function MoveSheet({
         setRefresh((r) => r + 1);
       } else if (err instanceof ApiError && err.problem.code === "CONFLICT") {
         setError(t("changed"));
+        onConflict();
         await onChanged();
       } else {
         setError(errorText(err));

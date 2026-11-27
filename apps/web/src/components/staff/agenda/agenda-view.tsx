@@ -102,6 +102,7 @@ export function AgendaView() {
   const [selected, setSelected] = useState<string[] | null>(readSelection);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ id: string; moving: boolean } | null>(null);
+  const [changedNotice, setChangedNotice] = useState(false);
   const [expiredFor, setExpiredFor] = useState<string | null>(null);
 
   const shown = agenda && agenda.date === date ? agenda : null;
@@ -152,20 +153,21 @@ export function AgendaView() {
 
   const today = shown ? todayIn(shown.timezone, now) : zone ? todayIn(zone, now) : null;
 
-  let window: { start: number; end: number } | null = null;
+  let span: { start: number; end: number } | null = null;
   if (shown && columns.length > 0) {
     const base = dayWindow(columns, shown.date, shown.timezone);
     const own = shown.appointments.flatMap((a) => a.segments);
     const starts = [base.start, ...own.map((s) => Date.parse(s.startsAt))];
     const ends = [base.end, ...own.map((s) => Date.parse(s.endsAt))];
-    window = {
+    span = {
       start: Math.floor(Math.min(...starts) / QUARTER_MS) * QUARTER_MS,
       end: Math.ceil(Math.max(...ends) / QUARTER_MS) * QUARTER_MS,
     };
   }
 
   const ticks: number[] = [];
-  if (window) for (let tick = window.start; tick < window.end; tick += HOUR_MS) ticks.push(tick);
+  if (span)
+    for (let tick = Math.ceil(span.start / HOUR_MS) * HOUR_MS; tick < span.end; tick += HOUR_MS) ticks.push(tick);
 
   const sheetAppointment = shown && sheet ? shown.appointments.find((a) => a.id === sheet.id) : undefined;
 
@@ -191,6 +193,11 @@ export function AgendaView() {
           />
         </div>
       ) : null}
+      {changedNotice ? (
+        <p role="status" className="rounded-xl bg-warn-bg p-3 text-sm text-warn">
+          {t("changed")}
+        </p>
+      ) : null}
       {error ? (
         <div role="alert" className="text-sm text-warn">
           <p>{errorText(error)}</p>
@@ -204,7 +211,7 @@ export function AgendaView() {
         </div>
       ) : null}
       {!shown && !error ? <p className="text-muted">{t("loading")}</p> : null}
-      {shown && window ? (
+      {shown && span ? (
         <div
           className="flex overflow-x-auto"
           onTouchStart={(e) => (touchX.current = e.touches[0]?.clientX ?? null)}
@@ -212,9 +219,9 @@ export function AgendaView() {
         >
           <div aria-hidden className="w-14 shrink-0 text-[13px] text-muted">
             <div style={{ height: HEADER_PX }} />
-            <div className="relative" style={{ height: yOf(window.end, window.start) }}>
+            <div className="relative" style={{ height: yOf(span.end, span.start) }}>
               {ticks.map((tick) => (
-                <span key={tick} style={{ top: yOf(tick, window.start) }} className="absolute -translate-y-1/2 pt-px">
+                <span key={tick} style={{ top: yOf(tick, span.start) }} className="absolute -translate-y-1/2 pt-px">
                   {formatTime(new Date(tick).toISOString(), shown.timezone, locale)}
                 </span>
               ))}
@@ -225,12 +232,15 @@ export function AgendaView() {
               key={e.id}
               agenda={shown}
               employee={e}
-              window={window}
+              span={span}
               now={now}
               locale={locale}
               canBook={canBook}
               highlightId={highlighted}
-              onSelect={(id) => setSheet({ id, moving: false })}
+              onSelect={(id) => {
+                setChangedNotice(false);
+                setSheet({ id, moving: false });
+              }}
             />
           ))}
         </div>
@@ -243,6 +253,7 @@ export function AgendaView() {
           locale={locale}
           onClose={() => setSheet(null)}
           onChanged={load}
+          onConflict={() => setChangedNotice(true)}
           onMove={() => setSheet({ id: sheet.id, moving: true })}
         />
       ) : null}
@@ -254,6 +265,7 @@ export function AgendaView() {
           locale={locale}
           onClose={() => setSheet(null)}
           onChanged={load}
+          onConflict={() => setChangedNotice(true)}
         />
       ) : null}
     </div>

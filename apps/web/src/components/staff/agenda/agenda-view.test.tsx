@@ -188,6 +188,7 @@ describe("AgendaView", () => {
   });
 
   it("gap tap links to quick booking with prefill", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-12-01T13:00:00.000Z")); // 8:00 in New York
     mount("OWNER");
     await screen.findByText("Lucia R.");
     const gap = screen.getAllByRole("link", { name: /Free · 9:00 AM – 10:00 AM/ })[0]!;
@@ -313,5 +314,55 @@ describe("AgendaView", () => {
     const card = (await screen.findByText("Lucia R.")).closest("button")!;
     await waitFor(() => expect(scroll).toHaveBeenCalled());
     expect(card.className).toContain("outline-plum");
+  });
+
+  it("keeps the changed notice when the refetched agenda no longer has the appointment", async () => {
+    setStatus.mockRejectedValue(conflict());
+    mount();
+    fireEvent.click(await screen.findByText("Lucia R."));
+    const dialog = await screen.findByRole("dialog");
+    agendaFn.mockResolvedValue(agenda([]));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Check in" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("This appointment changed, refreshed.")).toBeInTheDocument();
+  });
+
+  it("gaps start after the cleanup buffer (blockEndsAt)", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-12-01T13:00:00.000Z"));
+    const base = appt();
+    agendaFn.mockResolvedValue(
+      agenda([appt({ segments: [{ ...base.segments[0]!, blockEndsAt: "2026-12-01T16:00:00.000Z" }] })], [ANA]),
+    );
+    mount("OWNER");
+    await screen.findByText("Lucia R.");
+    expect(screen.getByRole("link", { name: /Free · 11:00 AM – 5:00 PM/ })).toHaveAttribute(
+      "href",
+      `/staff/book?date=2026-12-01&time=11:00&employeeId=${ANA}`,
+    );
+  });
+
+  it("on today gaps that ended are dropped and the current one starts at the next quarter hour", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-12-01T16:05:00.000Z")); // 11:05 local
+    agendaFn.mockResolvedValue(agenda([appt()], [ANA]));
+    mount("OWNER");
+    await screen.findByText("Lucia R.");
+    expect(screen.queryByRole("link", { name: /Free · 9:00 AM/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Free · 11:15 AM – 5:00 PM/ })).toBeInTheDocument();
+  });
+
+  it("hour labels start at the first whole hour", async () => {
+    agendaFn.mockResolvedValue(
+      agenda(
+        [appt({ startsAt: "2026-12-01T13:45:00.000Z" })].map((a) => ({
+          ...a,
+          segments: [{ ...a.segments[0]!, startsAt: "2026-12-01T13:45:00.000Z" }],
+        })),
+        [ANA],
+      ),
+    );
+    mount();
+    await screen.findByText("Lucia R.");
+    const labels = Array.from(document.querySelectorAll("[aria-hidden] > .relative > span")).map((n) => n.textContent);
+    expect(labels[0]).toBe("9:00 AM");
   });
 });

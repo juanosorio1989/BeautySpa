@@ -28,6 +28,7 @@ export function ActionSheet({
   locale,
   onClose,
   onChanged,
+  onConflict,
   onMove,
 }: {
   appointment: StaffAppointment;
@@ -37,6 +38,8 @@ export function ActionSheet({
   onClose: () => void;
   /** Refetch the agenda. */
   onChanged: () => Promise<void> | void;
+  /** Someone else changed the appointment; the page shows the notice even if this sheet unmounts. */
+  onConflict: () => void;
   onMove: () => void;
 }) {
   const t = useTranslations("staff.agenda");
@@ -68,6 +71,7 @@ export function ActionSheet({
     } catch (err) {
       if (err instanceof ApiError && err.problem.code === "CONFLICT") {
         setError(t("changed"));
+        onConflict();
         setConfirming(null);
         await onChanged();
       } else {
