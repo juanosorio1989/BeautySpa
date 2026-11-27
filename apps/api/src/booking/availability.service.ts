@@ -41,12 +41,15 @@ export class AvailabilityService {
     try {
       const normal = findSlots(search);
       if (!query.override) return normal.map(toSlotDto);
-      // Same snapshot, hours and closures relaxed; overlaps stay forbidden.
+      // Same snapshot, hours and closures relaxed; overlaps stay forbidden. Keyed by start: a start the
+      // normal search offers keeps the normal plan (the relaxed one may name an off-duty employee and the
+      // write would then need override); only starts missing from it use the relaxed plan.
       const normalStarts = new Set(normal.map((s) => s.start));
-      return findSlots({ ...search, override: true }).map((s) => ({
-        ...toSlotDto(s),
-        outsideHours: !normalStarts.has(s.start),
-      }));
+      const relaxedOnly = findSlots({ ...search, override: true }).filter((s) => !normalStarts.has(s.start));
+      return [
+        ...normal.map((s) => ({ ...toSlotDto(s), outsideHours: false })),
+        ...relaxedOnly.map((s) => ({ ...toSlotDto(s), outsideHours: true })),
+      ].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
     } catch (err) {
       if (err instanceof AvailabilityError && (err.code === "UNKNOWN_SERVICE" || err.code === "UNKNOWN_EMPLOYEE")) {
         throw invalidRef("services", "Unknown service or employee");

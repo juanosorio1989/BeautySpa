@@ -257,6 +257,23 @@ describe("GET /availability", () => {
       expect((audits[0]!.after as { override?: boolean }).override).toBe(true);
     });
 
+    it("keeps the normal plan at normal starts so ANY never names an off-duty employee", async () => {
+      // Blair is off all day; Alex works and has a booking, so the relaxed search prefers Blair.
+      await ctx.prisma.workingHours.deleteMany({ where: { staffUserId: f.staffB } });
+      await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "17:00", endsAt: "18:00" });
+      const slots = await slotsOf(pediQuery("&override=true"), reception.token);
+      const ten = slots.find((s) => s.startsAt === localIso(10))!;
+      expect(ten).toMatchObject({ outsideHours: false });
+      expect(ten.segments.map((s) => s.employeeId)).toEqual([f.staffA]);
+      const res = await request(ctx.app.getHttpServer())
+        .post("/v1/staff/appointments")
+        .set("Authorization", `Bearer ${reception.token}`)
+        .send({ customerId: f.customerId, segments: ten.segments, override: false });
+      expect(res.status).toBe(201);
+      // A start that exists only with override still comes from the relaxed search.
+      expect(slots.find((s) => s.startsAt === localIso(18))).toMatchObject({ outsideHours: true });
+    });
+
     it("is 400 on override for a customer token and for no token", async () => {
       const { token } = await customerSession(ctx.app, f);
       for (const res of [await get(alexQuery("&override=true"), token), await get(alexQuery("&override=true"))]) {

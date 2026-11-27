@@ -52,7 +52,9 @@ staff layout and to know "own segments" for EMPLOYEE (`id` = segment
 STAFF mode already ignores lead time and horizon. With `override=true` it
 also ignores working hours and closures (the same relaxation the write path
 applies with `override: true`, `plan.ts`), still forbids overlaps of employees
-and resources, and marks each returned slot `outsideHours: boolean`. A
+and resources, and marks each returned slot `outsideHours: boolean`. A start
+the normal search also offers returns the normal plan with `outsideHours: false`
+(so it books without override); only extra starts use the relaxed plan. A
 customer token or no token with `override=true` → 400. The quick-booking
 "Book anyway" sends the plan of such a slot to `POST /staff/appointments` with
 `override: true`.

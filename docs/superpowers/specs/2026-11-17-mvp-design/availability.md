@@ -96,9 +96,13 @@ no later than that grid floor + `slotIntervalMin` (no override).
 
 Reads can use the same relaxation: staff `GET /availability?override=true`
 runs the search twice on one context snapshot, normal and with `override`, and
-returns the override list with each slot flagged `outsideHours = true` when its
-start is not among the normal starts. A closure day therefore lists slots that
-are all `outsideHours: true`. Customer or anonymous callers get 400 on
+merges them by start: every normal start keeps the **normal** plan
+(`outsideHours: false`), and only starts missing from the normal list use the
+override plan (`outsideHours: true`). The override search prefers the employee
+with the fewest booked minutes, so at a normal start it could name someone who
+is off duty; keeping the normal plan there means a slot with
+`outsideHours: false` always books with `override: false`. A closure day
+therefore lists slots that are all `outsideHours: true`. Customer or anonymous callers get 400 on
 `override`. The quick-booking "Book anyway" sends such a slot's segments to
 `POST /staff/appointments` with `override: true`, so the client never builds a
 plan itself.
