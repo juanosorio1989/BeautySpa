@@ -95,6 +95,40 @@ describe("QuickBooking", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith(`/staff?date=2026-12-01&highlight=${id(100)}`));
   });
 
+  it("shows the confirmation by email line with email consent", async () => {
+    mount();
+    await pickClient();
+    expect(await screen.findByText("Confirmation by email")).toBeInTheDocument();
+  });
+
+  it("duplicate phone on a new client shows the phone-exists message", async () => {
+    createCustomer.mockRejectedValue(
+      new ApiError(409, { type: "about:blank", title: "x", status: 409, code: "CONFLICT" }),
+    );
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /New client/ }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ana Perez" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "7185550123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add client" }));
+    expect(await screen.findByText(/already exists/)).toBeInTheDocument();
+  });
+
+  it("an out-of-range ?date= falls back to today", async () => {
+    searchParams = new URLSearchParams("date=2020-01-01");
+    mount();
+    await pickClient();
+    tap(await screen.findByRole("button", { name: "Same as last time" }));
+    await waitFor(() => expect(availability).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-12-01" })));
+  });
+
+  it("shows the chosen professional in the times header", async () => {
+    searchParams = new URLSearchParams(`date=2026-12-01&time=10:30&employeeId=${ANA}`);
+    mount();
+    await pickClient();
+    tap(await screen.findByRole("button", { name: "Same as last time" }));
+    expect(await screen.findByText(/NEXT TIMES · Ana|Next times · Ana/i)).toBeInTheDocument();
+  });
+
   it("shows the email confirmation line only with email consent", async () => {
     mount();
     await pickClient(client({ consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false } }));

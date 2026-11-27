@@ -55,8 +55,9 @@ export function QuickBooking() {
   const timezone = context?.timezone ?? null;
   const [now] = useState(() => Date.now());
   const today = timezone ? todayIn(timezone, now) : null;
-  const date = chosenDate ?? today;
   const strip = useMemo(() => (today && context ? dateStrip(today, context.horizonDays) : []), [today, context]);
+  // A ?date= outside the booking strip (past or beyond the horizon) falls back to today.
+  const date = chosenDate && (strip.length === 0 || strip.includes(chosenDate)) ? chosenDate : today;
 
   // ?customerId=: preselect, with the last visit when the search finds the same client by phone.
   useEffect(() => {
@@ -69,7 +70,7 @@ export function QuickBooking() {
           (rows) => rows.find((r) => r.id === c.id),
           () => undefined,
         );
-        if (!cancelled) setClient(match ?? { ...c, lastVisit: null });
+        if (!cancelled) setClient((cur) => cur ?? match ?? { ...c, lastVisit: null });
       },
       () => undefined, // the picker stays available
     );
@@ -195,6 +196,11 @@ export function QuickBooking() {
 
   const names = new Map(context.catalog.employees.map((e) => [e.id, e.displayName]));
   const reachable = client?.email && client.consents.EMAIL;
+  const chosenIds = new Set(choices.map((c) => c.employeeId));
+  const timesHeader =
+    chosenIds.size === 1
+      ? t("times", { who: chosenIds.has("ANY") ? t("anyProfessional") : (names.get([...chosenIds][0]!) ?? "") })
+      : t("timesMixed");
   const saveLabel = !client
     ? t("pickClient")
     : choices.length === 0
@@ -280,7 +286,7 @@ export function QuickBooking() {
               locale={locale}
             />
             <span className="text-[13px] font-semibold uppercase text-muted">
-              {other ? t("timesOther") : t("times", { who: t("anyProfessional") })}
+              {other ? t("timesOther") : timesHeader}
             </span>
             <div aria-busy={!ready} className="flex flex-col gap-2">
               {notice ? (

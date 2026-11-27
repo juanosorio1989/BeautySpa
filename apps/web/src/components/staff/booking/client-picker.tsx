@@ -9,7 +9,8 @@ import { getBrowserApi } from "@/lib/api/browser";
 import { localized } from "@/lib/localized";
 import { formatUsPhone, toE164 } from "@/lib/phone";
 import { useCustomerSearch } from "@/lib/staff/use-customer-search";
-import { useErrorText } from "@/lib/use-error-text";
+import { ApiError } from "@beautyspa/api-client";
+import { useErrorText, useFallbackErrorText, useFieldErrorText } from "@/lib/use-error-text";
 
 export type PickedClient = StaffCustomerSearchResult;
 
@@ -31,7 +32,8 @@ export function lastVisitText(
 
 function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) => void; onCancel: () => void }) {
   const t = useTranslations("staff.book");
-  const errorText = useErrorText();
+  const errorText = useFallbackErrorText();
+  const fieldText = useFieldErrorText();
   const pageLocale = useLocale() as Locale;
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -64,7 +66,14 @@ function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) =
       });
       onCreated({ ...created, lastVisit: null });
     } catch (err) {
-      setFailure(errorText(err));
+      if (err instanceof ApiError && err.problem.code === "CONFLICT") {
+        setErrors({ phone: t("phoneExists") });
+      } else {
+        const fields = fieldText(err, ["name", "email", "phone"]);
+        const { email: emailError, ...own } = fields;
+        setErrors(own);
+        setFailure(emailError ?? (Object.keys(own).length ? null : errorText(err)));
+      }
     } finally {
       setBusy(false);
     }
@@ -105,8 +114,8 @@ function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) =
           value={language}
           onChange={(e) => setLanguage(e.target.value === "es" ? "es" : "en")}
         >
-          <option value="en">English</option>
-          <option value="es">Español</option>
+          <option value="en">{t("languageEn")}</option>
+          <option value="es">{t("languageEs")}</option>
         </select>
       </Field>
       <Field id="nc-email" label={t("email")}>
