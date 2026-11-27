@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { AccessClaims, BookingCatalog, LocalizedText } from "@beautyspa/contracts";
+import { CategoriesService } from "../catalog/categories.service.js";
+import { ServiceCatalogService } from "../catalog/service-catalog.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
@@ -14,6 +16,8 @@ export class BookingCatalogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly locations: LocationService,
+    private readonly categoriesReader: CategoriesService,
+    private readonly serviceCatalog: ServiceCatalogService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -22,8 +26,8 @@ export class BookingCatalogService {
     const location = await this.locations.resolve(org, locationId);
     const since = new Date(this.clock.now() - POPULAR_DAYS * 24 * 60 * 60 * 1000);
     const [categoryRows, serviceRows, employeeRows, counts] = await Promise.all([
-      this.prisma.serviceCategory.findMany({ where: { organizationId: org } }),
-      this.prisma.service.findMany({ where: { organizationId: org, active: true } }),
+      this.categoriesReader.list(org),
+      this.serviceCatalog.list(org, { active: true }),
       this.prisma.staffUser.findMany({
         where: {
           organizationId: org,
@@ -48,45 +52,43 @@ export class BookingCatalogService {
       }),
     ]);
 
-    const categories = categoryRows
-      .map((c) => ({ id: c.id, name: c.name as LocalizedText, sort: c.sort }))
-      .sort((a, b) => a.sort - b.sort || en(a.name).localeCompare(en(b.name), "en"));
-    const sortOf = new Map(categories.map((c) => [c.id, c.sort]));
-    const rank = (categoryId: string | null) => (categoryId ? (sortOf.get(categoryId) ?? Infinity) : Infinity);
-    const services = serviceRows
-      .map((s) => ({
-        id: s.id,
-        categoryId: s.categoryId,
-        name: s.name as LocalizedText,
-        durationMin: s.durationMin,
-        priceCents: s.priceCents,
-        parallelizable: s.parallelizable,
-        onlineBookable: s.onlineBookable,
-      }))
-      .sort((a, b) => {
-        const ra = rank(a.categoryId);
-        const rb = rank(b.categoryId);
-        if (ra !== rb) return ra < rb ? -1 : 1;
-        return en(a.name).localeCompare(en(b.name), "en");
-      });
+    const categories = categoryRows.map((c) => ({ id: c.id, name: c.name }));
+    const services = serviceRows.map((s) => ({
+      id: s.id,
+      categoryId: s.categoryId,
+      name: s.name,
+      durationMin: s.durationMin,
+      priceCents: s.priceCents,
+      parallelizable: s.parallelizable,
+      onlineBookable: s.onlineBookable,
+    }));
+    const activeIds = new Set(services.map((s) => s.id));
     const employees = employeeRows
       .map((e) => ({
         id: e.id,
         displayName: e.employeeProfile!.displayName,
         levelId: e.employeeProfile!.levelId,
-        serviceIds: e.employeeServices.map((x) => x.serviceId).sort(),
+        serviceIds: e.employeeServices
+          .map((x) => x.serviceId)
+          .filter((id) => activeIds.has(id))
+          .sort(),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "en") || a.id.localeCompare(b.id));
 
     const countOf = new Map(counts.map((c) => [c.serviceId, c._count._all]));
     const popularServiceIds = services
       .filter((s) => countOf.has(s.id))
-      .sort((a, b) => countOf.get(b.id)! - countOf.get(a.id)! || en(a.name).localeCompare(en(b.name), "en"))
+      .sort(
+        (a, b) =>
+          countOf.get(b.id)! - countOf.get(a.id)! ||
+          en(a.name).localeCompare(en(b.name), "en") ||
+          a.id.localeCompare(b.id),
+      )
       .slice(0, POPULAR_MAX)
       .map((s) => s.id);
 
     return {
-      categories: categories.map(({ id, name }) => ({ id, name })),
+      categories,
       services,
       employees,
       popularServiceIds,

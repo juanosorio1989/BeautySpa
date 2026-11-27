@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuditModule } from "../audit/audit.module.js";
+import { CatalogModule } from "../catalog/catalog.module.js";
 import { NotificationsModule } from "../notifications/notifications.module.js";
 import { QueueBookingEvents } from "../notifications/queue-booking-events.js";
 import { AgendaController } from "./agenda.controller.js";
@@ -23,7 +24,7 @@ import { StaffAppointmentsService } from "./staff-appointments.service.js";
 import { WalkInService } from "./walk-in.service.js";
 
 @Module({
-  imports: [AuditModule, NotificationsModule],
+  imports: [AuditModule, CatalogModule, NotificationsModule],
   controllers: [
     AvailabilityController,
     HoldsController,
