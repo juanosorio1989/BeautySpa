@@ -7,6 +7,7 @@ import { errorProps, Field, INPUT_CLASS } from "@/components/booking/field";
 import { Link } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { useSession } from "@/lib/session/use-session";
+import { isUnauthorized } from "@/lib/errors";
 import { useErrorText } from "@/lib/use-error-text";
 import { CodeForm, LINK_BUTTON, PRIMARY_BUTTON } from "./code-form";
 import { EnrollStep } from "./enroll-step";
@@ -19,7 +20,8 @@ type Step =
   | { kind: "code"; mfaToken: string }
   | { kind: "recover"; mfaToken: string }
   | { kind: "enroll"; mfaToken: string }
-  | { kind: "codes"; codes: readonly string[] };
+  | { kind: "codes"; codes: readonly string[] }
+  | { kind: "expired" };
 
 function fromStatus({ status, mfaToken }: InitialStep): Step {
   return status === "ENROLL_REQUIRED" ? { kind: "enroll", mfaToken } : { kind: "code", mfaToken };
@@ -37,29 +39,53 @@ export function StaffLoginFlow({ onDone, initialStep }: { onDone: () => void; in
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  async function run(action: () => Promise<void>) {
+  async function run(action: () => Promise<void>, onUnauthorized: () => void) {
     setBusy(true);
     setError(undefined);
     try {
       await action();
     } catch (err) {
-      setError(errorText(err));
+      if (isUnauthorized(err)) onUnauthorized();
+      else setError(errorText(err));
     } finally {
       setBusy(false);
     }
   }
+  const expire = () => setStep({ kind: "expired" });
+  const startOver = () => {
+    setPassword("");
+    setRecoveryCode("");
+    setError(undefined);
+    setStep({ kind: "credentials" });
+  };
   const api = () => getBrowserApi().auth;
 
   const submitCredentials = () =>
-    run(async () => setStep(fromStatus(await api().staffLogin({ email: email.trim(), password }))));
+    run(
+      async () => setStep(fromStatus(await api().staffLogin({ email: email.trim(), password }))),
+      () => setError(t("invalidCredentials")),
+    );
   const verify = (mfaToken: string, code: string) =>
     run(async () => {
       await api().mfaVerify({ mfaToken, code });
       session.signedIn();
       onDone();
-    });
+    }, expire);
   const recover = (mfaToken: string) =>
-    run(async () => setStep(fromStatus(await api().mfaRecover({ mfaToken, recoveryCode }))));
+    run(async () => setStep(fromStatus(await api().mfaRecover({ mfaToken, recoveryCode }))), expire);
+
+  if (step.kind === "expired") {
+    return (
+      <div className="flex flex-col gap-3">
+        <p role="alert" className="text-sm text-warn">
+          {t("signInExpired")}
+        </p>
+        <button type="button" className={PRIMARY_BUTTON} onClick={startOver}>
+          {t("startOver")}
+        </button>
+      </div>
+    );
+  }
 
   if (step.kind === "credentials") {
     return (
@@ -170,6 +196,7 @@ export function StaffLoginFlow({ onDone, initialStep }: { onDone: () => void; in
     return (
       <EnrollStep
         mfaToken={step.mfaToken}
+        onExpired={expire}
         onEnrolled={(result) => {
           session.signedIn();
           setStep({ kind: "codes", codes: result.recoveryCodes });

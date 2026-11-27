@@ -30,6 +30,7 @@ const step = (status: "MFA_REQUIRED" | "ENROLL_REQUIRED") => ({
   mfaToken: "mfa-1",
   mfaTokenExpiresAt: "2026-11-27T12:00:00.000Z",
 });
+const unauthorized = () => new ApiError(401, { type: "about:blank", title: "x", status: 401, code: "UNAUTHORIZED" });
 const CODES = Array.from({ length: 10 }, (_, i) => `code-${i}`);
 
 function signInWithPassword() {
@@ -105,9 +106,9 @@ describe("StaffLoginFlow", () => {
     expect(auth.mfaEnrollStart).toHaveBeenCalledWith({ mfaToken: "mfa-9" });
   });
 
-  it("wrong code shows OTP_INVALID text", async () => {
+  it("wrong code shows the MFA_INVALID text", async () => {
     auth.mfaVerify.mockRejectedValue(
-      new ApiError(401, { type: "about:blank", title: "x", status: 401, code: "OTP_INVALID" }),
+      new ApiError(400, { type: "about:blank", title: "x", status: 400, code: "MFA_INVALID" }),
     );
     mount({ status: "MFA_REQUIRED", mfaToken: "mfa-1" });
     enterCode("111111");
@@ -116,12 +117,66 @@ describe("StaffLoginFlow", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
-  it("wrong password shows the UNAUTHORIZED text", async () => {
-    auth.staffLogin.mockRejectedValue(
-      new ApiError(401, { type: "about:blank", title: "x", status: 401, code: "UNAUTHORIZED" }),
-    );
+  it("wrong password says the email or password is not right", async () => {
+    auth.staffLogin.mockRejectedValue(unauthorized());
     mount();
     signInWithPassword();
-    expect(await screen.findByText("Please log in to continue.")).toBeInTheDocument();
+    expect(await screen.findByText("Email or password is not right.")).toBeInTheDocument();
+    expect(screen.queryByText("Please log in to continue.")).toBeNull();
+  });
+
+  it("an expired sign-in on the code step offers Start over back to the password", async () => {
+    auth.mfaVerify.mockRejectedValue(unauthorized());
+    mount({ status: "MFA_REQUIRED", mfaToken: "mfa-1" });
+    enterCode("111111");
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+    expect(await screen.findByText("Sign-in timed out. Start again.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toHaveValue("");
+    expect(screen.queryByText("Sign-in timed out. Start again.")).toBeNull();
+  });
+
+  it("an expired sign-in on the recovery step offers Start over", async () => {
+    auth.mfaRecover.mockRejectedValue(unauthorized());
+    mount({ status: "MFA_REQUIRED", mfaToken: "mfa-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Use a recovery code" }));
+    fireEvent.change(screen.getByLabelText("Recovery code"), { target: { value: "abcd-efgh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use this code" }));
+    expect(await screen.findByText("Sign-in timed out. Start again.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+  });
+
+  it("an expired sign-in on enrollment offers Start over", async () => {
+    auth.mfaEnrollStart.mockResolvedValue({ secret: "S3", otpauthUrl: "otpauth://totp/z" });
+    auth.mfaEnrollConfirm.mockRejectedValue(unauthorized());
+    mount({ status: "ENROLL_REQUIRED", mfaToken: "mfa-9" });
+    await screen.findByRole("img", { name: /QR code/ });
+    enterCode("654321");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm and continue" }));
+    expect(await screen.findByText("Sign-in timed out. Start again.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+  });
+
+  it("an enrollment load error offers Try again and a link back to sign in", async () => {
+    auth.mfaEnrollStart
+      .mockRejectedValueOnce(new ApiError(500, { type: "about:blank", title: "x", status: 500, code: "INTERNAL" }))
+      .mockResolvedValueOnce({ secret: "S4", otpauthUrl: "otpauth://totp/w" });
+    mount({ status: "ENROLL_REQUIRED", mfaToken: "mfa-9" });
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to sign in" })).toHaveAttribute("href", "/en/staff/login");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("S4")).toBeInTheDocument();
+    expect(auth.mfaEnrollStart).toHaveBeenCalledTimes(2);
+  });
+
+  it("an expired token while loading enrollment offers Start over", async () => {
+    auth.mfaEnrollStart.mockRejectedValue(unauthorized());
+    mount({ status: "ENROLL_REQUIRED", mfaToken: "mfa-9" });
+    expect(await screen.findByText("Sign-in timed out. Start again.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
   });
 });

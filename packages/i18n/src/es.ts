@@ -273,7 +273,11 @@ export const es: Messages = {
       password: "Contraseña",
       signIn: "Entrar",
       signingIn: "Entrando…",
-      customerNotice: "Iniciaste sesión como clienta. Entra con una cuenta del equipo para continuar.",
+      customerNotice:
+        "Hay una sesión de cliente abierta en este dispositivo. Al entrar como equipo, esa sesión se cerrará.",
+      invalidCredentials: "El correo o la contraseña no son correctos.",
+      signInExpired: "El acceso expiró. Empieza de nuevo.",
+      startOver: "Empezar de nuevo",
       forgotLink: "¿Olvidaste tu contraseña?",
       codeLabel: "Código de 6 dígitos de tu app de autenticación",
       codeHint: "Abre tu app de autenticación e ingresa el código actual.",
