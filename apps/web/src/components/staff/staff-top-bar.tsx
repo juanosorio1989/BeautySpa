@@ -35,7 +35,7 @@ export function StaffTopBar() {
       <LocaleSwitch />
       <nav aria-label={t("menu")} className="flex w-full flex-wrap items-center gap-x-4 text-sm font-medium">
         <Link href="/staff" className="flex min-h-11 items-center">
-          {t("agenda")}
+          {t("agendaLink")}
         </Link>
         {canSeeClients ? (
           <Link href="/staff/clients" className="flex min-h-11 items-center">

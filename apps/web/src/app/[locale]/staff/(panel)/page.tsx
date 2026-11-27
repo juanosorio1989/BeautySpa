@@ -1,4 +1,10 @@
-// Placeholder; the day agenda (Task 9) replaces this page.
+import { Suspense } from "react";
+import { AgendaView } from "@/components/staff/agenda/agenda-view";
+
 export default function StaffAgendaPage() {
-  return null;
+  return (
+    <Suspense fallback={null}>
+      <AgendaView />
+    </Suspense>
+  );
 }

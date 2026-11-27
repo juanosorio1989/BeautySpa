@@ -121,3 +121,8 @@ times link to quick booking.
 - No "override" flag on cards: it is not stored on the appointment, only in
   the audit log.
 - Professional filter in `localStorage`, per device.
+- Agenda on phones renders only the active column (chips are tabs; a horizontal touch swipe of 60 px or more switches
+  to the next or previous professional). Wide screens render every selected column; the chip filter is kept in
+  `localStorage["bs-staff-agenda-employees"]`.
+- Move sheet reads the professionals able to do each service from `GET /staff/booking-catalog`; a checked-in
+  appointment hides times earlier than its current start (a hint; the API enforces it).
