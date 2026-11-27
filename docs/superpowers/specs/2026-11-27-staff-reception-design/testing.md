@@ -23,8 +23,9 @@ Same tools as plans 04–06.
   seeded appointment → quick booking for an existing client → card appears →
   check in → complete. One EMPLOYEE smoke: sees only own column, no
   "New"/"Walk-in".
-- Seeds: add a demo RECEPTION and the e2e OWNER/EMPLOYEE with fixed TOTP
-  secrets only when `NODE_ENV=test` (never in dev/prod seeds).
+- E2E staff fixtures: a test-only script gives the e2e OWNER and one seeded
+  EMPLOYEE a fixed password and TOTP secret, only when `NODE_ENV=test` (never
+  in dev/prod seeds). No demo RECEPTION seed: the owner invites staff.
 - Acceptance for the branch: `pnpm lint`, `pnpm typecheck`, `pnpm build`,
   `pnpm test`, `pnpm test:int` (run alone), `pnpm format:check`, e2e green in
   CI.
