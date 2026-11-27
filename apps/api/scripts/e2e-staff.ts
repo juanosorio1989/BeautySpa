@@ -17,6 +17,9 @@ const EMPLOYEE_EMAIL = "ana@demo-salon.test";
 
 async function main(): Promise<void> {
   if (process.env.NODE_ENV !== "test") throw new Error("e2e-staff refuses to run unless NODE_ENV=test");
+  if (!process.env.DATABASE_URL_TEST || process.env.DATABASE_URL !== process.env.DATABASE_URL_TEST) {
+    throw new Error("e2e-staff only writes to DATABASE_URL_TEST");
+  }
   const keyB64 = process.env.DATA_ENCRYPTION_KEY;
   if (!keyB64) throw new Error("DATA_ENCRYPTION_KEY is not set");
   const encryptor = new Encryptor({ keyId: process.env.DATA_ENCRYPTION_KEY_ID ?? "k1", keyB64 });
@@ -24,21 +27,21 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient();
   try {
     const org = await prisma.organization.findUniqueOrThrow({ where: { slug: "demo-salon" } });
-    const login = async () => ({
+    const login = {
       canLogin: true,
       active: true,
       passwordHash: await hashPassword(PASSWORD),
       totpSecretEnc: encryptor.encrypt(TOTP_SECRET_B32),
       totpEnrolledAt: new Date(),
-    });
+    };
     const key = (email: string) => ({ organizationId_email: { organizationId: org.id, email } });
 
     await prisma.staffUser.upsert({
       where: key(OWNER_EMAIL),
-      update: { ...(await login()), role: "OWNER" },
-      create: { organizationId: org.id, email: OWNER_EMAIL, role: "OWNER", locale: "en", ...(await login()) },
+      update: { ...login, role: "OWNER" },
+      create: { organizationId: org.id, email: OWNER_EMAIL, role: "OWNER", locale: "en", ...login },
     });
-    await prisma.staffUser.update({ where: key(EMPLOYEE_EMAIL), data: await login() });
+    await prisma.staffUser.update({ where: key(EMPLOYEE_EMAIL), data: login });
     console.log("e2e staff accounts ready");
   } finally {
     await prisma.$disconnect();

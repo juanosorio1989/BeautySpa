@@ -17,6 +17,14 @@ function seedDay(): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+function nyHour(): number {
+  return Number(
+    new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }).format(new Date()),
+  );
+}
+
+test.describe.configure({ timeout: 90_000 });
+
 async function signIn(page: Page, email: string): Promise<void> {
   await page.goto("/en/staff/login");
   await page.getByLabel("Email").fill(email);
@@ -24,7 +32,10 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.getByRole("button", { name: "Sign in" }).click();
   const code = page.getByLabel("6-digit code from your authenticator app");
   await expect(code).toBeVisible();
-  // A code is accepted once per 30 s step for a user; when a previous run used this step, wait for the next one.
+  // A code is accepted once per 30 s step for a user and a step must not end mid-submit: start a fresh step
+  // when fewer than 5 s are left.
+  const left = 30_000 - (Date.now() % 30_000);
+  if (left < 5_000) await page.waitForTimeout(left + 200);
   for (let attempt = 0; attempt < 2; attempt++) {
     await code.fill(totp(TOTP_SECRET));
     await page.getByRole("button", { name: "Verify" }).click();
@@ -33,12 +44,14 @@ async function signIn(page: Page, email: string): Promise<void> {
       return;
     } catch (err) {
       if (attempt === 1) throw err;
+      // The same step was already used by an earlier run: wait for the next one.
       await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
     }
   }
 }
 
 test("owner signs in, books at the desk, checks in and completes", async ({ page }) => {
+  test.skip(nyHour() >= 23, "no bookable time left today (override lists 06:00-22:59)");
   await signIn(page, "owner@e2e.test");
 
   // The seeded appointment (María Gómez) is on the seed day.
@@ -61,13 +74,18 @@ test("owner signs in, books at the desk, checks in and completes", async ({ page
   const slots = page.locator("button[aria-pressed]").filter({ hasText: /^\d{1,2}:\d{2}/ });
   const otherTime = page.getByRole("button", { name: /Other time/ });
   await expect(slots.first().or(page.getByText("No times this day."))).toBeVisible();
-  if (!(await slots.first().isVisible())) {
+  const override = !(await slots.first().isVisible());
+  if (override) {
     await otherTime.click();
     await expect(slots.first()).toBeVisible();
   }
   await slots.first().click();
-  const bookAnyway = page.getByRole("button", { name: "Book anyway" });
-  if (await bookAnyway.isVisible()) await bookAnyway.click();
+  if (override) {
+    // Override times outside the regular hours need the extra confirmation.
+    const bookAnyway = page.getByRole("button", { name: "Book anyway" });
+    await expect(bookAnyway.or(page.getByRole("button", { name: /^Save · / }))).toBeVisible();
+    if (await bookAnyway.isVisible()) await bookAnyway.click();
+  }
   await page.getByRole("button", { name: /^Save · / }).click();
 
   // Back on the agenda, the new card is highlighted (?highlight=<id>).

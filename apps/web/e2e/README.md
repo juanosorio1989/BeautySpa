@@ -15,11 +15,11 @@ build of the web app:
 ## Staff fixture
 
 `prepare.sh` runs `pnpm --filter @beautyspa/api e2e:staff` (`apps/api/scripts/e2e-staff.ts`) after the seed. It refuses
-unless `NODE_ENV=test`, creates OWNER `owner@e2e.test` and enables login for the seeded `ana@demo-salon.test`, with the
+unless `NODE_ENV=test` and `DATABASE_URL` equals `DATABASE_URL_TEST`, creates OWNER `owner@e2e.test` and enables login for the seeded `ana@demo-salon.test`, with the
 test-only password and TOTP secret that `staff.spec.ts` knows. The TOTP secret is encrypted with `DATA_ENCRYPTION_KEY`
-from the root `.env`. A TOTP code works once per 30 s step per user, so a rerun inside the same step waits for the next one.
+from the root `.env`. A TOTP code works once per 30 s step per user: the spec starts a fresh step when under 5 s remain, and a rerun inside an already used step waits for the next one (the staff tests allow 90 s).
 The booking test uses today (check-in and complete need the appointment's day), and falls back to "Other time…" when
-today has no regular times (Sunday, Monday, late evening).
+today has no regular times (Sunday, Monday, evening). From 23:00 New York time the override list is also empty (it covers 06:00-22:59), so that test skips itself.
 
 ## Environment
 
