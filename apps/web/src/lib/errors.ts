@@ -14,3 +14,6 @@ export function fieldErrors(err: unknown): Record<string, string> {
   for (const e of err.problem.errors ?? []) out[e.path] = e.message;
   return out;
 }
+
+/** A 401 `UNAUTHORIZED` problem (no or expired credentials or token). */
+export const isUnauthorized = (err: unknown): boolean => err instanceof ApiError && err.problem.code === "UNAUTHORIZED";

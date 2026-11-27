@@ -13,6 +13,7 @@ import { todayIn, utcToWall } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { conflict, invalidRef, notFound } from "../common/http-errors.js";
+import { loadReachableFor } from "../customers/reachability.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import {
@@ -126,7 +127,7 @@ export class StaffAppointmentsService {
 
       const row = await tx.appointment.findUniqueOrThrow({ where: { id: appt.id }, include: APPOINTMENT_INCLUDE });
       await this.recordAudit(tx, principal, "appointment.create", appt.id, null, auditAfter(row, input.override), ip);
-      return toStaffAppointmentDto(row);
+      return toStaffAppointmentDto(row, await loadReachableFor(tx, orgId, [row]));
     }, BOOKING_TX_OPTIONS);
 
     await notifyAfterCommit(this.events, this.logger, () => this.events.booked(created.id));
@@ -190,7 +191,7 @@ export class StaffAppointmentsService {
         auditAfter(updated, patch.override),
         ip,
       );
-      return toStaffAppointmentDto(updated);
+      return toStaffAppointmentDto(updated, await loadReachableFor(tx, orgId, [updated]));
     }, BOOKING_TX_OPTIONS);
 
     await notifyAfterCommit(this.events, this.logger, () => this.events.changed(id));
@@ -270,7 +271,7 @@ export class StaffAppointmentsService {
         toAppointmentRecord(updated),
         ip,
       );
-      return toStaffAppointmentDto(updated);
+      return toStaffAppointmentDto(updated, await loadReachableFor(tx, orgId, [updated]));
     }, BOOKING_TX_OPTIONS);
 
     if (changed.status === "CANCELLED") {

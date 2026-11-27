@@ -1,5 +1,6 @@
 import type { ConsentSource, Prisma } from "@prisma/client";
-import type { Channel, Consents, StaffCustomer } from "@beautyspa/contracts";
+import type { Channel, Consents, Me } from "@beautyspa/contracts";
+import { loadConsents } from "./reachability.js";
 
 const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL", "PUSH"];
 
@@ -7,21 +8,9 @@ const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL", "PUSH"];
 export async function currentConsents(
   db: Pick<Prisma.TransactionClient, "notificationConsent">,
   customerId: string,
-  organizationId?: string,
+  organizationId: string,
 ): Promise<Consents> {
-  const rows = await db.notificationConsent.findMany({
-    where: { customerId, ...(organizationId !== undefined ? { organizationId } : {}) },
-    orderBy: [{ changedAt: "desc" }, { id: "desc" }],
-    select: { channel: true, granted: true },
-  });
-  const result: Consents = { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false };
-  const seen = new Set<Channel>();
-  for (const r of rows) {
-    if (seen.has(r.channel)) continue;
-    seen.add(r.channel);
-    result[r.channel] = r.granted;
-  }
-  return result;
+  return (await loadConsents(db, organizationId, [customerId])).get(customerId)!;
 }
 
 /** One consent row `recordConsents` appended. */
@@ -42,7 +31,7 @@ export async function recordConsents(
   wanted: Partial<Consents>,
   source: ConsentSource,
 ): Promise<RecordedConsent[]> {
-  const current = await currentConsents(tx, customerId);
+  const current = await currentConsents(tx, customerId, orgId);
   const changed = CHANNELS.filter((c) => wanted[c] !== undefined && wanted[c] !== current[c]);
   if (changed.length === 0) return [];
   const rows = await tx.notificationConsent.createManyAndReturn({
@@ -58,17 +47,17 @@ export async function recordConsents(
   return changed.map((channel) => ({ channel, id: rows.find((r) => r.channel === channel)!.id }));
 }
 
-/** The customer shape shared by staff endpoints and `Me`. */
+/** The `Me` shape; staff endpoints add `reachable`. */
 export function toCustomerDto(
   row: { id: string; phoneE164: string; name: string | null; email: string | null; locale: string },
   consents: Consents,
-): StaffCustomer {
+): Me {
   return {
     id: row.id,
     phoneE164: row.phoneE164,
     name: row.name,
     email: row.email,
-    locale: row.locale as StaffCustomer["locale"],
+    locale: row.locale as Me["locale"],
     consents,
   };
 }

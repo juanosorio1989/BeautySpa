@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { IdSchema, IsoInstantSchema, LocaleSchema, PhoneE164Schema } from "./common";
+import { IdSchema, IsoDateSchema, IsoInstantSchema, LocaleSchema, PhoneE164Schema } from "./common";
 import { EmailSchema } from "./auth";
-import { AppointmentSchema } from "./booking";
+import { AppointmentSchema, StaffAppointmentSchema } from "./booking";
 
 export const ChannelSchema = z.enum(["WHATSAPP", "SMS", "EMAIL", "PUSH"]);
 export type Channel = z.infer<typeof ChannelSchema>;
@@ -66,8 +66,23 @@ export type CustomerExport = z.infer<typeof CustomerExportSchema>;
 export const CustomerSearchQuerySchema = z.object({ q: z.string().trim().min(2).max(80) });
 export type CustomerSearchQuery = z.infer<typeof CustomerSearchQuerySchema>;
 
-export const StaffCustomerSchema = MeSchema;
+export const StaffCustomerSchema = MeSchema.extend({
+  /** At least one consented channel the router can use today (email with an address, or a push subscription). */
+  reachable: z.boolean(),
+});
 export type StaffCustomer = z.infer<typeof StaffCustomerSchema>;
+
+export const StaffCustomerSearchResultSchema = StaffCustomerSchema.extend({
+  /** Latest `COMPLETED` or `CHECKED_IN` appointment: local date (location timezone) and its service ids in segment order. */
+  lastVisit: z.object({ date: IsoDateSchema, serviceIds: z.array(IdSchema) }).nullable(),
+});
+export type StaffCustomerSearchResult = z.infer<typeof StaffCustomerSearchResultSchema>;
+
+export const StaffCustomerAppointmentsSchema = z.object({
+  upcoming: z.array(StaffAppointmentSchema),
+  past: z.array(StaffAppointmentSchema),
+});
+export type StaffCustomerAppointments = z.infer<typeof StaffCustomerAppointmentsSchema>;
 
 export const StaffCustomerCreateSchema = z.object({
   name: CustomerNameSchema,

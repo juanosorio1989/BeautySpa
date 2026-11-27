@@ -9,7 +9,10 @@ import { TenancyService } from "../tenancy/tenancy.service.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { toSlotDto } from "./plan-mapping.js";
 
-/** Read-only slot search; the mode comes from the token (no token or customer: online; staff: staff). */
+/**
+ * Read-only slot search; the mode comes from the token (no token or customer: online; staff: staff).
+ * Staff `override=true` also lists times outside hours and closures, each flagged `outsideHours`.
+ */
 @Injectable()
 export class AvailabilityService {
   constructor(
@@ -21,19 +24,32 @@ export class AvailabilityService {
   ) {}
 
   async slots(principal: AccessClaims | undefined, query: AvailabilityQuery): Promise<Slot[]> {
+    const staff = principal?.typ === "staff";
+    if (query.override && !staff) throw invalidRef("override", "Override is for staff only");
     const orgId = await this.tenancy.getOrgId();
     const location = await this.locations.resolve(orgId, query.locationId);
     if (query.excludeAppointmentId !== undefined) {
       await this.assertMayExclude(principal, orgId, query.excludeAppointmentId);
     }
     const ctx = await this.context.load(this.prisma, orgId, location, {
-      mode: principal?.typ === "staff" ? "STAFF" : "ONLINE",
+      mode: staff ? "STAFF" : "ONLINE",
       now: this.clock.now(),
       date: query.date,
       ...(query.excludeAppointmentId !== undefined ? { excludeAppointmentId: query.excludeAppointmentId } : {}),
     });
+    const search = { ...ctx, choices: query.services, date: query.date };
     try {
-      return findSlots({ ...ctx, choices: query.services, date: query.date }).map(toSlotDto);
+      const normal = findSlots(search);
+      if (!query.override) return normal.map(toSlotDto);
+      // Same snapshot, hours and closures relaxed; overlaps stay forbidden. Keyed by start: a start the
+      // normal search offers keeps the normal plan (the relaxed one may name an off-duty employee and the
+      // write would then need override); only starts missing from it use the relaxed plan.
+      const normalStarts = new Set(normal.map((s) => s.start));
+      const relaxedOnly = findSlots({ ...search, override: true }).filter((s) => !normalStarts.has(s.start));
+      return [
+        ...normal.map((s) => ({ ...toSlotDto(s), outsideHours: false })),
+        ...relaxedOnly.map((s) => ({ ...toSlotDto(s), outsideHours: true })),
+      ].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
     } catch (err) {
       if (err instanceof AvailabilityError && (err.code === "UNKNOWN_SERVICE" || err.code === "UNKNOWN_EMPLOYEE")) {
         throw invalidRef("services", "Unknown service or employee");

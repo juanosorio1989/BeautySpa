@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  AgendaQuerySchema,
   HoldInputSchema,
   BookInputSchema,
   CancelInputSchema,
@@ -64,4 +65,13 @@ describe("blank notes and reasons", () => {
   it("keeps trimmed text", () => expect(CancelInputSchema.parse({ reason: "  sick  " }).reason).toBe("sick"));
   it("still rejects a reason over 200 chars", () =>
     expect(CancelInputSchema.safeParse({ reason: "a".repeat(201) }).success).toBe(false));
+});
+
+describe("AgendaQuerySchema", () => {
+  it("defaults includeCancelled to false", () =>
+    expect(AgendaQuerySchema.parse({ date: "2026-12-01" }).includeCancelled).toBe(false));
+  it("parses true", () =>
+    expect(AgendaQuerySchema.parse({ date: "2026-12-01", includeCancelled: "true" }).includeCancelled).toBe(true));
+  it("rejects yes", () =>
+    expect(AgendaQuerySchema.safeParse({ date: "2026-12-01", includeCancelled: "yes" }).success).toBe(false));
 });

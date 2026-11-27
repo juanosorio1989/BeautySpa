@@ -13,6 +13,7 @@ export NODE_ENV=test
 export DATABASE_URL="$DATABASE_URL_TEST"
 pnpm --filter @beautyspa/api db:deploy
 pnpm --filter @beautyspa/api db:seed
+pnpm --filter @beautyspa/api e2e:staff
 
 # NEXT_PUBLIC_API_URL is inlined at build time, so the web build must see the e2e API address.
 NODE_ENV=production API_URL=http://localhost:3101 NEXT_PUBLIC_API_URL=http://localhost:3101 \

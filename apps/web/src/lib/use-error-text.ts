@@ -12,7 +12,7 @@ export function useErrorText(): (err: unknown) => string {
   };
 }
 
-export type FormField = "name" | "email" | "notes";
+export type FormField = "name" | "email" | "phone" | "notes";
 
 /**
  * Localized field errors for the `allowed` fields that are on screen; API messages are never shown.

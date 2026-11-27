@@ -26,6 +26,7 @@ import {
   type MeApi,
   type PublicApi,
   type PushApi,
+  type StaffApi,
 } from "./resources";
 import type { TokenStore } from "./token-store";
 
@@ -45,7 +46,7 @@ export interface ApiClientOptions {
 }
 
 export interface RequestOptions<T> {
-  method: "GET" | "POST" | "PATCH" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Path after `/v1`, e.g. `/me`. */
   path: string;
   body?: unknown;
@@ -81,6 +82,7 @@ export interface ApiClient {
   me: MeApi;
   manage: ManageApi;
   push: PushApi;
+  staff: StaffApi;
 }
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {

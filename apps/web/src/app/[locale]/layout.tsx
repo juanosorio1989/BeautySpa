@@ -3,6 +3,7 @@ import { Inter, Space_Grotesk } from "next/font/google";
 import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
+import { SiteHeaderGate } from "@/components/site-header-gate";
 import { SessionProvider } from "@/lib/session/session-provider";
 import { SiteHeader } from "@/components/site-header";
 import { getPrimaryLocation } from "@/lib/api/server";
@@ -47,7 +48,9 @@ export default async function LocaleLayout({
       <body className="min-h-dvh antialiased">
         <NextIntlClientProvider>
           <SessionProvider>
-            <SiteHeader locationName={location?.name ?? ""} />
+            <SiteHeaderGate>
+              <SiteHeader locationName={location?.name ?? ""} />
+            </SiteHeaderGate>
             {children}
           </SessionProvider>
         </NextIntlClientProvider>

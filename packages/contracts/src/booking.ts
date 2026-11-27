@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { IdSchema, IsoDateSchema, IsoInstantSchema, MoneyCentsSchema, TimezoneSchema } from "./common";
+import {
+  IdSchema,
+  IsoDateSchema,
+  IsoInstantSchema,
+  LocalizedTextSchema,
+  MoneyCentsSchema,
+  QueryBooleanSchema,
+  TimezoneSchema,
+} from "./common";
 import { PlannedSegmentSchema, ServiceChoiceSchema } from "./availability";
 
 export const AppointmentStatusSchema = z.enum(["HELD", "BOOKED", "CHECKED_IN", "COMPLETED", "CANCELLED", "NO_SHOW"]);
@@ -60,6 +68,10 @@ export const CustomerSummarySchema = z.object({
   id: IdSchema,
   name: z.string().nullable(),
   phoneE164: z.string(),
+  /** At least one consented channel the router can use today (email with an address, or a push subscription). */
+  reachable: z.boolean(),
+  /** The account was deleted and anonymized: `phoneE164` is a placeholder and there is no client page. */
+  deleted: z.boolean(),
 });
 export type CustomerSummary = z.infer<typeof CustomerSummarySchema>;
 
@@ -118,13 +130,26 @@ export const AgendaQuerySchema = z.object({
   date: IsoDateSchema,
   locationId: IdSchema.optional(),
   employeeId: IdSchema.optional(),
+  includeCancelled: QueryBooleanSchema.default("false"),
 });
 export type AgendaQuery = z.infer<typeof AgendaQuerySchema>;
+
+export const AgendaEmployeeSchema = z.object({
+  id: IdSchema,
+  displayName: z.string(),
+  active: z.boolean(),
+  /** Working hours of the local day after location hours, closures and time off (no appointments subtracted). */
+  ranges: z.array(z.object({ start: IsoInstantSchema, end: IsoInstantSchema })),
+});
+export type AgendaEmployee = z.infer<typeof AgendaEmployeeSchema>;
 
 export const AgendaSchema = z.object({
   date: IsoDateSchema,
   locationId: IdSchema,
   timezone: TimezoneSchema,
   appointments: z.array(StaffAppointmentSchema),
+  employees: z.array(AgendaEmployeeSchema),
+  services: z.array(z.object({ id: IdSchema, name: LocalizedTextSchema })),
+  resources: z.array(z.object({ id: IdSchema, name: z.string() })),
 });
 export type Agenda = z.infer<typeof AgendaSchema>;

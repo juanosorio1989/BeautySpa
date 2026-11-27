@@ -7,11 +7,12 @@ import { SessionContext, type Session } from "@/lib/session/use-session";
 // A plain function behind the mock: vitest's spy flags a rejection it wraps even when the caller handles it.
 let pushImpl: () => Promise<void> = async () => undefined;
 vi.mock("@/lib/push", () => ({ dropPushSubscription: () => pushImpl() }));
-vi.mock("@/i18n/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+const replace = vi.fn();
+vi.mock("@/i18n/navigation", () => ({ useRouter: () => ({ replace }) }));
 
 import { LogoutButton } from "./logout-button";
 
-function mount(logout: Session["logout"]) {
+function mount(logout: Session["logout"], redirectTo?: "/staff/login") {
   const session: Session = {
     status: "signedIn",
     ensure: vi.fn().mockResolvedValue(true),
@@ -21,7 +22,7 @@ function mount(logout: Session["logout"]) {
   render(
     <NextIntlClientProvider locale="en" messages={en}>
       <SessionContext.Provider value={session}>
-        <LogoutButton />
+        <LogoutButton redirectTo={redirectTo} />
       </SessionContext.Provider>
     </NextIntlClientProvider>,
   );
@@ -49,5 +50,11 @@ describe("LogoutButton push cleanup", () => {
     mount(logout);
     fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(logout).toHaveBeenCalled());
+  });
+
+  it("goes to redirectTo after logging out", async () => {
+    mount(vi.fn().mockResolvedValue(undefined), "/staff/login");
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/staff/login"));
   });
 });

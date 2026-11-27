@@ -21,4 +21,6 @@ Typed client for the BeautySpa API. No DOM or Node types: you inject `fetch`.
 - Errors are `ApiError` with a contracts `Problem` (`err.problem.code`).
 - Resource groups: `public` (locations, services, employees; no bearer), `booking` (availability sends the
   bearer when present, `createHold`/`releaseHold` anonymous, `book` authed) and `me` (profile, appointments,
-  cancel, reschedule, repeat, export, remove). Bodies are `z.input` of the contract schemas; responses are parsed.
+  cancel, reschedule, repeat, export, remove) and `staff` (staff bearer: `me`, `agenda`, `bookingCatalog`,
+  `availability` with `override`, `createAppointment`, `moveAppointment`, `setStatus`, `walkIn`, customer search/create/read,
+  `customerAppointments`, `notes`/`saveNotes` via PUT; booleans in query strings are sent only when `true`). Bodies are `z.input` of the contract schemas; responses are parsed.

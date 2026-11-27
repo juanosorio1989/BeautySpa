@@ -12,3 +12,4 @@ export * from "./booking";
 export * from "./customer";
 export * from "./manage";
 export * from "./push";
+export * from "./staff-panel";

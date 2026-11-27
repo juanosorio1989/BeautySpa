@@ -49,7 +49,7 @@ Customers are soft-deleted (`deleted_at`); resources are deactivated
 
 | Table | Key columns |
 |---|---|
-| `customer` | `organization_id`, `phone_e164` (unique per org), `name` (nullable: the row is created at OTP verify, before the name step), `email` (optional), `locale`, `phone_verified_at`, `created_via` (`ONLINE`, `RECEPTION`), `private_notes_enc` (staff-only, encrypted), `deleted_at` |
+| `customer` | `organization_id`, `phone_e164` (unique per org), `name` (nullable: the row is created at OTP verify, before the name step), `email` (optional), `locale`, `phone_verified_at`, `created_via` (`ONLINE`, `RECEPTION`), `private_notes_enc` (staff-only, encrypted), `private_notes_updated_at`, `private_notes_updated_by` (FK `staff_user`, `ON DELETE SET NULL`; plan 07a), `deleted_at` |
 | `notification_consent` | `organization_id`, `customer_id`, `channel` (`WHATSAPP`, `SMS`, `EMAIL`, `PUSH`), `granted`, `source` (`BOOKING_FORM`, `PROFILE`, `RECEPTION`, `INBOUND_STOP`), `changed_at`. Append-only history; current state = latest row per channel. |
 
 ## Catalog and resources

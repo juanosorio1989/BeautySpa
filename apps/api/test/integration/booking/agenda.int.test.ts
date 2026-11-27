@@ -88,6 +88,30 @@ describe("GET /staff/agenda", () => {
     expect(body.appointments[0]!.startsAt < body.appointments[1]!.startsAt).toBe(true);
   });
 
+  it("marks a customer with email consent and an email reachable, others not", async () => {
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    const before = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(before.appointments[0]!.customer?.reachable).toBe(false);
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { email: "ana@example.com" } });
+    await ctx.prisma.notificationConsent.create({
+      data: { organizationId: f.orgId, customerId: f.customerId, channel: "EMAIL", granted: true, source: "PROFILE" },
+    });
+    const after = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(after.appointments[0]!.customer?.reachable).toBe(true);
+  });
+
+  it("flags an anonymized customer as deleted and others not", async () => {
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    const before = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(before.appointments[0]!.customer).toMatchObject({ id: f.customerId, deleted: false });
+    await ctx.prisma.customer.update({
+      where: { id: f.customerId },
+      data: { deletedAt: new Date(BOOKING_NOW), name: null, phoneE164: `deleted:${f.customerId}` },
+    });
+    const after = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(after.appointments[0]!.customer).toMatchObject({ id: f.customerId, name: null, deleted: true });
+  });
+
   it("includes CHECKED_IN, COMPLETED and NO_SHOW appointments", async () => {
     const statuses = ["CHECKED_IN", "COMPLETED", "NO_SHOW"] as const;
     const ids: string[] = [];
@@ -152,6 +176,111 @@ describe("GET /staff/agenda", () => {
     expect((own.body as Agenda).appointments.map((x) => x.id)).toEqual([a.id]);
     const other = await get(`date=${BOOKING_DATE}&employeeId=${f.staffB}`, token);
     expect(other.status).toBe(403);
+  });
+
+  it("excludes cancelled by default, includes them with includeCancelled=true and 400s on yes", async () => {
+    const kept = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    const cancelled = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "17:00", endsAt: "18:00" });
+    await ctx.prisma.appointment.update({
+      where: { id: cancelled.id },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelledBy: "STAFF" },
+    });
+    const def = await get(`date=${BOOKING_DATE}`);
+    expect((def.body as Agenda).appointments.map((a) => a.id)).toEqual([kept.id]);
+    const withIt = await get(`date=${BOOKING_DATE}&includeCancelled=true`);
+    expect((withIt.body as Agenda).appointments.map((a) => a.id)).toEqual([kept.id, cancelled.id]);
+    expect((await get(`date=${BOOKING_DATE}&includeCancelled=yes`)).status).toBe(400);
+  });
+
+  it("lists active employees with working ranges and empty ranges on time off", async () => {
+    await ctx.prisma.timeOff.create({
+      data: {
+        organizationId: f.orgId,
+        staffUserId: f.staffB,
+        locationId: null,
+        kind: "VACATION",
+        startsAt: new Date("2026-12-01T05:00:00.000Z"),
+        endsAt: new Date("2026-12-02T05:00:00.000Z"),
+      },
+    });
+    const res = await get(`date=${BOOKING_DATE}`);
+    const body = res.body as Agenda;
+    const byId = new Map(body.employees.map((e) => [e.id, e]));
+    expect(body.employees).toHaveLength(2);
+    expect(byId.get(f.staffA)).toEqual({
+      id: f.staffA,
+      displayName: "Alex",
+      active: true,
+      ranges: [{ start: "2026-12-01T14:00:00.000Z", end: "2026-12-02T00:00:00.000Z" }],
+    });
+    expect(byId.get(f.staffB)).toEqual({ id: f.staffB, displayName: "Blair", active: true, ranges: [] });
+  });
+
+  it("keeps a deactivated employee with a segment that day, with no ranges", async () => {
+    const a = await bookSegment(ctx.prisma, f, { staffUserId: f.staffB, startsAt: "15:00", endsAt: "16:00" });
+    await ctx.prisma.staffUser.update({ where: { id: f.staffB }, data: { active: false } });
+    const body = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(body.appointments.map((x) => x.id)).toEqual([a.id]);
+    expect(body.employees.find((e) => e.id === f.staffB)).toEqual({
+      id: f.staffB,
+      displayName: "Blair",
+      active: false,
+      ranges: [],
+    });
+    expect(body.employees.find((e) => e.id === f.staffA)?.active).toBe(true);
+  });
+
+  it("returns exactly the services and resources referenced, including a deactivated service", async () => {
+    const chair = await ctx.prisma.resource.findFirstOrThrow({ where: { organizationId: f.orgId, name: "Chair 1" } });
+    const a = await bookSegment(ctx.prisma, f, {
+      staffUserId: f.staffA,
+      startsAt: "15:00",
+      endsAt: "16:00",
+      resourceId: chair.id,
+    });
+    await ctx.prisma.service.update({ where: { id: f.pediId }, data: { active: false } });
+    const body = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(body.appointments.map((x) => x.id)).toEqual([a.id]);
+    expect(body.services.map((s) => s.id)).toEqual([f.pediId]);
+    expect(body.services[0]!.name.en).toBeTruthy();
+    expect(body.resources).toEqual([{ id: chair.id, name: chair.name }]);
+  });
+
+  it("gives an EMPLOYEE only themselves in employees", async () => {
+    const body = (await get(`date=${BOOKING_DATE}`, await employeeToken(f.staffA))).body as Agenda;
+    expect(body.employees.map((e) => e.id)).toEqual([f.staffA]);
+  });
+
+  it("reports an employee moved off the location as inactive with no ranges", async () => {
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffB, startsAt: "15:00", endsAt: "16:00" });
+    await ctx.prisma.staffLocation.deleteMany({ where: { staffUserId: f.staffB, locationId: f.locationId } });
+    const body = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(body.employees.find((e) => e.id === f.staffB)).toEqual({
+      id: f.staffB,
+      displayName: "Blair",
+      active: false,
+      ranges: [],
+    });
+  });
+
+  it("gives an EMPLOYEE only themselves even on a multi-segment appointment", async () => {
+    const a = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    await ctx.prisma.appointmentSegment.create({
+      data: {
+        organizationId: f.orgId,
+        appointmentId: a.id,
+        serviceId: f.maniId,
+        staffUserId: f.staffB,
+        startsAt: new Date("2026-12-01T16:00:00.000Z"),
+        endsAt: new Date("2026-12-01T16:30:00.000Z"),
+        blockEndsAt: new Date("2026-12-01T16:30:00.000Z"),
+        durationMin: 30,
+        priceCents: 2500,
+      },
+    });
+    const body = (await get(`date=${BOOKING_DATE}`, await employeeToken(f.staffA))).body as Agenda;
+    expect(body.appointments).toHaveLength(1);
+    expect(body.employees.map((e) => e.id)).toEqual([f.staffA]);
   });
 
   it("rejects a malformed date with 400 and no token with 401", async () => {

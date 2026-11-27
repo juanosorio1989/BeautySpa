@@ -17,6 +17,7 @@
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "db:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
+    "e2e:staff": "dotenv -e ../../.env -- tsx scripts/e2e-staff.ts",
     "db:drift": "dotenv -e ../../.env -- bash scripts/check-drift.sh",
     "create-owner": "nest build && dotenv -e ../../.env -- node dist/cli/create-owner.js",
     "db:generate": "prisma generate",

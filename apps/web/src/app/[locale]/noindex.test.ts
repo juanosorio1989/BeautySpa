@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as book from "./book/layout";
 import * as login from "./login/layout";
+import * as staff from "./staff/layout";
 import * as me from "./me/layout";
 
 describe("private route groups", () => {
@@ -8,6 +9,7 @@ describe("private route groups", () => {
     ["book", book],
     ["me", me],
     ["login", login],
+    ["staff", staff],
   ])("/%s is not indexed", (_name, mod) => {
     expect(mod.metadata.robots).toEqual({ index: false });
   });

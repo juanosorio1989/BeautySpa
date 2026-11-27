@@ -6,11 +6,13 @@ export function formatPrice(cents: number, locale: Locale): string {
   return new Intl.NumberFormat(INTL_LOCALE[locale], { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
-export function formatDate(iso: string, tz: string, locale: Locale, style: "long" | "short"): string {
+export function formatDate(iso: string, tz: string, locale: Locale, style: "long" | "short" | "medium"): string {
   const opts: Intl.DateTimeFormatOptions =
     style === "long"
       ? { weekday: "long", month: "long", day: "numeric", year: "numeric" }
-      : { weekday: "short", month: "short", day: "numeric" };
+      : style === "medium"
+        ? { month: "short", day: "numeric", year: "numeric" }
+        : { weekday: "short", month: "short", day: "numeric" };
   return new Intl.DateTimeFormat(INTL_LOCALE[locale], { ...opts, timeZone: tz }).format(new Date(iso));
 }
 

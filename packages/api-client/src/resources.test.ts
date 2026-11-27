@@ -43,6 +43,10 @@ const me = {
   consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
 };
 
+const staffCustomer = { ...me, reachable: true };
+const staffAppt = { ...appointment, customer: null, createdByStaffId: null, cancelledBy: null };
+const notes = { notes: "n", updatedAt: T, updatedBy: { id: U(8), name: "Ana" } };
+
 function setup(reply: Reply, token: string | null = "tok") {
   const calls: Call[] = [];
   const fetch: FetchLike = (url, init) => {
@@ -56,7 +60,7 @@ function setup(reply: Reply, token: string | null = "tok") {
   const store = new MemoryTokenStore();
   store.setAccessToken(token);
   const api = createApiClient({ baseUrl: "http://x", fetch, tokenStore: store, transport: "cookie" });
-  return { api, calls };
+  return { api, calls, store };
 }
 
 describe("public", () => {
@@ -250,5 +254,147 @@ describe("manage and push", () => {
     await expect(b.api.push.publicKey()).resolves.toEqual({ publicKey: "BK" });
     expect(b.calls[0]!.url).toBe("http://x/v1/push/public-key");
     expect(b.calls[0]!.init.headers.authorization).toBeUndefined();
+  });
+});
+
+describe("staff", () => {
+  const sv = [{ serviceId: "s1", employeeId: "ANY" as const }];
+  const base = "http://x/v1";
+
+  it("me gets /staff/me with bearer", async () => {
+    const { api, calls } = setup({ status: 200, body: { id: U(8), name: "Ana", email: "a@x.com", role: "RECEPTION" } });
+    await expect(api.staff.me()).resolves.toMatchObject({ role: "RECEPTION" });
+    expect(calls[0]!.url).toBe(`${base}/staff/me`);
+    expect(calls[0]!.init.headers.authorization).toBe("Bearer tok");
+  });
+
+  it("agenda sends includeCancelled only when true", async () => {
+    const agenda = {
+      date: "2026-12-01",
+      locationId: U(4),
+      timezone: "America/New_York",
+      appointments: [],
+      employees: [],
+      services: [],
+      resources: [],
+    };
+    const { api, calls } = setup({ status: 200, body: agenda });
+    await api.staff.agenda({ date: "2026-12-01", includeCancelled: false });
+    expect(calls[0]!.url).toBe(`${base}/staff/agenda?date=2026-12-01`);
+    await api.staff.agenda({ date: "2026-12-01", locationId: "l1", employeeId: "e1", includeCancelled: true });
+    expect(calls[1]!.url).toBe(
+      `${base}/staff/agenda?date=2026-12-01&locationId=l1&employeeId=e1&includeCancelled=true`,
+    );
+  });
+
+  it("bookingCatalog gets with optional locationId", async () => {
+    const { api, calls } = setup({
+      status: 200,
+      body: { categories: [], services: [], employees: [], popularServiceIds: [] },
+    });
+    await api.staff.bookingCatalog();
+    await api.staff.bookingCatalog({ locationId: "l1" });
+    expect(calls[0]!.url).toBe(`${base}/staff/booking-catalog`);
+    expect(calls[1]!.url).toBe(`${base}/staff/booking-catalog?locationId=l1`);
+  });
+
+  it("availability sends override only when true", async () => {
+    const { api, calls } = setup({ status: 200, body: [] });
+    await api.staff.availability({ services: sv, date: "2026-12-01", override: false });
+    expect(calls[0]!.url).toBe(`${base}/availability?services=s1%3AANY&date=2026-12-01`);
+    await api.staff.availability({
+      services: sv,
+      date: "2026-12-01",
+      locationId: "l1",
+      excludeAppointmentId: "a1",
+      override: true,
+    });
+    expect(calls[1]!.url).toBe(
+      `${base}/availability?locationId=l1&services=s1%3AANY&date=2026-12-01&excludeAppointmentId=a1&override=true`,
+    );
+    expect(calls[1]!.init.headers.authorization).toBe("Bearer tok");
+  });
+
+  it("createAppointment posts /staff/appointments", async () => {
+    const { api, calls } = setup({ status: 200, body: staffAppt });
+    await api.staff.createAppointment({ customerId: U(6), segments: [segment] });
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(calls[0]!.url).toBe(`${base}/staff/appointments`);
+    expect(JSON.parse(calls[0]!.init.body!)).toEqual({ customerId: U(6), segments: [segment] });
+  });
+
+  it("moveAppointment patches /staff/appointments/:id", async () => {
+    const { api, calls } = setup({ status: 200, body: staffAppt });
+    await api.staff.moveAppointment(U(3), { segments: [segment], override: true });
+    expect(calls[0]!.init.method).toBe("PATCH");
+    expect(calls[0]!.url).toBe(`${base}/staff/appointments/${U(3)}`);
+  });
+
+  it("setStatus posts /staff/appointments/:id/status", async () => {
+    const { api, calls } = setup({ status: 200, body: staffAppt });
+    await api.staff.setStatus(U(3), { status: "CHECKED_IN" });
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(calls[0]!.url).toBe(`${base}/staff/appointments/${U(3)}/status`);
+  });
+
+  it("walkIn posts /staff/walk-in", async () => {
+    const { api, calls } = setup({ status: 200, body: staffAppt });
+    await api.staff.walkIn({ services: sv });
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(calls[0]!.url).toBe(`${base}/staff/walk-in`);
+  });
+
+  it("staff customer reads reject a body without reachable", async () => {
+    const { api } = setup({ status: 200, body: me });
+    await expect(api.staff.customer(U(6))).rejects.toThrow();
+  });
+
+  it("searchCustomers encodes q", async () => {
+    const { api, calls } = setup({ status: 200, body: [] });
+    await api.staff.searchCustomers("ana & lópez");
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(calls[0]!.url).toBe(`${base}/staff/customers?q=ana%20%26%20l%C3%B3pez`);
+  });
+
+  it("createCustomer posts /staff/customers", async () => {
+    const { api, calls } = setup({ status: 200, body: staffCustomer });
+    await expect(api.staff.createCustomer({ name: "Ana", phone: "+12125550100", locale: "en" })).resolves.toEqual(
+      staffCustomer,
+    );
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(calls[0]!.url).toBe(`${base}/staff/customers`);
+  });
+
+  it("customer and customerAppointments get by id", async () => {
+    const { api, calls } = setup({ status: 200, body: staffCustomer });
+    await expect(api.staff.customer(U(6))).resolves.toMatchObject({ reachable: true });
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(calls[0]!.url).toBe(`${base}/staff/customers/${U(6)}`);
+    const r = setup({ status: 200, body: { upcoming: [], past: [] } });
+    await r.api.staff.customerAppointments(U(6));
+    expect(r.calls[0]!.url).toBe(`${base}/staff/customers/${U(6)}/appointments`);
+  });
+
+  it("notes gets and saveNotes sends PUT with body", async () => {
+    const { api, calls } = setup({ status: 200, body: notes });
+    await api.staff.notes(U(6));
+    expect(calls[0]!.init.method).toBe("GET");
+    expect(calls[0]!.url).toBe(`${base}/staff/customers/${U(6)}/notes`);
+    await expect(api.staff.saveNotes(U(6), { notes: "  hi " })).resolves.toEqual(notes);
+    expect(calls[1]!.init.method).toBe("PUT");
+    expect(calls[1]!.url).toBe(`${base}/staff/customers/${U(6)}/notes`);
+    expect(JSON.parse(calls[1]!.init.body!)).toEqual({ notes: "  hi " });
+  });
+
+  it("a 403 FORBIDDEN rejects with ApiError status 403 and keeps the tokens", async () => {
+    const { api, store } = setup({
+      status: 403,
+      body: { type: "about:blank", title: "Forbidden", status: 403, code: "FORBIDDEN" },
+    });
+    const err = await api.staff.notes(U(6)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(403);
+    expect((err as ApiError).problem.code).toBe("FORBIDDEN");
+    expect(store.getAccessToken()).toBe("tok");
   });
 });
