@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdSchema, IsoDateSchema, IsoInstantSchema, MoneyCentsSchema } from "./common";
+import { IdSchema, IsoDateSchema, IsoInstantSchema, MoneyCentsSchema, QueryBooleanSchema } from "./common";
 
 export const PlannedSegmentSchema = z.object({
   serviceId: IdSchema,
@@ -17,6 +17,8 @@ export const SlotSchema = z.object({
   startsAt: IsoInstantSchema,
   endsAt: IsoInstantSchema,
   segments: z.array(PlannedSegmentSchema).min(1).max(4),
+  /** Only on `override=true` responses: true when the start is outside normal hours or in a closure. */
+  outsideHours: z.boolean().optional(),
 });
 export type Slot = z.infer<typeof SlotSchema>;
 
@@ -46,5 +48,7 @@ export const AvailabilityQuerySchema = z.object({
   ),
   date: IsoDateSchema,
   excludeAppointmentId: IdSchema.optional(),
+  /** Staff only: also list times outside working hours and closures (flagged `outsideHours`). */
+  override: QueryBooleanSchema.default("false"),
 });
 export type AvailabilityQuery = z.infer<typeof AvailabilityQuerySchema>;

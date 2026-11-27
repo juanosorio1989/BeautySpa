@@ -2,6 +2,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Slot } from "@beautyspa/contracts";
 import { CLOCK } from "../../../src/common/clock.js";
+import { wallToTime } from "../../../src/common/wall-time.js";
 import { createIntegrationApp, resetState, resetTenancyCache } from "../app.js";
 import {
   BOOKING_DATE,
@@ -197,6 +198,82 @@ describe("GET /availability", () => {
     const first = (await slotsOf(`services=${f.pediId}:${f.staffA}&date=${BOOKING_DATE}`))[0]!;
     expect(Date.parse(first.endsAt) - Date.parse(first.startsAt)).toBe(90 * 60_000);
     expect(first.segments[0]!.priceCents).toBe(5500);
+  });
+
+  describe("override=true", () => {
+    const H = 3_600_000;
+    /** 2026-12-01 local (America/New_York, UTC-5) wall hour as an ISO instant. */
+    const localIso = (hour: number) => new Date(Date.parse("2026-12-01T05:00:00.000Z") + hour * H).toISOString();
+    const alexQuery = (extra = "") => `services=${f.pediId}:${f.staffA}&date=${BOOKING_DATE}${extra}`;
+    let reception: { id: string; token: string };
+    beforeEach(async () => {
+      await ctx.prisma.workingHours.updateMany({
+        where: { staffUserId: f.staffA },
+        data: { endTime: wallToTime("17:00") },
+      });
+      reception = await staffSession(ctx.app, ctx.prisma, f, "RECEPTION");
+    });
+
+    it("lists times outside working hours flagged per slot, still without overlaps", async () => {
+      // 12:00-13:00 local (UTC-5).
+      await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "17:00", endsAt: "18:00" });
+      const normal = await slotsOf(alexQuery(), reception.token);
+      expect(normal.map((s) => s.startsAt)).not.toContain(localIso(18));
+      expect(normal.every((s) => !("outsideHours" in s))).toBe(true);
+
+      const slots = await slotsOf(alexQuery("&override=true"), reception.token);
+      const at = (hour: number) => slots.find((s) => s.startsAt === localIso(hour));
+      expect(at(18)).toMatchObject({ outsideHours: true });
+      expect(at(10)).toMatchObject({ outsideHours: false });
+      expect(at(12)).toBeUndefined();
+      expect(slots.map((s) => s.startsAt)).not.toContain(localIso(11.5));
+      expect(slots.every((s) => typeof s.outsideHours === "boolean")).toBe(true);
+    });
+
+    it("lists slots on a closure day, all outside hours", async () => {
+      await ctx.prisma.locationClosure.create({
+        data: {
+          locationId: f.locationId,
+          startsAt: new Date("2026-12-01T05:00:00.000Z"),
+          endsAt: new Date("2026-12-02T05:00:00.000Z"),
+        },
+      });
+      expect(await slotsOf(alexQuery(), reception.token)).toEqual([]);
+      const slots = await slotsOf(alexQuery("&override=true"), reception.token);
+      expect(slots.length).toBeGreaterThan(0);
+      expect(slots.every((s) => s.outsideHours === true)).toBe(true);
+    });
+
+    it("books the 18:00 slot's plan with override on POST /staff/appointments", async () => {
+      const slots = await slotsOf(alexQuery("&override=true"), reception.token);
+      const late = slots.find((s) => s.startsAt === localIso(18))!;
+      const res = await request(ctx.app.getHttpServer())
+        .post("/v1/staff/appointments")
+        .set("Authorization", `Bearer ${reception.token}`)
+        .send({ customerId: f.customerId, segments: late.segments, override: true });
+      expect(res.status).toBe(201);
+      const audits = await ctx.prisma.auditLog.findMany({ where: { action: "appointment.create" } });
+      expect(audits).toHaveLength(1);
+      expect((audits[0]!.after as { override?: boolean }).override).toBe(true);
+    });
+
+    it("is 400 on override for a customer token and for no token", async () => {
+      const { token } = await customerSession(ctx.app, f);
+      for (const res of [await get(alexQuery("&override=true"), token), await get(alexQuery("&override=true"))]) {
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe("VALIDATION_FAILED");
+        expect(res.body.errors[0].path).toBe("override");
+      }
+    });
+
+    it("leaves outsideHours off responses without override", async () => {
+      const slots = await slotsOf(alexQuery());
+      expect(slots.length).toBeGreaterThan(0);
+      expect(slots.every((s) => !("outsideHours" in s))).toBe(true);
+      expect((await slotsOf(alexQuery("&override=false"), reception.token)).every((s) => !("outsideHours" in s))).toBe(
+        true,
+      );
+    });
   });
 
   it("documents services as a repeated string query parameter", async () => {

@@ -94,6 +94,15 @@ never allowed, override or not: validation answers 409 `SLOT_TAKEN`, and the DB
 exclusion constraint is the final guard. Walk-in takes the first slot starting
 no later than that grid floor + `slotIntervalMin` (no override).
 
+Reads can use the same relaxation: staff `GET /availability?override=true`
+runs the search twice on one context snapshot, normal and with `override`, and
+returns the override list with each slot flagged `outsideHours = true` when its
+start is not among the normal starts. A closure day therefore lists slots that
+are all `outsideHours: true`. Customer or anonymous callers get 400 on
+`override`. The quick-booking "Book anyway" sends such a slot's segments to
+`POST /staff/appointments` with `override: true`, so the client never builds a
+plan itself.
+
 ## Price shown for "Any"
 
 Online, a service with "Any" shows "from $X" (lowest level price among
