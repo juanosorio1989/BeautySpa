@@ -3,10 +3,10 @@ import robots from "./robots";
 import sitemap from "./sitemap";
 
 describe("robots", () => {
-  it("disallows /*/book/, /*/me, /*/login", () => {
+  it("disallows /*/book/, /*/me, /*/login, /*/staff", () => {
     const rules = robots().rules;
     const rule = Array.isArray(rules) ? rules[0]! : rules;
-    expect(rule.disallow).toEqual(["/*/book/", "/*/me", "/*/login"]);
+    expect(rule.disallow).toEqual(["/*/book/", "/*/me", "/*/login", "/*/staff"]);
     expect(rule.allow).toBe("/");
   });
 });

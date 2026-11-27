@@ -255,4 +255,16 @@ export const es: Messages = {
     team: { title: "Nuestro equipo", description: "Conoce a las profesionales y los servicios que ofrecen." },
     location: { title: "Ubicación y horario", description: "Encuéntranos, llámanos y consulta nuestro horario." },
   },
+  staff: {
+    panel: "Equipo",
+    menu: "Menú del equipo",
+    agenda: "Agenda",
+    clients: "Clientes",
+    roles: { OWNER: "Dueño", RECEPTION: "Recepción", EMPLOYEE: "Profesional" },
+    roleGuard: {
+      title: "No disponible para tu rol",
+      body: "Tu rol no tiene acceso a esta página.",
+      backToAgenda: "Volver a la agenda",
+    },
+  },
 };

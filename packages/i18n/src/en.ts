@@ -252,4 +252,16 @@ export const en = {
     team: { title: "Our team", description: "Meet the professionals and the services they offer." },
     location: { title: "Location and hours", description: "Find us, call us and see our opening hours." },
   },
+  staff: {
+    panel: "Staff",
+    menu: "Staff menu",
+    agenda: "Agenda",
+    clients: "Clients",
+    roles: { OWNER: "Owner", RECEPTION: "Reception", EMPLOYEE: "Employee" },
+    roleGuard: {
+      title: "Not available for your role",
+      body: "Your role does not have access to this page.",
+      backToAgenda: "Back to the agenda",
+    },
+  },
 };
