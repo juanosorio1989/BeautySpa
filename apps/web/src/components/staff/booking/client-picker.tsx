@@ -30,6 +30,8 @@ export function lastVisitText(
   return names.length ? names.join(", ") : null;
 }
 
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) => void; onCancel: () => void }) {
   const t = useTranslations("staff.book");
   const errorText = useFallbackErrorText();
@@ -43,6 +45,8 @@ function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) =
   const [errors, setErrors] = useState<{ name?: string; phone?: string }>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A hint only (the API validates): consent needs an address to go with it.
+  const emailLooksValid = EMAIL_SHAPE.test(email.trim());
 
   async function submit() {
     const e164 = toE164(phone);
@@ -62,7 +66,7 @@ function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) =
         locale: language,
         email: trimmed || null,
         // Consent is only recorded when the client agreed out loud (the tick), never by default.
-        consents: emailConsent && trimmed ? { EMAIL: true } : {},
+        consents: emailConsent && emailLooksValid ? { EMAIL: true } : {},
       });
       onCreated({ ...created, lastVisit: null });
     } catch (err) {
@@ -125,14 +129,18 @@ function NewClientForm({ onCreated, onCancel }: { onCreated: (c: PickedClient) =
           className={INPUT_CLASS}
           value={email}
           autoComplete="off"
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (!EMAIL_SHAPE.test(e.target.value.trim())) setEmailConsent(false);
+          }}
         />
       </Field>
-      <label className="flex min-h-11 items-center gap-3 text-sm">
+      <label className={`flex min-h-11 items-center gap-3 text-sm ${emailLooksValid ? "" : "text-muted"}`}>
         <input
           type="checkbox"
           className="size-5"
-          checked={emailConsent}
+          checked={emailConsent && emailLooksValid}
+          disabled={!emailLooksValid}
           onChange={(e) => setEmailConsent(e.target.checked)}
         />
         {t("emailConsent")}

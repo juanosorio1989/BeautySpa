@@ -16,7 +16,12 @@ const SVC = id(10);
 
 let searchParams = new URLSearchParams("date=2026-12-01");
 const replace = vi.fn();
-vi.mock("next/navigation", () => ({ useSearchParams: () => searchParams }));
+const navReplace = vi.fn();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+  usePathname: () => "/en/staff",
+  useRouter: () => ({ replace: navReplace, push: vi.fn() }),
+}));
 vi.mock("@/i18n/navigation", () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
   Link: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -93,13 +98,15 @@ function setWide(wide: boolean) {
 }
 
 function mount(role: StaffMe["role"] = "RECEPTION", meId = id(900)) {
-  render(
+  const tree = () => (
     <NextIntlClientProvider locale="en" messages={en}>
       <StaffContext.Provider value={{ id: meId, name: "Sam", email: "s@x.dev", role }}>
         <AgendaView />
       </StaffContext.Provider>
-    </NextIntlClientProvider>,
+    </NextIntlClientProvider>
   );
+  const view = render(tree());
+  return { rerender: () => view.rerender(tree()) };
 }
 
 const conflict = () => new ApiError(409, { type: "about:blank", title: "x", status: 409, code: "CONFLICT" });
@@ -341,6 +348,50 @@ describe("AgendaView", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Check in" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("This appointment changed, refreshed.")).toBeInTheDocument();
+  });
+
+  it("a sheet closed because the appointment left the agenda does not reopen when it comes back", async () => {
+    mount();
+    fireEvent.click(await screen.findByText("Lucia R."));
+    await screen.findByRole("dialog");
+    const checkbox = screen.getByRole("checkbox", { name: "Show cancelled" });
+    agendaFn.mockResolvedValue(agenda([]));
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(screen.queryByText("Lucia R.")).toBeNull());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    agendaFn.mockResolvedValue(agenda());
+    fireEvent.click(checkbox);
+    expect(await screen.findByText("Lucia R.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("changing the date closes the sheet and clears the changed notice", async () => {
+    setStatus.mockRejectedValue(conflict());
+    const view = mount();
+    fireEvent.click(await screen.findByText("Lucia R."));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Check in" }));
+    expect(await screen.findAllByText("This appointment changed, refreshed.")).not.toHaveLength(0);
+    agendaFn.mockResolvedValue({ ...agenda(), date: "2026-12-02" });
+    searchParams = new URLSearchParams("date=2026-12-02");
+    view.rerender();
+    await waitFor(() => expect(agendaFn).toHaveBeenLastCalledWith({ date: "2026-12-02", includeCancelled: false }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByText("This appointment changed, refreshed.")).toBeNull();
+    // Back on the first day the sheet stays closed.
+    agendaFn.mockResolvedValue(agenda());
+    searchParams = new URLSearchParams("date=2026-12-01");
+    view.rerender();
+    expect(await screen.findByText("Lucia R.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a 403 on the agenda (session swapped to a client in another tab) goes to staff login", async () => {
+    agendaFn.mockRejectedValue(new ApiError(403, { type: "about:blank", title: "x", status: 403, code: "FORBIDDEN" }));
+    mount();
+    await waitFor(() =>
+      expect(navReplace).toHaveBeenCalledWith("/en/staff/login?next=%2Fen%2Fstaff%3Fdate%3D2026-12-01&customer=1"),
+    );
   });
 
   it("gaps start after the cleanup buffer (blockEndsAt)", async () => {

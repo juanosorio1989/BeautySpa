@@ -135,6 +135,26 @@ describe("QuickBooking", () => {
     expect(await screen.findByText("No messages: no consented channel")).toBeInTheDocument();
   });
 
+  it("the email consent box is disabled until an email is typed and unticks when it is cleared", async () => {
+    mount();
+    searchCustomers.mockResolvedValue([]);
+    fireEvent.click(await screen.findByRole("button", { name: /New client/ }));
+    const consent = screen.getByLabelText(/Agrees to email messages/);
+    expect(consent).toBeDisabled();
+    const email = screen.getByLabelText("Email (optional)");
+    fireEvent.change(email, { target: { value: "ana@" } });
+    expect(consent).toBeDisabled();
+    fireEvent.change(email, { target: { value: "ana@example.com" } });
+    expect(consent).toBeEnabled();
+    fireEvent.click(consent);
+    expect(consent).toBeChecked();
+    fireEvent.change(email, { target: { value: "" } });
+    expect(consent).toBeDisabled();
+    expect(consent).not.toBeChecked();
+    fireEvent.change(email, { target: { value: "ana@example.com" } });
+    expect(consent).not.toBeChecked();
+  });
+
   it("new client sends consent only when ticked", async () => {
     createCustomer.mockResolvedValue(client());
     mount();

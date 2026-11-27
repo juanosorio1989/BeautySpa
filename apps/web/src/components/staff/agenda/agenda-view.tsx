@@ -1,14 +1,16 @@
 "use client";
 
+import { ApiError } from "@beautyspa/api-client";
 import type { Agenda } from "@beautyspa/contracts";
 import { todayIn } from "@beautyspa/datetime";
 import type { Locale } from "@beautyspa/i18n";
 import { useLocale, useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter as useNextRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
 import { formatTime } from "@/lib/format";
+import { staffLoginPath } from "@/lib/staff/login-path";
 import { dayWindow } from "@/lib/staff/day-window";
 import { useMediaQuery } from "@/lib/staff/use-media-query";
 import { usePolling } from "@/lib/staff/use-polling";
@@ -50,6 +52,8 @@ export function AgendaView() {
   const locale = useLocale() as Locale;
   const staff = useStaff();
   const router = useRouter();
+  const nextRouter = useNextRouter();
+  const pathname = usePathname();
   const params = useSearchParams();
   const wide = useMediaQuery("(min-width: 768px)");
   const dateParam = params.get("date");
@@ -89,8 +93,17 @@ export function AgendaView() {
       setNow(Date.now());
       setError(null);
     } catch (err) {
-      if (n === seq.current) setError(err);
+      if (n !== seq.current) return;
+      // The web never asks for another employee's agenda, so a 403 means this tab's session is no
+      // longer staff (a client signed in in another tab): back to staff login with the notice.
+      if (err instanceof ApiError && err.status === 403) {
+        nextRouter.replace(staffLoginPath(locale, pathname, params.toString(), true));
+        return;
+      }
+      setError(err);
     }
+    // `nextRouter`, `pathname` and `params` only shape the redirect url
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, includeCancelled]);
   useEffect(() => {
     // fetching on mount and when the day or filter changes; state is set after the response
@@ -106,6 +119,17 @@ export function AgendaView() {
   const [expiredFor, setExpiredFor] = useState<string | null>(null);
 
   const shown = agenda && agenda.date === date ? agenda : null;
+
+  // A new day closes the sheet and drops the notice (adjusting state during render, not in an effect).
+  const [sheetDate, setSheetDate] = useState(date);
+  if (sheetDate !== date) {
+    setSheetDate(date);
+    setSheet(null);
+    setChangedNotice(false);
+  }
+  // The open appointment left the loaded agenda (cancelled, moved away): close the sheet for good,
+  // so a later poll that brings it back does not reopen it.
+  if (sheet && shown && !shown.appointments.some((a) => a.id === sheet.id)) setSheet(null);
 
   // ?highlight=<id>: reveal the card (its column on phones), outline it for 3 seconds.
   const target = highlight ? shown?.appointments.find((a) => a.id === highlight) : undefined;

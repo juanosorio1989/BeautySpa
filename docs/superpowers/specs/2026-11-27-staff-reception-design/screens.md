@@ -3,8 +3,10 @@
 All routes under `/[locale]/staff`. A server `layout.tsx` sends
 `robots: { index: false }`; `robots.txt` disallows `/*/staff`. Pages other
 than sign-in, invite and reset need a **staff** session: on load
-`ensure()`; no session → `/[locale]/staff/login?next=<path>`; a customer
-session → the same login page (with the notice below).
+`ensure()`; no session → `/[locale]/staff/login?next=<path?query>` (the
+query string is kept, e.g. `?date=`); a customer session → the same login page
+(with the notice below). A 403 on the agenda load (the session was swapped to a
+client in another tab) also goes there with `&customer=1`.
 
 Staff layout: top bar with location name, EN/ES switch, a menu with
 "Agenda", "Clients" (OWNER/RECEPTION), the signed-in name and role (`GET /staff/me`), "Log out"
@@ -72,7 +74,11 @@ screen with a link to the agenda (the API would 403 anyway).
 - Refresh: polling every 30 s while the tab is visible, refetch on focus and
   after every action. A 409 `CONFLICT` from an action (the UI already hides
   actions the status, day or role forbid, so a 409 means someone else changed
-  it) shows "This appointment changed, refreshed" and refetches.
+  it) shows "This appointment changed, refreshed" and refetches. If the open
+  appointment is no longer in the loaded agenda the sheet closes and stays
+  closed (a later poll that brings it back does not reopen it); changing the
+  day closes the sheet and clears the notice. An anonymized customer
+  (`deleted`) shows no phone and no client link.
 
 ## Quick booking (mockup 6)
 
@@ -82,7 +88,8 @@ Target: ≤ 6 taps for a returning client.
    last visit's services ("last: pedicure"). "New client" expands name, phone
    (US), language (default = panel locale), email optional, and an
    "Agrees to email messages" tick that is off by default and must be asked
-   aloud (sent as consent with source `RECEPTION`). With a `customerId` query
+   aloud (sent as consent with source `RECEPTION`); it is disabled until an
+   email is typed and unticks when the email is cleared. With a `customerId` query
    the client is preselected.
 2. **Services:** chips of the most booked services first, then a full list by
    category (STAFF mode includes non-online services). "Same as last time"

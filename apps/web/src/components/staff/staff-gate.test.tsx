@@ -7,8 +7,10 @@ import { SessionContext, type Session } from "@/lib/session/use-session";
 import { useStaff } from "@/lib/staff/use-staff";
 
 const replace = vi.fn();
+let search = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   usePathname: () => "/en/staff",
+  useSearchParams: () => search,
   useRouter: () => ({ replace, push: vi.fn() }),
 }));
 vi.mock("next-intl", async (orig) => ({ ...(await orig<typeof import("next-intl")>()), useLocale: () => "en" }));
@@ -49,6 +51,7 @@ const problem = (status: number) =>
 
 describe("StaffGate", () => {
   beforeEach(() => {
+    search = new URLSearchParams();
     replace.mockReset();
     me.mockReset();
     setExpired.mockReset();
@@ -59,6 +62,12 @@ describe("StaffGate", () => {
     mount(vi.fn().mockResolvedValue(false));
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/staff/login?next=%2Fen%2Fstaff"));
     expect(me).not.toHaveBeenCalled();
+  });
+
+  it("keeps the query string in next", async () => {
+    search = new URLSearchParams("date=2026-12-01");
+    mount(vi.fn().mockResolvedValue(false));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/staff/login?next=%2Fen%2Fstaff%3Fdate%3D2026-12-01"));
   });
 
   it("redirects a customer session with customer=1", async () => {
