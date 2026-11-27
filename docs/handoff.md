@@ -36,6 +36,12 @@ Updated: 2026-11-25 (plan 05 merged)
 - Plan 05 notification channels: **email (Resend) + `.ics` calendar invite + web push (PWA)**. SMS (Twilio, Sole Proprietor A2P 10DLC) and the WhatsApp Business API wait until the business is incorporated; keep channels pluggable.
 - Design calls are decided by Claude and recorded in the plan/ledger; the owner does not review them one by one.
 
+## Owner decisions (2026-11-27)
+
+- Plan 07 split: **07a reception** (spec `docs/superpowers/specs/2026-11-27-staff-reception-design/`), then **07b owner admin**.
+- IP retention: on account deletion clear `refresh_token.ip` and `user_agent` of that customer; keep `audit_log.ip` for 90 days only (scheduled purge). Implement in plan 08 (release hardening).
+- Domain: owner buys `bellacita.app` (Cloudflare Registrar); Resend sending domain and `EMAIL_FROM=BellaCita <citas@bellacita.app>` follow.
+
 ## Owner to-dos (pending)
 
 - Plan 05 before deploy: verify a sending domain in Resend and set `EMAIL_FROM` (`EMAIL_PROVIDER=resend`); run `secrets:gen` for `MANAGE_LINK_SECRET` and the VAPID pair, set `VAPID_SUBJECT` and `PUSH_PROVIDER=webpush`; the deploy must run the `worker` process next to the API; Resend free tier limits (100 emails/day, 3,000/month) cap volume.
@@ -45,7 +51,6 @@ Updated: 2026-11-25 (plan 05 merged)
 - Twilio (2026-11-23): test with an unverified US number failed: Verify start → HTTP 403 (API maps it to 503). Trust Hub shows **no compliance profile** ("Unlock Trust Hub with a compliance profile"), so the 2026-11-22 submission did not land. Then (2026-11-23) the owner created the Primary Compliance Profile "beauty spa app" (Individual): **Approved**. Retest (2026-11-25) with an unverified US number: SMS delivered. Verify works for any US number.
 - No IRS EIN yet (business not incorporated): anything that needs an EIN (A2P 10DLC brand, WhatsApp Business API, business-type Twilio profiles) waits. Choose individual / sole-proprietor options where offered.
 - Before deploy: Twilio's **Primary Compliance Profile** must be approved; without it Verify only sends to verified caller IDs (error 21608). A2P registration is not needed for Verify. Done: `OTP_CHANNELS` (default `sms`) skips the WhatsApp attempt; set `whatsapp,sms` once WhatsApp is enabled on the Verify service.
-- Decide whether IP addresses count as personal data on account deletion: `audit_log.ip`, `refresh_token.ip` and `user_agent` are kept today.
 
 ## Carried into later plans
 
@@ -61,4 +66,4 @@ Updated: 2026-11-25 (plan 05 merged)
 
 ## Open questions
 
-- IP retention on account deletion (see owner to-dos).
+- None.
