@@ -15,6 +15,9 @@ export type LocalizedText = z.infer<typeof LocalizedTextSchema>;
 export const MoneyCentsSchema = z.number().int().nonnegative();
 export type MoneyCents = z.infer<typeof MoneyCentsSchema>;
 
+/** Query-string boolean: only "true" or "false" (use with `.default("false")`). */
+export const QueryBooleanSchema = z.enum(["true", "false"]).transform((v) => v === "true");
+
 export const IsoDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
