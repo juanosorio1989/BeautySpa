@@ -5,6 +5,7 @@ import type { AccessClaims, Agenda, AgendaQuery, LocalizedText } from "@beautysp
 import { localDayBoundsUtc } from "@beautyspa/datetime";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { PrismaService } from "../prisma/prisma.service.js";
+import { staffDisplayName } from "../staff/staff-me.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { BookingContextService } from "./booking-context.service.js";
 import { APPOINTMENT_INCLUDE, startOf, toStaffAppointmentDto } from "./appointment-mapping.js";
@@ -58,7 +59,7 @@ export class AgendaService {
     const appointments = dayRows.map(toStaffAppointmentDto);
     const segments = dayRows.flatMap((r) => r.segments);
     const [employees, services, resources] = await Promise.all([
-      this.employees(principal.org, location, query, employeeId, segments),
+      this.employees(principal.org, location, query, employeeId, principal.role === "EMPLOYEE", segments),
       this.services(principal.org, segments),
       this.resources(principal.org, segments),
     ]);
@@ -79,6 +80,7 @@ export class AgendaService {
     location: { id: string; timezone: string },
     query: AgendaQuery,
     employeeId: string | undefined,
+    selfOnly: boolean,
     segments: { staffUserId: string }[],
   ): Promise<Agenda["employees"]> {
     const ctx = await this.context.load(this.prisma, org, location, {
@@ -88,17 +90,18 @@ export class AgendaService {
     });
     const inputs = new Map(ctx.employees.map((e) => [e.id, e]));
     const ids = new Set<string>(employeeId !== undefined ? [] : inputs.keys());
-    if (employeeId !== undefined && inputs.has(employeeId)) ids.add(employeeId);
-    for (const s of segments) ids.add(s.staffUserId);
+    if (employeeId !== undefined && (selfOnly || inputs.has(employeeId))) ids.add(employeeId);
+    if (!selfOnly) for (const s of segments) ids.add(s.staffUserId);
     const rows = await this.prisma.staffUser.findMany({
       where: { organizationId: org, id: { in: [...ids] } },
-      select: { id: true, active: true, employeeProfile: { select: { displayName: true } } },
+      select: { id: true, email: true, active: true, employeeProfile: { select: { displayName: true } } },
     });
     return rows
       .map((r) => {
         const input = inputs.get(r.id);
+        const active = r.active && input !== undefined;
         const ranges =
-          r.active && input
+          active && input
             ? employeeFreeTime({
                 employee: input,
                 location: ctx.location,
@@ -109,8 +112,8 @@ export class AgendaService {
             : [];
         return {
           id: r.id,
-          displayName: r.employeeProfile?.displayName ?? "",
-          active: r.active,
+          displayName: staffDisplayName(r),
+          active,
           ranges: ranges.map((x) => ({ start: new Date(x.start).toISOString(), end: new Date(x.end).toISOString() })),
         };
       })

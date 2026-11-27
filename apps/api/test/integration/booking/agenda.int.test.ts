@@ -227,6 +227,38 @@ describe("GET /staff/agenda", () => {
     expect(body.employees.map((e) => e.id)).toEqual([f.staffA]);
   });
 
+  it("reports an employee moved off the location as inactive with no ranges", async () => {
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffB, startsAt: "15:00", endsAt: "16:00" });
+    await ctx.prisma.staffLocation.deleteMany({ where: { staffUserId: f.staffB, locationId: f.locationId } });
+    const body = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(body.employees.find((e) => e.id === f.staffB)).toEqual({
+      id: f.staffB,
+      displayName: "Blair",
+      active: false,
+      ranges: [],
+    });
+  });
+
+  it("gives an EMPLOYEE only themselves even on a multi-segment appointment", async () => {
+    const a = await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    await ctx.prisma.appointmentSegment.create({
+      data: {
+        organizationId: f.orgId,
+        appointmentId: a.id,
+        serviceId: f.maniId,
+        staffUserId: f.staffB,
+        startsAt: new Date("2026-12-01T16:00:00.000Z"),
+        endsAt: new Date("2026-12-01T16:30:00.000Z"),
+        blockEndsAt: new Date("2026-12-01T16:30:00.000Z"),
+        durationMin: 30,
+        priceCents: 2500,
+      },
+    });
+    const body = (await get(`date=${BOOKING_DATE}`, await employeeToken(f.staffA))).body as Agenda;
+    expect(body.appointments).toHaveLength(1);
+    expect(body.employees.map((e) => e.id)).toEqual([f.staffA]);
+  });
+
   it("rejects a malformed date with 400 and no token with 401", async () => {
     expect((await get("date=nope")).status).toBe(400);
     expect((await request(ctx.app.getHttpServer()).get(`/v1/staff/agenda?date=${BOOKING_DATE}`)).status).toBe(401);
