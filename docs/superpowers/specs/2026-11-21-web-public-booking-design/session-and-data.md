@@ -31,8 +31,8 @@ containers); both are the API origin without `/v1` (the client adds it); dev def
   is used after a successful `DELETE /me` when the logout call fails (the server
   already revoked every session of that account).
 - One session per browser: customer and staff share the `bs_refresh` cookie;
-  whichever logs in last owns it. Plan 07 shows a notice on the staff login when
-  a customer session is active.
+  whichever logs in last owns it. The staff login shows a notice when a customer
+  session is active (implemented in plan 07a).
 - Locale: the URL locale wins for the UI. `PATCH /me { locale }` is sent on
   first booking and when the user changes language in profile, so messages
   (plan 05) use it.

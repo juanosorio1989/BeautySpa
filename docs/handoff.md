@@ -1,6 +1,6 @@
 # Handoff
 
-Updated: 2026-11-25 (plan 05 merged)
+Updated: 2026-11-27 (plan 07a implemented, in final review)
 
 ## Done
 
@@ -21,14 +21,16 @@ Updated: 2026-11-25 (plan 05 merged)
   - BullMQ queues and a separate `worker` process (`pnpm dev:worker`): hold sweep (moved from the API), reminder scan, `send` / `deliver` jobs with `notification_log` rows (idempotent per appointment, key, channel, `manage_version`).
   - Signed manage links (`/[locale]/manage/<token>`): view, confirm, cancel, add to calendar; any version bump invalidates old links.
   - Push subscriptions, PWA manifest, push-only service worker, opt-in toggle; consent grant catches up missed confirmations.
+- Plan 07a — staff panel, reception — implemented on branch `feat/mvp-07a-staff-reception` (final review and merge pending): staff login with password + TOTP/recovery/enrollment, invite and reset pages, day agenda (polling, timezone-correct cards, check in / complete / no-show / move / cancel, 409 "changed" handling), quick booking with client search/create and "same as last time", walk-in, clients list and detail with private notes, role guard, `noindex`. 7 API additions (booking context, popular services, outside-hours override, staff-only customer notes, and others listed in the plan). Playwright `staff.spec.ts` (owner books, checks in, completes; employee sees only her column) with the test-only fixture `apps/api/scripts/e2e-staff.ts` (refuses unless `NODE_ENV=test`; run by `e2e/prepare.sh`).
 - Frontend mockups approved: https://claude.ai/artifact/3zfpH45c9UxwhiMPDWGjNi (base for plans 06/07).
 
 ## Next
 
-1. Plan 07 (staff app). Write/verify its plan first; carried items are listed below under "Plan 07".
-2. Then plan 08. For PRs use `gh api` REST for edit/merge (`gh pr edit/merge` fail on a GraphQL deprecation).
-3. CI `e2e` job passed on GitHub for the first time (PR #7, 2026-11-25).
-4. Local note: chaining lint+typecheck+build+test+test:int in one shell once got the int run SIGKILLed (exit 137, likely memory); run `pnpm test:int` on its own.
+1. Plan 07a: final branch review, then merge. Pending final-review items (deferred minors from the ledger `.superpowers/sdd/07a-staff-reception/progress.md`, marked FIX BEFORE MERGE): Task 8 customer notice copy lacks "signing in as staff will sign that out"; Task 8 an expired/invalid `mfaToken` dead-ends in the login flow (no way back, no retry after `enrollStart` failure); Task 9 the action sheet can reopen by itself on a later poll when a refetch drops the appointment (`setSheet(null)` when missing). All other 07a minors stay in that ledger.
+2. Then plan 07b (owner admin: catalog, employees, hours, time off, closures, settings); write/verify its plan first. Carried items are listed below under "Plan 07".
+3. Then plan 08. For PRs use `gh api` REST for edit/merge (`gh pr edit/merge` fail on a GraphQL deprecation).
+4. CI `e2e` job passed on GitHub for the first time (PR #7, 2026-11-25).
+5. Local note: chaining lint+typecheck+build+test+test:int in one shell once got the int run SIGKILLed (exit 137, likely memory); run `pnpm test:int` on its own.
 
 ## Owner decisions (2026-11-21)
 

@@ -7,7 +7,19 @@ build of the web app:
   open My appointments, cancel from the native dialog, see it under past as cancelled.
 - `manage.spec.ts`: in `/en`, book Classic manicure, open `/en/manage/<token>` (token minted from `MANAGE_LINK_SECRET`
   by `manage-token.ts`), confirm attendance, cancel, and see the same link invalid after the cancel. Needs no worker.
+- `staff.spec.ts`: in `/en/staff/login`, the OWNER signs in with password and a TOTP code (`totp.ts`), sees the seeded
+  appointment, books one for today from "+ New" (existing client, first service, first time), checks it in and completes
+  it (badge Done); the seeded EMPLOYEE `ana@demo-salon.test` sees only her column and no "+ New" or "Walk-in".
 - `public.spec.ts`: `/en/services` lists the seeded services; Book opens `/en?service=<id>` preselected.
+
+## Staff fixture
+
+`prepare.sh` runs `pnpm --filter @beautyspa/api e2e:staff` (`apps/api/scripts/e2e-staff.ts`) after the seed. It refuses
+unless `NODE_ENV=test`, creates OWNER `owner@e2e.test` and enables login for the seeded `ana@demo-salon.test`, with the
+test-only password and TOTP secret that `staff.spec.ts` knows. The TOTP secret is encrypted with `DATA_ENCRYPTION_KEY`
+from the root `.env`. A TOTP code works once per 30 s step per user, so a rerun inside the same step waits for the next one.
+The booking test uses today (check-in and complete need the appointment's day), and falls back to "Other time…" when
+today has no regular times (Sunday, Monday, late evening).
 
 ## Environment
 
