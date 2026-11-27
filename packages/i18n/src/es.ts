@@ -260,7 +260,7 @@ export const es: Messages = {
     menu: "Menú del equipo",
     agenda: "Agenda",
     clients: "Clientes",
-    roles: { OWNER: "Dueño", RECEPTION: "Recepción", EMPLOYEE: "Profesional" },
+    roles: { OWNER: "Propietario/a", RECEPTION: "Recepción", EMPLOYEE: "Profesional" },
     roleGuard: {
       title: "No disponible para tu rol",
       body: "Tu rol no tiene acceso a esta página.",

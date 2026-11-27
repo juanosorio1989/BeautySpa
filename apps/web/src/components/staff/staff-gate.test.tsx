@@ -67,6 +67,12 @@ describe("StaffGate", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/staff/login?next=%2Fen%2Fstaff&customer=1"));
   });
 
+  it("sends a 401 on me to staff login", async () => {
+    me.mockRejectedValue(problem(401));
+    mount(vi.fn().mockResolvedValue(true));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/en/staff/login?next=%2Fen%2Fstaff"));
+  });
+
   it("shows children for staff and redirects when the session expires later", async () => {
     me.mockResolvedValue({ id: "1", name: "Ana", email: "a@x.dev", role: "OWNER" });
     const session = mount(vi.fn().mockResolvedValue(true));

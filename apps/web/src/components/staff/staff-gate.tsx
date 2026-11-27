@@ -45,8 +45,8 @@ export function StaffGate({ children }: { children: ReactNode }) {
       try {
         me = await getBrowserApi().staff.me();
       } catch (err) {
-        if (err instanceof ApiError && err.status === 403) {
-          if (!cancelled) toLogin(true);
+        if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
+          if (!cancelled) toLogin(err.status === 403);
           return;
         }
         throw err;

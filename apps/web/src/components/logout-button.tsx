@@ -8,10 +8,10 @@ import { useSession } from "@/lib/session/use-session";
 
 /**
  * "Log out" for signed-in visitors. On success the session is signed out (booking store cleared)
- * and it goes home; on failure the visitor is still signed in, so it shows the network error and
+ * and it goes to `redirectTo` (home by default); on failure the visitor is still signed in, so it shows the network error and
  * stays for a retry.
  */
-export function LogoutButton() {
+export function LogoutButton({ redirectTo = "/" }: { redirectTo?: "/" | "/staff/login" }) {
   const t = useTranslations();
   const session = useSession();
   const router = useRouter();
@@ -41,7 +41,7 @@ export function LogoutButton() {
             setBusy(false);
             return;
           }
-          router.replace("/");
+          router.replace(redirectTo);
           setBusy(false);
         }}
         className="flex min-h-11 items-center text-sm font-medium text-plum disabled:opacity-60"

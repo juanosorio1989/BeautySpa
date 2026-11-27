@@ -3,23 +3,17 @@
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { LocaleSwitch } from "@/components/locale-switch";
-import { Link, useRouter } from "@/i18n/navigation";
+import { LogoutButton } from "@/components/logout-button";
+import { Link } from "@/i18n/navigation";
 import { getBrowserApi } from "@/lib/api/browser";
-import { dropPushSubscription } from "@/lib/push";
-import { useSession } from "@/lib/session/use-session";
+
 import { useStaff } from "@/lib/staff/use-staff";
 
 /** Location name, language switch, menu, name and role, and "Log out" for the staff panel. */
 export function StaffTopBar() {
   const t = useTranslations("staff");
-  const tNav = useTranslations("nav");
-  const tErr = useTranslations("errors");
   const staff = useStaff();
-  const session = useSession();
-  const router = useRouter();
   const [locationName, setLocationName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     getBrowserApi()
@@ -51,32 +45,7 @@ export function StaffTopBar() {
         <span className="flex min-h-11 items-center text-ink/70">
           {staff.name} · {t(`roles.${staff.role}`)}
         </span>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            setFailed(false);
-            try {
-              await dropPushSubscription().catch(() => undefined);
-              await session.logout();
-            } catch {
-              setFailed(true);
-              setBusy(false);
-              return;
-            }
-            router.replace("/staff/login");
-            setBusy(false);
-          }}
-          className="flex min-h-11 items-center text-plum disabled:opacity-60"
-        >
-          {tNav("logout")}
-        </button>
-        {failed ? (
-          <span role="alert" className="flex min-h-11 items-center text-warn">
-            {tErr("network")}
-          </span>
-        ) : null}
+        <LogoutButton redirectTo="/staff/login" />
       </nav>
     </header>
   );
