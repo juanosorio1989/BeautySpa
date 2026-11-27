@@ -15,11 +15,13 @@ import { conflict, notFound } from "../common/http-errors.js";
 import { APPOINTMENT_INCLUDE, isUpcoming, startOf, toStaffAppointmentDto } from "../booking/appointment-mapping.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { currentConsents, recordConsents, toCustomerDto } from "./consents.js";
-import { loadConsents, loadReachableFor } from "./reachability.js";
+import { loadConsents, loadReachable, loadReachableFor } from "./reachability.js";
 
 const SEARCH_LIMIT = 20;
 const MIN_PHONE_DIGITS = 4;
 const PAST_LIMIT = 20;
+
+type LastVisit = NonNullable<StaffCustomerSearchResult["lastVisit"]>;
 
 /** Staff customer search and creation. */
 @Injectable()
@@ -34,8 +36,10 @@ export class StaffCustomersService {
    * Customers of the org (not deleted) whose name contains `q`, or, with at least 4 digits in
    * `q`, whose phone contains those digits; by name, at most 20. An EMPLOYEE only finds
    * customers with a non-`HELD` appointment that has a segment of theirs. Each result carries
-   * `lastVisit` (latest `COMPLETED`/`CHECKED_IN` appointment, local date in its location's
-   * timezone, service ids in segment order) or null. Consents and visits are read in batches.
+   * `reachable` and `lastVisit` (latest `COMPLETED`/`CHECKED_IN` appointment, local date in its
+   * location's timezone, service ids in segment order) or null; an EMPLOYEE always gets
+   * `lastVisit: null` (it may be a visit with a colleague). Consents, reachability and visits are
+   * read in batches.
    */
   async search(principal: AccessClaims, q: string): Promise<StaffCustomerSearchResult[]> {
     const digits = q.replace(/\D/g, "");
@@ -53,18 +57,27 @@ export class StaffCustomersService {
       take: SEARCH_LIMIT,
     });
     const ids = rows.map((r) => r.id);
-    const [consents, visits] = await Promise.all([
+    const [consents, reachable, visits] = await Promise.all([
       loadConsents(this.prisma, principal.org, ids),
-      this.lastVisits(principal.org, ids),
+      loadReachable(this.prisma, principal.org, ids),
+      principal.role === "EMPLOYEE" ? new Map<string, LastVisit>() : this.lastVisits(principal.org, ids),
     ]);
-    return rows.map((r) => ({ ...toCustomerDto(r, consents.get(r.id)!), lastVisit: visits.get(r.id) ?? null }));
+    return rows.map((r) => ({
+      ...toCustomerDto(r, consents.get(r.id)!),
+      reachable: reachable.has(r.id),
+      lastVisit: visits.get(r.id) ?? null,
+    }));
   }
 
   /** One customer of the org (not deleted), else 404. */
   async get(principal: AccessClaims, id: string): Promise<StaffCustomer> {
     const row = await this.prisma.customer.findFirst({ where: { id, organizationId: principal.org, deletedAt: null } });
     if (!row) throw notFound("Customer");
-    return toCustomerDto(row, await currentConsents(this.prisma, id, principal.org));
+    const [consents, reachable] = await Promise.all([
+      currentConsents(this.prisma, id, principal.org),
+      loadReachable(this.prisma, principal.org, [id]),
+    ]);
+    return { ...toCustomerDto(row, consents), reachable: reachable.has(id) };
   }
 
   /**
@@ -96,11 +109,8 @@ export class StaffCustomersService {
   }
 
   /** Latest `COMPLETED`/`CHECKED_IN` appointment per customer: one appointment query for all ids. */
-  private async lastVisits(
-    orgId: string,
-    customerIds: string[],
-  ): Promise<Map<string, { date: string; serviceIds: string[] }>> {
-    const result = new Map<string, { date: string; serviceIds: string[] }>();
+  private async lastVisits(orgId: string, customerIds: string[]): Promise<Map<string, LastVisit>> {
+    const result = new Map<string, LastVisit>();
     if (customerIds.length === 0) return result;
     const rows = await this.prisma.appointment.findMany({
       where: { organizationId: orgId, customerId: { in: customerIds }, status: { in: ["COMPLETED", "CHECKED_IN"] } },
@@ -163,7 +173,11 @@ export class StaffCustomersService {
           },
           tx,
         );
-        return toCustomerDto(row, await currentConsents(tx, row.id, orgId));
+        const [consents, reachable] = await Promise.all([
+          currentConsents(tx, row.id, orgId),
+          loadReachable(tx, orgId, [row.id]),
+        ]);
+        return { ...toCustomerDto(row, consents), reachable: reachable.has(row.id) };
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict("A customer with that phone already exists");

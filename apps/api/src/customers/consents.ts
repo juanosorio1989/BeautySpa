@@ -1,5 +1,5 @@
 import type { ConsentSource, Prisma } from "@prisma/client";
-import type { Channel, Consents, StaffCustomer } from "@beautyspa/contracts";
+import type { Channel, Consents, Me } from "@beautyspa/contracts";
 import { loadConsents } from "./reachability.js";
 
 const CHANNELS: readonly Channel[] = ["WHATSAPP", "SMS", "EMAIL", "PUSH"];
@@ -47,17 +47,17 @@ export async function recordConsents(
   return changed.map((channel) => ({ channel, id: rows.find((r) => r.channel === channel)!.id }));
 }
 
-/** The customer shape shared by staff endpoints and `Me`. */
+/** The `Me` shape; staff endpoints add `reachable`. */
 export function toCustomerDto(
   row: { id: string; phoneE164: string; name: string | null; email: string | null; locale: string },
   consents: Consents,
-): StaffCustomer {
+): Me {
   return {
     id: row.id,
     phoneE164: row.phoneE164,
     name: row.name,
     email: row.email,
-    locale: row.locale as StaffCustomer["locale"],
+    locale: row.locale as Me["locale"],
     consents,
   };
 }

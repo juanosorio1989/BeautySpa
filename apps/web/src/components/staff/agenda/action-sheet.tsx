@@ -106,7 +106,7 @@ export function ActionSheet({
         </p>
       </div>
       <dl className="flex flex-col gap-1.5 text-sm">
-        {a.customer ? (
+        {a.customer && !a.customer.deleted ? (
           <div className="flex flex-wrap items-center gap-x-3">
             <dt className="font-semibold">{t("phone")}</dt>
             <dd>

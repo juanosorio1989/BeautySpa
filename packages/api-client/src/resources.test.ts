@@ -43,6 +43,7 @@ const me = {
   consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false },
 };
 
+const staffCustomer = { ...me, reachable: true };
 const staffAppt = { ...appointment, customer: null, createdByStaffId: null, cancelledBy: null };
 const notes = { notes: "n", updatedAt: T, updatedBy: { id: U(8), name: "Ana" } };
 
@@ -343,6 +344,11 @@ describe("staff", () => {
     expect(calls[0]!.url).toBe(`${base}/staff/walk-in`);
   });
 
+  it("staff customer reads reject a body without reachable", async () => {
+    const { api } = setup({ status: 200, body: me });
+    await expect(api.staff.customer(U(6))).rejects.toThrow();
+  });
+
   it("searchCustomers encodes q", async () => {
     const { api, calls } = setup({ status: 200, body: [] });
     await api.staff.searchCustomers("ana & lópez");
@@ -351,15 +357,17 @@ describe("staff", () => {
   });
 
   it("createCustomer posts /staff/customers", async () => {
-    const { api, calls } = setup({ status: 200, body: me });
-    await api.staff.createCustomer({ name: "Ana", phone: "+12125550100", locale: "en" });
+    const { api, calls } = setup({ status: 200, body: staffCustomer });
+    await expect(api.staff.createCustomer({ name: "Ana", phone: "+12125550100", locale: "en" })).resolves.toEqual(
+      staffCustomer,
+    );
     expect(calls[0]!.init.method).toBe("POST");
     expect(calls[0]!.url).toBe(`${base}/staff/customers`);
   });
 
   it("customer and customerAppointments get by id", async () => {
-    const { api, calls } = setup({ status: 200, body: me });
-    await api.staff.customer(U(6));
+    const { api, calls } = setup({ status: 200, body: staffCustomer });
+    await expect(api.staff.customer(U(6))).resolves.toMatchObject({ reachable: true });
     expect(calls[0]!.init.method).toBe("GET");
     expect(calls[0]!.url).toBe(`${base}/staff/customers/${U(6)}`);
     const r = setup({ status: 200, body: { upcoming: [], past: [] } });

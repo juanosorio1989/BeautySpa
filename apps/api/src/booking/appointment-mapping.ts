@@ -4,7 +4,7 @@ import type { Appointment, StaffAppointment } from "@beautyspa/contracts";
 /** Prisma include for every appointment read that is mapped to a DTO. */
 export const APPOINTMENT_INCLUDE = {
   segments: { orderBy: [{ startsAt: "asc" }, { id: "asc" }] },
-  customer: { select: { id: true, name: true, phoneE164: true } },
+  customer: { select: { id: true, name: true, phoneE164: true, deletedAt: true } },
 } as const satisfies Prisma.AppointmentInclude;
 
 export type AppointmentRow = Prisma.AppointmentGetPayload<{ include: typeof APPOINTMENT_INCLUDE }>;
@@ -81,6 +81,7 @@ export function toStaffAppointmentDto(row: AppointmentRow, reachable: ReadonlySe
           name: row.customer.name,
           phoneE164: row.customer.phoneE164,
           reachable: reachable.has(row.customer.id),
+          deleted: row.customer.deletedAt !== null,
         }
       : null,
     createdByStaffId: row.createdByStaffId,

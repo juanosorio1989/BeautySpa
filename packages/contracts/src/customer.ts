@@ -66,7 +66,10 @@ export type CustomerExport = z.infer<typeof CustomerExportSchema>;
 export const CustomerSearchQuerySchema = z.object({ q: z.string().trim().min(2).max(80) });
 export type CustomerSearchQuery = z.infer<typeof CustomerSearchQuerySchema>;
 
-export const StaffCustomerSchema = MeSchema;
+export const StaffCustomerSchema = MeSchema.extend({
+  /** At least one consented channel the router can use today (email with an address, or a push subscription). */
+  reachable: z.boolean(),
+});
 export type StaffCustomer = z.infer<typeof StaffCustomerSchema>;
 
 export const StaffCustomerSearchResultSchema = StaffCustomerSchema.extend({

@@ -66,7 +66,7 @@ const appt = (over: Partial<StaffAppointment> = {}): StaffAppointment => ({
   cancelledAt: null,
   cancelReason: null,
   createdAt: "2026-11-20T12:00:00.000Z",
-  customer: { id: id(300), name: "Lucia R.", phoneE164: "+13055550101", reachable: true },
+  customer: { id: id(300), name: "Lucia R.", phoneE164: "+13055550101", reachable: true, deleted: false },
   createdByStaffId: null,
   cancelledBy: null,
   ...over,
@@ -141,7 +141,7 @@ describe("AgendaView", () => {
               endsAt: "2026-12-01T17:45:00.000Z",
             },
           ],
-          customer: { id: id(301), name: null, phoneE164: "+13055550102", reachable: false },
+          customer: { id: id(301), name: null, phoneE164: "+13055550102", reachable: false, deleted: false },
         }),
       ]),
     );
@@ -153,6 +153,22 @@ describe("AgendaView", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByRole("link", { name: /open client/i })).toBeNull();
     expect(within(dialog).queryByRole("link", { name: /\+1305/ })).toBeNull();
+  });
+
+  it("an anonymized customer shows no phone link and no client link", async () => {
+    agendaFn.mockResolvedValue(
+      agenda([
+        appt({
+          customer: { id: id(302), name: null, phoneE164: `deleted:${id(302)}`, reachable: false, deleted: true },
+        }),
+      ]),
+    );
+    mount("OWNER");
+    fireEvent.click(await screen.findByText("Client"));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/deleted:/)).toBeNull();
+    expect(dialog.querySelector('a[href^="tel:"]')).toBeNull();
+    expect(within(dialog).queryByRole("link", { name: /open client/i })).toBeNull();
   });
 
   it("a 409 on an action shows changed and refetches", async () => {

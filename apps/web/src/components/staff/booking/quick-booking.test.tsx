@@ -95,10 +95,10 @@ describe("QuickBooking", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith(`/staff?date=2026-12-01&highlight=${id(100)}`));
   });
 
-  it("shows the confirmation by email line with email consent", async () => {
+  it("shows the confirmation line when the API says the client is reachable (push only)", async () => {
     mount();
-    await pickClient();
-    expect(await screen.findByText("Confirmation by email")).toBeInTheDocument();
+    await pickClient(client({ email: null, consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: true } }));
+    expect(await screen.findByText("The client gets a confirmation")).toBeInTheDocument();
   });
 
   it("duplicate phone on a new client shows the phone-exists message", async () => {
@@ -129,9 +129,9 @@ describe("QuickBooking", () => {
     expect(await screen.findByText(/NEXT TIMES · Ana|Next times · Ana/i)).toBeInTheDocument();
   });
 
-  it("shows the email confirmation line only with email consent", async () => {
+  it("shows no messages when the API says the client is not reachable, even with email consent", async () => {
     mount();
-    await pickClient(client({ consents: { WHATSAPP: false, SMS: false, EMAIL: false, PUSH: false } }));
+    await pickClient(client({ reachable: false }));
     expect(await screen.findByText("No messages: no consented channel")).toBeInTheDocument();
   });
 

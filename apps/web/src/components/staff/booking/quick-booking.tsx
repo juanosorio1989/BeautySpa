@@ -195,7 +195,6 @@ export function QuickBooking() {
   if (!context || !timezone || !date) return <p className="py-4 text-muted">{t("loadingTimes")}</p>;
 
   const names = new Map(context.catalog.employees.map((e) => [e.id, e.displayName]));
-  const reachable = client?.email && client.consents.EMAIL;
   const chosenIds = new Set(choices.map((c) => c.employeeId));
   const timesHeader =
     chosenIds.size === 1
@@ -342,7 +341,9 @@ export function QuickBooking() {
         ) : null}
       </div>
       <footer className="-mx-5 flex flex-col gap-2.5 border-t border-line bg-card px-5 pb-6 pt-3.5">
-        {client ? <span className="text-sm text-ink">{reachable ? t("confirmByEmail") : t("noMessages")}</span> : null}
+        {client ? (
+          <span className="text-sm text-ink">{client.reachable ? t("confirmationSent") : t("noMessages")}</span>
+        ) : null}
         <button
           type="button"
           disabled={!client || !selected || !outsideOk || busy}

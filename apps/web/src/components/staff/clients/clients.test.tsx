@@ -59,6 +59,7 @@ const profile = {
   email: "maria@example.com",
   locale: "es" as const,
   consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false },
+  reachable: true,
 };
 
 function seed() {

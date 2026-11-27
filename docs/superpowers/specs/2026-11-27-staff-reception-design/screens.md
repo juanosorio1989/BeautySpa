@@ -96,8 +96,9 @@ Target: ≤ 6 taps for a returning client.
    availability. Picking one of those shows "Outside normal availability" and
    a "Book anyway" confirm; the server-built plan is sent with
    `override: true` (the API audits it). The client never builds a plan.
-5. Footer: "Save · 12:00" and a line saying which message the client gets
-   ("Confirmation by email" / "No messages: no consented channel").
+5. Footer: "Save · 12:00" and a line saying whether the client gets a message,
+   from the API's `reachable` ("The client gets a confirmation" / "No messages:
+   no consented channel").
    Save → back to the agenda on that date with the new card highlighted.
 
 Errors as plan 06 (`SLOT_TAKEN` → refetch times, `VALIDATION_FAILED` → field).

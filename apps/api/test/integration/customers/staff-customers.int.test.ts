@@ -152,6 +152,46 @@ describe("staff customers", () => {
       expect(list[0]!.lastVisit).toEqual({ date: "2026-11-20", serviceIds: [f.maniId, f.pediId] });
       expect(list[1]!.lastVisit).toBeNull();
     });
+
+    it("is always null for an EMPLOYEE, even for their own customer", async () => {
+      await visit(f.customerId, "COMPLETED", "2026-11-10T15:00:00.000Z", [f.pediId]);
+      expect(((await search("an")).body as StaffCustomerSearchResult[])[0]!.lastVisit).not.toBeNull();
+      const asA = (await search("an", await employeeToken(f.staffA))).body as StaffCustomerSearchResult[];
+      expect(asA.map((c) => c.id)).toEqual([f.customerId]);
+      expect(asA[0]!.lastVisit).toBeNull();
+    });
+  });
+
+  describe("reachable", () => {
+    const pushOnly = async () => {
+      await ctx.prisma.notificationConsent.create({
+        data: { organizationId: f.orgId, customerId: f.customerId, channel: "PUSH", granted: true, source: "PROFILE" },
+      });
+      await ctx.prisma.pushSubscription.create({
+        data: {
+          organizationId: f.orgId,
+          customerId: f.customerId,
+          endpoint: "https://fcm.googleapis.com/fcm/send/staff-customers",
+          p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA",
+          auth: "tBHItJI5svbpez7KI4CCXg",
+        },
+      });
+    };
+    const detail = () =>
+      http().get(`/v1/staff/customers/${f.customerId}`).set("Authorization", `Bearer ${reception.token}`);
+
+    it("is false without a usable channel in search and detail", async () => {
+      expect(((await search("an")).body as StaffCustomerSearchResult[])[0]!.reachable).toBe(false);
+      expect(((await detail()).body as StaffCustomer).reachable).toBe(false);
+    });
+
+    it("is true for push-only consent with a subscription (no email) in search and detail", async () => {
+      await pushOnly();
+      const found = ((await search("an")).body as StaffCustomerSearchResult[])[0]!;
+      expect(found.email).toBeNull();
+      expect(found.reachable).toBe(true);
+      expect(((await detail()).body as StaffCustomer).reachable).toBe(true);
+    });
   });
 
   describe("GET /staff/customers/:id", () => {
@@ -269,6 +309,7 @@ describe("staff customers", () => {
         email: "bea@example.com",
         locale: "en",
         consents: { WHATSAPP: true, SMS: false, EMAIL: false, PUSH: false },
+        reachable: false,
       });
       const row = await ctx.prisma.customer.findUniqueOrThrow({ where: { id: dto.id } });
       expect(row.createdVia).toBe("RECEPTION");
@@ -292,6 +333,12 @@ describe("staff customers", () => {
       expect((audit[0]!.after as { fields: string[] }).fields).toEqual(
         expect.arrayContaining(["name", "phone", "locale", "email", "consents"]),
       );
+    });
+
+    it("returns reachable true with email consent and an email", async () => {
+      const res = await create({ ...body, email: "bea@example.com", consents: { EMAIL: true } });
+      expect(res.status).toBe(201);
+      expect((res.body as StaffCustomer).reachable).toBe(true);
     });
 
     it("answers 409 CONFLICT for a duplicate phone", async () => {

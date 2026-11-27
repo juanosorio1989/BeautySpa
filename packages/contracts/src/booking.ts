@@ -70,6 +70,8 @@ export const CustomerSummarySchema = z.object({
   phoneE164: z.string(),
   /** At least one consented channel the router can use today (email with an address, or a push subscription). */
   reachable: z.boolean(),
+  /** The account was deleted and anonymized: `phoneE164` is a placeholder and there is no client page. */
+  deleted: z.boolean(),
 });
 export type CustomerSummary = z.infer<typeof CustomerSummarySchema>;
 

@@ -53,6 +53,7 @@ export const client = (over: Partial<StaffCustomerSearchResult> = {}): StaffCust
   email: "maria@example.com",
   locale: "en",
   consents: { WHATSAPP: false, SMS: false, EMAIL: true, PUSH: false },
+  reachable: true,
   lastVisit: { date: "2026-11-10", serviceIds: [PEDI] },
   ...over,
 });
@@ -94,7 +95,7 @@ export function appointment(over: Partial<StaffAppointment> = {}): StaffAppointm
     cancelledAt: null,
     cancelReason: null,
     createdAt: "2026-11-20T12:00:00.000Z",
-    customer: { id: CUSTOMER, name: "Maria Lopez", phoneE164: "+17185550123", reachable: true },
+    customer: { id: CUSTOMER, name: "Maria Lopez", phoneE164: "+17185550123", reachable: true, deleted: false },
     createdByStaffId: null,
     cancelledBy: null,
     ...over,

@@ -426,7 +426,7 @@ export const es: Messages = {
       pickTime: "Elige un horario",
       save: "Guardar cita · {time}",
       saving: "Guardando…",
-      confirmByEmail: "Confirmación por correo",
+      confirmationSent: "Se envía la confirmación",
       noMessages: "Sin mensajes: no hay canal con consentimiento",
     },
     clientsPage: {

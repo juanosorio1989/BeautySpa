@@ -422,7 +422,7 @@ export const en = {
       pickTime: "Choose a time",
       save: "Save · {time}",
       saving: "Saving…",
-      confirmByEmail: "Confirmation by email",
+      confirmationSent: "The client gets a confirmation",
       noMessages: "No messages: no consented channel",
     },
     clientsPage: {

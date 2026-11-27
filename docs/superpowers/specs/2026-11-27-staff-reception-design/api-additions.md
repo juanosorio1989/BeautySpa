@@ -34,10 +34,16 @@ staff layout and to know "own segments" for EMPLOYEE (`id` = segment
 - `CustomerSummarySchema` (inside `StaffAppointment.customer`) adds
   `reachable: boolean` = the customer has at least one consented channel the
   router can use today (email with an address, or an active push
-  subscription). Drives the "No messages" badge.
+  subscription). Drives the "No messages" badge. It also adds
+  `deleted: boolean` (the account was deleted and anonymized: `phoneE164` is a
+  placeholder), so the action sheet hides the phone and the client link.
+- `StaffCustomer` (`GET /staff/customers/:id`, `POST /staff/customers`, and so
+  every search result) adds the same `reachable: boolean`; the quick-booking
+  footer reads it instead of re-deriving it from consents.
 - `GET /staff/customers?q=` results add `lastVisit: { date, serviceIds } |
   null` (latest `COMPLETED` or `CHECKED_IN` appointment). Computed in one query
-  for the ≤ 20 results (fixes the existing per-row consent query too).
+  for the ≤ 20 results (fixes the existing per-row consent query too). An
+  EMPLOYEE always gets `lastVisit: null` (the visit may be with a colleague).
 
 ## 4. Staff customer reads (OWNER, RECEPTION)
 

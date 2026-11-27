@@ -100,6 +100,18 @@ describe("GET /staff/agenda", () => {
     expect(after.appointments[0]!.customer?.reachable).toBe(true);
   });
 
+  it("flags an anonymized customer as deleted and others not", async () => {
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    const before = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(before.appointments[0]!.customer).toMatchObject({ id: f.customerId, deleted: false });
+    await ctx.prisma.customer.update({
+      where: { id: f.customerId },
+      data: { deletedAt: new Date(BOOKING_NOW), name: null, phoneE164: `deleted:${f.customerId}` },
+    });
+    const after = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(after.appointments[0]!.customer).toMatchObject({ id: f.customerId, name: null, deleted: true });
+  });
+
   it("includes CHECKED_IN, COMPLETED and NO_SHOW appointments", async () => {
     const statuses = ["CHECKED_IN", "COMPLETED", "NO_SHOW"] as const;
     const ids: string[] = [];
