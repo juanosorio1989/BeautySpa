@@ -28,4 +28,8 @@ describe("safeNext", () => {
     expect(safeNext("/%2F%2Fevil.example", "en")).toBe("/%2F%2Fevil.example");
     expect(safeNext("/\n/evil.example", "en")).toBe("/en/me");
   });
+
+  it("uses the given fallback path", () => {
+    expect(safeNext("//evil.example", "es", "staff")).toBe("/es/staff");
+  });
 });
