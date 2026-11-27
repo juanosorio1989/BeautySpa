@@ -68,6 +68,8 @@ export const CustomerSummarySchema = z.object({
   id: IdSchema,
   name: z.string().nullable(),
   phoneE164: z.string(),
+  /** At least one consented channel the router can use today (email with an address, or a push subscription). */
+  reachable: z.boolean(),
 });
 export type CustomerSummary = z.infer<typeof CustomerSummarySchema>;
 

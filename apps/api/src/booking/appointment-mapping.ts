@@ -61,11 +61,18 @@ export function toAppointmentDto(row: AppointmentRow): Appointment {
   return row.cancelledBy === "STAFF" ? { ...dto, cancelReason: null } : dto;
 }
 
-/** Staff shape: the real cancel reason, the customer summary and who created or cancelled it. */
-export function toStaffAppointmentDto(row: AppointmentRow): StaffAppointment {
+/** Staff shape: the real cancel reason, the customer summary (`reachable` from `loadReachable`) and who created or cancelled it. */
+export function toStaffAppointmentDto(row: AppointmentRow, reachable: ReadonlySet<string>): StaffAppointment {
   return {
     ...toAppointmentRecord(row),
-    customer: row.customer ? { id: row.customer.id, name: row.customer.name, phoneE164: row.customer.phoneE164 } : null,
+    customer: row.customer
+      ? {
+          id: row.customer.id,
+          name: row.customer.name,
+          phoneE164: row.customer.phoneE164,
+          reachable: reachable.has(row.customer.id),
+        }
+      : null,
     createdByStaffId: row.createdByStaffId,
     cancelledBy: row.cancelledBy,
   };

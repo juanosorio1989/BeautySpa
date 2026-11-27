@@ -23,6 +23,10 @@ const PAST_LIMIT = 50;
 const UPCOMING_STATUSES = new Set(["BOOKED", "CHECKED_IN"]);
 
 const endOf = (row: AppointmentRow) => Math.max(...row.segments.map((s) => s.endsAt.getTime()));
+
+/** The upcoming/past split shared with the staff customer view: `BOOKED` or `CHECKED_IN` ending after `now`. */
+export const isUpcoming = (row: AppointmentRow, now: number): boolean =>
+  UPCOMING_STATUSES.has(row.status) && endOf(row) > now;
 const sortedServiceIds = (segments: { serviceId: string }[]) => segments.map((s) => s.serviceId).sort();
 
 /** The signed-in customer's own appointments: list, cancel, reschedule and repeat. */
@@ -51,10 +55,9 @@ export class MyAppointmentsService {
       include: APPOINTMENT_INCLUDE,
     });
     const withSegments = rows.filter((r) => r.segments.length > 0);
-    const isUpcoming = (r: AppointmentRow) => UPCOMING_STATUSES.has(r.status) && endOf(r) > now;
-    const upcoming = withSegments.filter(isUpcoming).sort((a, b) => startOf(a) - startOf(b));
+    const upcoming = withSegments.filter((r) => isUpcoming(r, now)).sort((a, b) => startOf(a) - startOf(b));
     const past = withSegments
-      .filter((r) => !isUpcoming(r))
+      .filter((r) => !isUpcoming(r, now))
       .sort((a, b) => startOf(b) - startOf(a))
       .slice(0, PAST_LIMIT);
     return { upcoming: upcoming.map(toAppointmentDto), past: past.map(toAppointmentDto) };

@@ -8,6 +8,7 @@ import { PrismaService } from "../prisma/prisma.service.js";
 import { staffDisplayName } from "../staff/staff-me.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { BookingContextService } from "./booking-context.service.js";
+import { loadReachableFor } from "../customers/reachability.js";
 import { APPOINTMENT_INCLUDE, startOf, toStaffAppointmentDto } from "./appointment-mapping.js";
 
 const STATUSES: AppointmentStatus[] = ["BOOKED", "CHECKED_IN", "COMPLETED", "NO_SHOW"];
@@ -56,7 +57,8 @@ export class AgendaService {
         return s >= start && s < end;
       })
       .sort((a, b) => startOf(a) - startOf(b) || a.id.localeCompare(b.id));
-    const appointments = dayRows.map(toStaffAppointmentDto);
+    const reachable = await loadReachableFor(this.prisma, dayRows);
+    const appointments = dayRows.map((r) => toStaffAppointmentDto(r, reachable));
     const segments = dayRows.flatMap((r) => r.segments);
     const [employees, services, resources] = await Promise.all([
       this.employees(principal.org, location, query, employeeId, principal.role === "EMPLOYEE", segments),

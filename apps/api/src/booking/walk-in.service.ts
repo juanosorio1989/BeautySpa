@@ -5,6 +5,7 @@ import { MINUTE, localDayBoundsUtc, todayIn } from "@beautyspa/datetime";
 import { AuditService } from "../audit/audit.service.js";
 import { CLOCK, type Clock } from "../common/clock.js";
 import { invalidRef, slotTaken } from "../common/http-errors.js";
+import { loadReachableFor } from "../customers/reachability.js";
 import { PrismaService } from "../prisma/prisma.service.js";
 import { LocationService } from "../tenancy/location.service.js";
 import { APPOINTMENT_INCLUDE, toAppointmentRecord, toStaffAppointmentDto } from "./appointment-mapping.js";
@@ -87,7 +88,7 @@ export class WalkInService {
         },
         tx,
       );
-      return toStaffAppointmentDto(row);
+      return toStaffAppointmentDto(row, await loadReachableFor(tx, [row]));
     }, BOOKING_TX_OPTIONS);
 
     await notifyAfterCommit(this.events, this.logger, () => this.events.booked(created.id));

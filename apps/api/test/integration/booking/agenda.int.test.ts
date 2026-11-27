@@ -88,6 +88,18 @@ describe("GET /staff/agenda", () => {
     expect(body.appointments[0]!.startsAt < body.appointments[1]!.startsAt).toBe(true);
   });
 
+  it("marks a customer with email consent and an email reachable, others not", async () => {
+    await bookSegment(ctx.prisma, f, { staffUserId: f.staffA, startsAt: "15:00", endsAt: "16:00" });
+    const before = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(before.appointments[0]!.customer?.reachable).toBe(false);
+    await ctx.prisma.customer.update({ where: { id: f.customerId }, data: { email: "ana@example.com" } });
+    await ctx.prisma.notificationConsent.create({
+      data: { organizationId: f.orgId, customerId: f.customerId, channel: "EMAIL", granted: true, source: "PROFILE" },
+    });
+    const after = (await get(`date=${BOOKING_DATE}`)).body as Agenda;
+    expect(after.appointments[0]!.customer?.reachable).toBe(true);
+  });
+
   it("includes CHECKED_IN, COMPLETED and NO_SHOW appointments", async () => {
     const statuses = ["CHECKED_IN", "COMPLETED", "NO_SHOW"] as const;
     const ids: string[] = [];
